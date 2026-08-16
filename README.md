@@ -16,7 +16,7 @@ Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly 
 - Vitest for automated tests
 - ESLint and Prettier for quality checks
 
-Node.js 24 LTS is pinned in `.nvmrc`. This LTS line is supported by the selected framework and CI tooling while avoiding a non-LTS runtime.
+Node.js `24.18.0` is pinned in `.nvmrc`, and pnpm `10.24.0` is pinned through `packageManager`. Corepack is required so local agents and CI use the same package-manager release and do not silently rewrite the lockfile with another pnpm version.
 
 ## Repository structure
 
@@ -40,7 +40,7 @@ docs/
 
 ## Prerequisites
 
-- Node.js 24 LTS (`nvm use`)
+- Node.js 24.18.0 (`nvm use`)
 - pnpm 10.24.0 through Corepack
 
 ## Install and develop
@@ -64,13 +64,15 @@ pnpm build
 pnpm check
 ```
 
-`pnpm check` runs lint, formatting verification, type checking, and tests. CI also performs a production build.
+`pnpm check` runs lint, formatting verification, type checking, and tests. CI also performs a production build. The current automated tests are smoke tests for narrow baseline behavior; they do not prove complete runtime behavior or architectural compliance. The production Next.js build is the authoritative framework/type validation gate unless the repository explicitly adopts a stable deterministic type-generation command.
 
 ## Architecture
 
-The browser communicates with the Next.js application, which consumes the Fastify API through explicit contracts. The API owns access to domain services, persistence, object storage, and external provider adapters. Web code never accesses the database directly, important rules do not live in React components, and provider-specific details do not leak into the domain.
+The PWA/browser, future native clients, and other future clients consume the same Fastify API through explicit contracts. Next.js is a client application, not the canonical backend-for-frontend. Web code, including Server Components, never accesses the database directly. The API owns access to domain services, persistence, object storage, and external provider adapters; important rules do not live in React components, and provider-specific details do not leak into the domain.
 
-See [the architecture overview](docs/architecture/README.md) and [ADR 001](docs/adr/001-foundation-architecture.md).
+Runtime workspace packages follow `src → build → dist → package exports`. Executable shared contracts are Zod schemas in `packages/schemas`; `docs/contracts` is the human registry and freeze layer.
+
+See [the architecture overview](docs/architecture/README.md) and the accepted ADRs in [`docs/adr`](docs/adr/).
 
 ## Multi-agent engineering
 
