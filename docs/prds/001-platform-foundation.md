@@ -1,0 +1,128 @@
+# PRD 01 — Platform Foundation
+
+- Status: `APPROVED`
+- Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
+- Parent registry outcome: Product-ready platform capabilities and boundaries
+- Dependencies: PRD 00 — `COMPLETED`
+- Release gate: Gate A
+
+## Context
+
+Epic 00 established the monorepo, client/API topology, strict tooling, health endpoint, and package boundaries. Product PRDs need a small, stable HTTP platform contract before they can add student, coach, exercise, movement, or persistence behavior.
+
+## Problem
+
+The current API exposes only a liveness response. It has no shared error envelope, readiness contract, explicit cross-origin policy, or reusable typed client boundary. Downstream teams would otherwise invent incompatible behavior in parallel.
+
+## User
+
+- Fitness OS client engineers consuming the Fastify API.
+- API and domain engineers adding future capabilities.
+- Operators and automated probes diagnosing liveness and readiness.
+
+This PRD creates no student- or coach-facing product workflow.
+
+## Outcome
+
+A minimal platform surface lets every future capability communicate through explicit, runtime-validated HTTP contracts, expose safe operational status, preserve request correlation, and reuse a typed web client without bypassing Fastify.
+
+## Scope
+
+- Freeze executable contracts for readiness and API errors in `packages/schemas`.
+- Preserve the existing `GET /health` liveness contract.
+- Add `GET /ready` with explicit ready/not-ready semantics and an injected readiness check.
+- Return a safe shared error envelope for unknown routes, validation failures, and unexpected errors.
+- Return an `x-request-id` correlation header and include the same identifier in error envelopes.
+- Configure an explicit allowlist-based CORS policy owned by the API.
+- Add a reusable web API client that validates successful and error payloads against shared schemas.
+- Document the frozen platform contracts and environment settings.
+
+## Non-scope
+
+- Authentication, authorization, users, students, coaches, onboarding, sessions, or permissions.
+- Product domain entities or workflows.
+- PostgreSQL connections, product tables, migrations, object storage, queues, or caches.
+- Deployment-provider selection or production credentials.
+- Offline caching, notifications, analytics, AI, body capabilities, or native clients.
+
+## UX
+
+There is no new product UI. The web client receives predictable typed failures suitable for later accessible user messaging. Operational endpoints remain machine-oriented and disclose no secrets or internal dependency details.
+
+## Business rules
+
+- All browser clients communicate with the Fastify API; Next.js does not access persistence directly.
+- Shared request, response, and error shapes are executable contracts in `packages/schemas`.
+- Liveness proves only that the API process can respond. Readiness represents injected dependency readiness and may return HTTP 503.
+- Unknown and internal failures use stable public codes; internal exception details are never returned.
+- Cross-origin access is denied unless the request origin is explicitly allowed. Requests without an Origin header remain valid for probes and server-to-server calls.
+
+## Data
+
+No product or personal data is introduced. Request identifiers are opaque correlation values and must not encode identity or secrets. No persistence or migration is authorized by this PRD.
+
+## Contracts
+
+The executable Source of Truth will add:
+
+- `readinessResponseSchema` for `GET /ready` success and unavailable states;
+- `apiErrorResponseSchema` and stable platform error codes;
+- exported TypeScript types inferred from those schemas.
+
+The existing `healthResponseSchema` remains unchanged. `docs/contracts/README.md` records ownership, consumers, and freeze status without redefining schema fields.
+
+## Security/privacy
+
+- CORS uses an explicit configured allowlist; wildcard credentialed origins are prohibited.
+- Public errors omit stack traces, raw exceptions, configuration, dependency details, and credentials.
+- Authorization and proxy-authorization headers remain redacted from logs.
+- Request IDs are generated or accepted through Fastify's bounded request-ID mechanism and treated as untrusted correlation metadata.
+- No personal, body, health, biometric-like, or credential data is added.
+
+## Failure modes
+
+- A failed readiness dependency returns HTTP 503 with the not-ready contract.
+- An invalid configured origin is rejected without enabling cross-origin access.
+- An unknown route returns the stable not-found error contract.
+- A validation failure returns a stable bad-request error contract.
+- An unexpected exception is logged server-side and returns a generic internal-error contract.
+- A successful response that violates its client schema is rejected by the typed web client rather than trusted.
+- A non-success response that violates the error schema becomes a generic client-side protocol error without exposing raw response content.
+
+## Acceptance criteria
+
+1. `GET /health` remains HTTP 200 with the existing exact contract.
+2. `GET /ready` returns HTTP 200 when the injected readiness check passes and HTTP 503 when it fails, with both payloads validated by the shared executable schema.
+3. Every API response carries an `x-request-id`; public error envelopes carry that same identifier.
+4. Unknown routes, validation failures, and unexpected exceptions return the shared error schema with stable codes and no internal error detail.
+5. CORS permits configured origins, rejects unconfigured origins, and does not enable credentials by default.
+6. The reusable web client validates success and error payloads with `packages/schemas` and supports an injected fetch implementation for deterministic tests.
+7. New behavior is developed with observable Red → Green test evidence and all existing tests remain green.
+8. Lint, format, typecheck, unit tests, production build, and repository check pass under pinned tools.
+9. Contract, architecture, environment, and operational documentation matches implementation.
+10. Independent Agent 90 and QA/security report zero open `BLOCKER` or `HIGH` findings.
+
+## Metrics
+
+- 100% of new platform response variants have executable schemas and automated provider/consumer tests.
+- 0 known API paths in this PRD return raw exception messages or omit request correlation.
+- 0 known `BLOCKER` and 0 known `HIGH` findings at merge.
+
+## Technical constraints
+
+- Node.js 24.18.0, pnpm 10.24.0, TypeScript strict mode, Fastify, Zod, and the existing dist-first workspace lifecycle remain fixed.
+- No database or product-domain import is allowed in the web application.
+- New dependencies must be narrowly justified and exactly pinned.
+- The design remains a modular monolith; no microservice or generic platform framework is introduced.
+
+## Dependencies
+
+- PRD 00 — Engineering Bootstrap: `COMPLETED`.
+- Existing accepted ADRs 001–006 and Product Principles.
+- Frozen `healthResponseSchema` contract.
+
+No external credential, paid service, legal/privacy decision, or human-perception validation is required.
+
+## Release gate
+
+Gate A applies. This PRD has no Gate B or Gate C milestone and no migration. Completion requires all acceptance criteria, green CI, independent review, QA/security, architecture/security/scope passes, consistent contracts, updated documentation, merged relevant PRs, and zero open `BLOCKER`/`HIGH`.
