@@ -38,13 +38,25 @@ Zod remains the only executable Source of Truth. The human contract registry ref
 
 `apps/api` adds:
 
-- an injected asynchronous readiness check with a default in-process ready result;
+- an injected readiness check with the exact signature `() => boolean | Promise<boolean>` and a default in-process `true` result;
 - a `/ready` route that maps check success to 200 and failure/exception to 503 without exposing dependency details;
 - centralized not-found and error handlers that emit the shared error envelope;
 - a response hook that publishes Fastify's request identifier as `x-request-id`;
 - `@fastify/cors` configured from a parsed comma-separated `CORS_ALLOWED_ORIGINS` environment value, with credentials disabled.
 
 `buildApp` receives explicit platform options for tests and composition. Bootstrap owns environment parsing and passes the resulting CORS allowlist. Business/domain logic is not added.
+
+Fastify's client request-ID header option remains disabled. The API always uses Fastify's server-generated `request.id`; it never accepts or reflects a client-supplied request identifier. The response header and error envelope copy only that generated value.
+
+Readiness mapping is exact:
+
+| Check outcome               | HTTP | Payload                                        |
+| --------------------------- | ---- | ---------------------------------------------- |
+| resolves or returns `true`  | 200  | ready variant                                  |
+| resolves or returns `false` | 503  | not-ready variant                              |
+| throws or rejects           | 503  | not-ready variant; exception logged internally |
+
+No dependency name, exception message, or stack is included in the response.
 
 ### Web API client
 
@@ -102,7 +114,7 @@ Integration uses Fastify injection and injected fetch/check functions; no live p
 - Verify errors cannot serialize raw exception details.
 - Verify logs retain authorization-header redaction.
 - Verify CORS never enables wildcard credentials.
-- Verify request IDs cannot cause secret or identity assumptions.
+- Verify request IDs are server-generated and client-supplied candidates are never reflected.
 - Verify client protocol errors do not echo arbitrary response bodies.
 
 ## Migration and rollback
