@@ -1,3 +1,4 @@
+import { healthResponseSchema } from '@fitness-os/schemas';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -15,7 +16,9 @@ describe('GET /health', () => {
       url: '/health',
     });
 
+    const body = healthResponseSchema.parse(response.json());
+
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ status: 'ok' });
+    expect(body).toEqual({ status: 'ok' });
   });
 });

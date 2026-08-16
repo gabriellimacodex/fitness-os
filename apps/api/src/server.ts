@@ -1,11 +1,5 @@
-import { buildApp } from './app.js';
+import { bootstrapApi } from './bootstrap.js';
 
-const app = buildApp({ logger: true });
-const port = Number.parseInt(process.env.PORT ?? '3001', 10);
-
-try {
-  await app.listen({ host: '0.0.0.0', port });
-} catch (error) {
-  app.log.error(error);
+await bootstrapApi().catch(() => {
   process.exitCode = 1;
-}
+});
