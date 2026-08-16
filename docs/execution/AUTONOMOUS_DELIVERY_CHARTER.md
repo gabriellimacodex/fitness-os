@@ -20,6 +20,8 @@ Standing authority exists only when all of the following are true:
 
 PRD state changes must be explicit and recorded in the PRD registry. Standing authority may progress from one completed PRD only to another PRD already marked `APPROVED`; completion never auto-approves the next PRD.
 
+When a registry PRD is already `APPROVED`, the Orchestrator may author its just-in-time detailed PRD as `APPROVED` under inherited Autonomous Pilot V1 authority. That is a decomposition of existing authority, not a new approval. It is valid only while the detail preserves the registered outcome, stays within scope and Product Principles, does not weaken acceptance or safety requirements, and activates no stop condition. Material product expansion, financial commitment, unresolved legal/privacy choice, threshold reduction, or product-thesis change invalidates inherited authority and requires the applicable stop condition.
+
 ## Actions authorized without routine human approval
 
 Within the boundary above, the Orchestrator may autonomously:
@@ -37,6 +39,8 @@ Within the boundary above, the Orchestrator may autonomously:
 - open PRs and keep their descriptions and technical documentation accurate;
 - merge routine PRs that satisfy every condition in this charter's autonomous merge policy; and
 - move to the next dependency-ready PRD only when it is already `APPROVED`.
+
+Autonomous Pilot V1 authority ends after PRD 24 is `COMPLETED` and Gate D passes. PRD 25 remains outside standing authority until a separate explicit authorization.
 
 The Orchestrator must not request human approval merely because two reasonable implementation options exist. It chooses the simplest reversible option consistent with current governance, records material reasoning where future maintainers need it, and preserves a practical rollback path.
 

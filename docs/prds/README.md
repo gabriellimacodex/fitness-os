@@ -8,6 +8,8 @@ All PRDs must comply with the repository-level [Product Principles](../../PRODUC
 
 Registry presence is planning metadata, not implementation authorization. In particular, **`PROPOSED` is not authorization**. The Orchestrator may progress autonomously only among `APPROVED` PRDs whose dependencies and gates permit execution.
 
+PRDs 01–24 are approved under the founder's **Autonomous Pilot V1 execution through Pilot Release Candidate** authorization. PRD 25 remains proposed and is outside that authorization.
+
 ## Lifecycle states
 
 | State         | Meaning                                                                                                                                 |
@@ -45,6 +47,10 @@ The registry deliberately does not invent 25 detailed specifications. Before an 
 - Release gate
 
 A Technical Design is added when the scope warrants one. A substantial PRD may receive independent pre-flight review of the PRD, Technical Design, contracts, and migration plan before implementation. Shared executable contracts are frozen first in `packages/schemas`; `docs/contracts` remains the human registry and freeze layer.
+
+For an `APPROVED` registry PRD, the Orchestrator may author its detailed PRD directly with `Status: APPROVED` and `Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization`. No additional founder approval is required when the detailed PRD faithfully decomposes the registered capability, preserves its outcome and acceptance strength, and remains within Product Principles, accepted ADRs, existing stop conditions, and authorized scope.
+
+Inherited approval is invalid if the detail would materially expand scope, change the product thesis, introduce a new financial commitment, silently decide legal/privacy policy, lower a safety or acceptance threshold, or bypass a stop condition. The Orchestrator must then use the applicable existing stop condition instead of creating an approval loophole.
 
 Detailed PRDs must preserve PWA-first delivery, student mobile-first and coach desktop-friendly experiences, human approval for consequential training decisions, measured-versus-estimated provenance, immutable history, privacy by default, evidence integrity, deterministic-before-generative behavior, provider adapters, explicit APIs, and earned complexity.
 

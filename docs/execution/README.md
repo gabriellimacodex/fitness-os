@@ -6,7 +6,7 @@ This directory defines how Fitness OS may deliver work autonomously after a prod
 
 [`PRODUCT_PRINCIPLES.md`](../../PRODUCT_PRINCIPLES.md) remains the product constitution. Accepted [architecture decisions](../adr/), the current `APPROVED` PRD, and frozen [contracts](../contracts/README.md) constrain every implementation.
 
-The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md), and PRD state is recorded in the [PRD Registry](../prds/PRD_REGISTRY.md). PRD 00 is `COMPLETED`; PRDs 01–25 are `PROPOSED`. A `PROPOSED` entry is planning information, not implementation authority. This control-plane change does not activate autonomous product execution. A subsequent explicit command must approve the intended PRD or execution plan before work begins.
+The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md), and PRD state is recorded in the [PRD Registry](../prds/PRD_REGISTRY.md). PRD 00 is `COMPLETED`; PRDs 01–24 are `APPROVED` under Autonomous Pilot V1 authorization; PRD 25 remains `PROPOSED`. A `PROPOSED` entry is planning information, not implementation authority. Execution must stop after PRD 24 and Gate D until Pilot Release receives separate authorization.
 
 ## Control documents
 
@@ -15,6 +15,7 @@ The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md)
 - [Stop Conditions](STOP_CONDITIONS.md) — the limited situations that require founder or human action.
 - [Release Gates](RELEASE_GATES.md) — PR, capability, external red-team, and Pilot Release Candidate gates.
 - [Reviewer Agent](REVIEWER_AGENT.md) — the independent Agent 90 adversarial review model.
+- [Gate records](gates/) — durable evidence for completed external and release gates.
 - [PRD governance](../prds/README.md) and [registry](../prds/PRD_REGISTRY.md) — required PRD content, states, and authorization boundary.
 
 Execution also follows the repository [agent instructions](../../AGENTS.md) and [multi-agent protocol](../../MULTI_AGENT_PROTOCOL.md). If documents conflict, follow the authority hierarchy in `AGENTS.md` and stop on a material unresolved conflict.
