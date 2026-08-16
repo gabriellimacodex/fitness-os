@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-- Status: Proposed for PRD 01 pre-flight review
+- Status: Approved after Agent 90 pre-flight Round 2
 - PRD: [PRD 01 — Platform Foundation](../prds/001-platform-foundation.md)
 - Architecture: existing modular monolith and Fastify client/API topology
 
