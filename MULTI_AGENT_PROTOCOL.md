@@ -15,6 +15,7 @@ Ownership includes implementation and tests colocated under an owned path. Agent
 | Agent 2 — API/Domain Engineer          | `apps/api/**`, `packages/domain/**`, `packages/schemas/**`                                                      | Owns all tests colocated in these paths. Schema changes are also contract changes and require the contract process below.                                                |
 | Agent 3 — Data/Infrastructure Engineer | `packages/database/**`, except the shared `packages/database/README.md`                                         | Owns all database tests colocated in this path and any migrations when a future epic authorizes them. Epic 00 has no product migration.                                  |
 | Agent 4 — QA/Security Engineer         | `tests/e2e/**`, except the shared `tests/e2e/README.md`, and explicit QA artifacts assigned by the Orchestrator | Reviews the whole repository but does not automatically own another agent's colocated tests or quality configuration. Reports findings before changing another boundary. |
+| Agent 90 — Adversarial Reviewer        | Review artifacts explicitly assigned by the Orchestrator                                                     | Independently reviews integrated changes and evidence. It does not implement normal features and may not accept builder assertions without validation.                    |
 
 ### Orchestrator-coordinated shared files
 
@@ -27,8 +28,8 @@ The following matrix is exhaustive for the shared paths mandated in Epic 00. A c
 | Repository and CI                               | `.github/**`, `.gitignore`, `.env.example`                                                                                                                                                                                                              |
 | Shared configuration                            | `packages/config/**`                                                                                                                                                                                                                                    |
 | Root governance                                 | `README.md`, `AGENTS.md`, `MULTI_AGENT_PROTOCOL.md`, `PRODUCT_PRINCIPLES.md`                                                                                                                                                                            |
-| Architecture decisions                          | `docs/adr/**`, including `docs/adr/001-foundation-architecture.md`, `docs/adr/002-multi-agent-engineering-model.md`, `docs/adr/003-workspace-package-build-model.md`, `docs/adr/004-client-api-topology.md`, `docs/adr/005-contract-source-of-truth.md` |
-| Architecture, contracts, epic, and product docs | `docs/architecture/**`, `docs/contracts/**`, `docs/epics/**`, `docs/product/**`                                                                                                                                                                         |
+| Architecture decisions                          | `docs/adr/**`, including `docs/adr/001-foundation-architecture.md` through `docs/adr/006-autonomous-delivery-control-plane.md`                                                                                                                           |
+| Architecture, contracts, execution, and product docs | `docs/architecture/**`, `docs/contracts/**`, `docs/epics/**`, `docs/execution/**`, `docs/prds/**`, `docs/product/**`                                                                                                                                |
 | Package and QA documentation                    | `packages/config/README.md`, `packages/database/README.md`, `tests/e2e/README.md`                                                                                                                                                                       |
 
 The specific file entries above remain shared even where a broader implementation owner owns the containing directory. This exception prevents concurrent edits to governance and coordination artifacts while preserving non-overlapping implementation ownership.
@@ -108,7 +109,7 @@ A task is incomplete without this handoff.
 
 ## Stop conditions
 
-Stop when acceptance criteria are complete or when encountering an architectural conflict, an unauthorized contract change, a secret, a data-loss risk, a conflicting migration, or ambiguity that materially affects architecture. Report the condition; do not invent a silent workaround.
+Apply the exact categories in [Stop Conditions](docs/execution/STOP_CONDITIONS.md). Do not invent a silent workaround for a required stop, and do not escalate ordinary reversible engineering work that the [charter](docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md) authorizes. After three meaningful correction rounds with significant architectural instability, stop with `ARCHITECTURE_DECISION_REQUIRED`.
 
 ## Change discipline
 
@@ -134,13 +135,13 @@ Every integrated wave must pass from a clean worktree that does not rely on pre-
 
 Current automated tests are smoke tests. They verify narrow baseline behavior such as the health response and schema compatibility; they do not establish complete runtime behavior or prove the architecture. Web typechecking generates route types with `next typegen` before running TypeScript without emitting application code. The Next.js production build remains the authoritative production framework gate.
 
-QA/Security should be independent from the original implementation when practical to reduce confirmation bias.
+QA/Security and [Agent 90](docs/execution/REVIEWER_AGENT.md) must provide independent challenge. A known `BLOCKER` or `HIGH` finding prevents autonomous merge. The complete PR, capability, external red-team, and Pilot Release Candidate requirements are defined in [Release Gates](docs/execution/RELEASE_GATES.md).
 
 ## Pull request flow
 
 ```text
-Spec → implementation branch → isolated agents → integration → CI → pull request
-     → external red team → corrections → human approval → merge
+APPROVED PRD → design → contracts → isolated agents → integration → automated tests
+             → independent review → QA/security → corrections → pull request → merge gates
 ```
 
-Never merge automatically. Passing CI ends at a pull request prepared for external red-team review. Never begin a new epic without explicit authorization.
+Routine pull requests may be merged autonomously only when every condition in the [Autonomous Delivery Charter](docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md) and the applicable [release gate](docs/execution/RELEASE_GATES.md) passes. Green CI alone is insufficient. External red-team review remains mandatory at its defined milestones. Never begin or continue a `PROPOSED` PRD without explicit approval.
