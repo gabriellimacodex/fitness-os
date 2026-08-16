@@ -64,7 +64,7 @@ pnpm build
 pnpm check
 ```
 
-`pnpm check` runs lint, formatting verification, type checking, and tests. CI also performs a production build. The current automated tests are smoke tests for narrow baseline behavior; they do not prove complete runtime behavior or architectural compliance. The production Next.js build is the authoritative framework/type validation gate unless the repository explicitly adopts a stable deterministic type-generation command.
+`pnpm check` runs lint, formatting verification, type checking, and tests. CI also performs a production build. The web typecheck runs `next typegen` before no-emit TypeScript validation so route types are deterministic in a clean checkout. The current automated tests are smoke tests for narrow baseline behavior; they do not prove complete runtime behavior or architectural compliance. The production Next.js build remains the authoritative production framework gate.
 
 ## Architecture
 

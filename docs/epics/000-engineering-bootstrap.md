@@ -47,7 +47,7 @@ The web remains PWA-ready. Full offline capability, a service worker, offline ca
 - No secret or product feature is committed.
 - Work occurs on `chore/epic-00-bootstrap`, is pushed, and becomes an unmerged PR to `main`.
 
-These tests are smoke tests for the engineering baseline. They do not claim broad product coverage, complete runtime verification, or proof of architectural compliance. The production Next.js build is the authoritative framework/type validation gate unless a stable deterministic Next.js type-generation command is explicitly adopted.
+These tests are smoke tests for the engineering baseline. They do not claim broad product coverage, complete runtime verification, or proof of architectural compliance. Web typechecking runs `next typegen` before no-emit TypeScript validation; the production Next.js build remains the authoritative production framework gate.
 
 ## Definition of Done
 

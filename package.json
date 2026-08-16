@@ -4,18 +4,21 @@
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "engines": {
-    "node": ">=24 <25",
-    "pnpm": ">=10 <11"
+    "node": "24.18.0",
+    "pnpm": "10.24.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @fitness-os/web --filter @fitness-os/api dev",
+    "dev": "pnpm build:packages && pnpm --parallel --filter @fitness-os/web --filter @fitness-os/api dev",
     "build": "pnpm -r --if-present build",
+    "build:packages": "pnpm --filter './packages/*' build",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test"
+    "typecheck": "pnpm build:packages && pnpm typecheck:workspaces",
+    "typecheck:workspaces": "pnpm -r --if-present typecheck",
+    "test": "pnpm build:packages && pnpm test:workspaces",
+    "test:workspaces": "pnpm -r --if-present test",
+    "check": "pnpm lint && pnpm format:check && pnpm build:packages && pnpm typecheck:workspaces && pnpm test:workspaces"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",

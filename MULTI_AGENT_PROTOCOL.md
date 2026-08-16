@@ -132,7 +132,7 @@ Every integrated wave must pass from a clean worktree that does not rely on pre-
 6. Security — no secrets, credentials, dangerous debug code, or obvious introduced vulnerability.
 7. Scope — no out-of-epic feature.
 
-Current automated tests are smoke tests. They verify narrow baseline behavior such as the health response and schema compatibility; they do not establish complete runtime behavior or prove the architecture. The Next.js production build is the authoritative framework/type validation gate unless the repository explicitly adopts a stable deterministic type-generation command.
+Current automated tests are smoke tests. They verify narrow baseline behavior such as the health response and schema compatibility; they do not establish complete runtime behavior or prove the architecture. Web typechecking generates route types with `next typegen` before running TypeScript without emitting application code. The Next.js production build remains the authoritative production framework gate.
 
 QA/Security should be independent from the original implementation when practical to reduce confirmation bias.
 
