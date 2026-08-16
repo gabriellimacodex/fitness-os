@@ -6,15 +6,16 @@ Read this file before editing the repository.
 
 1. `PRODUCT_PRINCIPLES.md`
 2. Accepted ADRs in `docs/adr/`
-3. The current epic specification in `docs/epics/`
-4. Frozen contracts in `docs/contracts/`
-5. The individual agent task
+3. The current `APPROVED` PRD in `docs/prds/`
+4. The current epic specification in `docs/epics/`, when applicable
+5. Frozen contracts in `docs/contracts/`
+6. The individual agent task
 
 A lower-level instruction may not violate a higher-level decision. Stop and report the conflict instead of improvising.
 
-## Current scope
+## Authorization boundary
 
-Epic 00 creates engineering infrastructure only. Do not implement authentication, real users, student or coach profiles, body scans or photos, measurements, digital twins, real exercises, workout or training engines, runtime AI, Apple integrations, movement/form intelligence, computer vision, evolution features, payments, notifications, or any product feature.
+Follow the [Autonomous Delivery Control Plane](docs/execution/README.md). Standing authority applies only to a current `APPROVED` PRD. A `PROPOSED` roadmap entry never authorizes implementation. PRD 00 is complete; PRDs 01–25 remain proposed until an explicit subsequent authorization changes their state. Do not implement product functionality while none is approved.
 
 The Next.js application is PWA-ready; it is not a full offline-capable PWA. A service worker, offline cache, icon matrix, and advanced install experience remain deferred.
 
@@ -30,7 +31,9 @@ The Next.js application is PWA-ready; it is not a full offline-capable PWA. A se
 - Avoid drive-by refactors and unrequested dependency changes.
 - Never commit secrets. Stop and report any secret, data-loss risk, conflicting migration, architectural conflict, or contract change that lacks authorization.
 - End work with the `AGENT HANDOFF` format defined in the protocol.
-- Passing gates does not authorize merge or the next epic.
+- The builder may not be the only reviewer. Use [Agent 90](docs/execution/REVIEWER_AGENT.md) and the release process for independent review.
+- Autonomous merge is permitted only under the [charter](docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md) when every required gate passes. Passing gates never authorizes a `PROPOSED` PRD.
+- Stop for the enumerated [human-intervention conditions](docs/execution/STOP_CONDITIONS.md), not for ordinary reversible engineering decisions.
 
 ## Architecture guardrails
 

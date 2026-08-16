@@ -1,10 +1,10 @@
 # Fitness OS
 
-Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly web application for coaches. This repository currently contains only the Epic 00 engineering foundation; it does not contain product features.
+Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly web application for coaches. This repository contains the completed Epic 00 engineering foundation and its delivery governance; it does not contain product features.
 
 ## Status
 
-**Epic 00 — Engineering & Multi-Agent Bootstrap.** The repository is establishing the factory that will build the product. Starting another epic automatically is prohibited.
+**Epic 00 — Engineering & Multi-Agent Bootstrap is complete.** PRDs 01–25 are roadmap proposals and are not authorized for implementation. The autonomous delivery control plane becomes executable for product work only after a subsequent explicit command approves an intended PRD.
 
 ## Stack
 
@@ -36,6 +36,8 @@ docs/
   adr/          Accepted architecture decisions
   epics/        Versioned epic specifications
   contracts/    Contract-first coordination rules
+  execution/    Autonomous authority, review, stop, and release gates
+  prds/         PRD governance and roadmap registry
 ```
 
 ## Prerequisites
@@ -76,6 +78,6 @@ See [the architecture overview](docs/architecture/README.md) and the accepted AD
 
 ## Multi-agent engineering
 
-All agents must read [AGENTS.md](AGENTS.md), follow [the multi-agent protocol](MULTI_AGENT_PROTOCOL.md), work in isolated worktrees when concurrent, respect ownership, and freeze shared contracts before coupled work begins. Integration requires architecture, build, type, lint, test, security, and scope gates plus an independent review when possible.
+All agents must read [AGENTS.md](AGENTS.md), follow [the multi-agent protocol](MULTI_AGENT_PROTOCOL.md), work in isolated worktrees when concurrent, respect ownership, and freeze shared contracts before coupled work begins. Integration requires architecture, build, type, lint, test, security, and scope gates plus independent review.
 
-Completing an epic never authorizes an agent to begin the next one. Epic 01 can start only after external red-team review, human approval, merge, and an explicit new task.
+The [Autonomous Delivery Control Plane](docs/execution/README.md) defines standing authority for `APPROVED` PRDs, limited human [stop conditions](docs/execution/STOP_CONDITIONS.md), the independent [Reviewer Agent](docs/execution/REVIEWER_AGENT.md), and progressive [release gates](docs/execution/RELEASE_GATES.md). The [PRD Registry](docs/prds/PRD_REGISTRY.md) records state; `PROPOSED` never means approved. Routine merges require every charter gate, including green CI and zero known `BLOCKER` or `HIGH` findings.
