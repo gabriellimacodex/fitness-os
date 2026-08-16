@@ -28,14 +28,14 @@ Gate A applies to every pull request before merge, including maintenance, docume
 
 Required checks:
 
-| Check | Required evidence |
-| ----- | ----------------- |
-| CI | All required jobs are green for the exact head SHA; no required failure is ignored, overridden, or represented by a stale run. |
-| Tests | Applicable automated tests pass and meaningfully cover changed behavior and relevant failure paths; test gaps and justified `NOT_APPLICABLE` areas are explicit. |
-| Architecture | Product Principles, accepted ADRs, approved PRD/maintenance authority, frozen contracts, import boundaries, and architectural topology remain consistent. |
-| Security | Applicable security/privacy review passes; no exposed secret, unaddressed serious vulnerability, unsafe data behavior, or authorization defect is known. |
-| Scope | The diff stays within its authorized scope and non-scope, with no hidden product feature, speculative infrastructure, or unrelated refactor. |
-| Reviewer | Agent 90 or another genuinely independent reviewer inspected the actual code and diff under [REVIEWER_AGENT.md](./REVIEWER_AGENT.md). |
+| Check        | Required evidence                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI           | All required jobs are green for the exact head SHA; no required failure is ignored, overridden, or represented by a stale run.                                   |
+| Tests        | Applicable automated tests pass and meaningfully cover changed behavior and relevant failure paths; test gaps and justified `NOT_APPLICABLE` areas are explicit. |
+| Architecture | Product Principles, accepted ADRs, approved PRD/maintenance authority, frozen contracts, import boundaries, and architectural topology remain consistent.        |
+| Security     | Applicable security/privacy review passes; no exposed secret, unaddressed serious vulnerability, unsafe data behavior, or authorization defect is known.         |
+| Scope        | The diff stays within its authorized scope and non-scope, with no hidden product feature, speculative infrastructure, or unrelated refactor.                     |
+| Reviewer     | Agent 90 or another genuinely independent reviewer inspected the actual code and diff under [REVIEWER_AGENT.md](./REVIEWER_AGENT.md).                            |
 
 Autonomous merge requires all Gate A checks to be satisfied plus:
 
@@ -143,9 +143,9 @@ Gate evidence, findings, and deferrals must never be deleted or concealed to obt
 
 ## Gate summary
 
-| Gate | Applies to | Minimum decision |
-| ---- | ---------- | ---------------- |
-| A — PR | Every merge | Required PR checks pass; independent review; 0 known `BLOCKER`/`HIGH` |
-| B — Capability | Significant domain integration milestones | Gate A plus deeper cross-component integration and failure evidence |
-| C — External Red Team | Selected major milestones | Independent external audit passes, or an explicit human override is recorded without calling the gate passed |
-| D — Pilot Release Candidate | Full Pilot RC | Gates A–C plus complete RC build, test, security, deployment, recovery, and limitation evidence |
+| Gate                        | Applies to                                | Minimum decision                                                                                             |
+| --------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| A — PR                      | Every merge                               | Required PR checks pass; independent review; 0 known `BLOCKER`/`HIGH`                                        |
+| B — Capability              | Significant domain integration milestones | Gate A plus deeper cross-component integration and failure evidence                                          |
+| C — External Red Team       | Selected major milestones                 | Independent external audit passes, or an explicit human override is recorded without calling the gate passed |
+| D — Pilot Release Candidate | Full Pilot RC                             | Gates A–C plus complete RC build, test, security, deployment, recovery, and limitation evidence              |

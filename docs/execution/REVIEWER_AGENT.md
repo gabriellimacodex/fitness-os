@@ -95,12 +95,12 @@ Every finding must include:
 
 Severities are:
 
-| Severity  | Meaning | Autonomous merge effect |
-| --------- | ------- | ----------------------- |
-| `BLOCKER` | The change creates or risks catastrophic harm, data loss, critical security failure, invalid release evidence, or fundamental violation of an approved product or architecture decision. | Prohibited |
-| `HIGH` | A likely or materially damaging production failure, serious security/privacy weakness, unmet acceptance criterion, unsafe migration, or substantial scope/architecture violation. | Prohibited |
-| `MEDIUM` | A real defect or maintainability/operability risk with bounded impact that does not meet `HIGH`. | Fix immediately or defer with rationale and tracking |
-| `LOW` | A minor issue or improvement with limited production impact. | May be deferred with rationale |
+| Severity  | Meaning                                                                                                                                                                                  | Autonomous merge effect                              |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `BLOCKER` | The change creates or risks catastrophic harm, data loss, critical security failure, invalid release evidence, or fundamental violation of an approved product or architecture decision. | Prohibited                                           |
+| `HIGH`    | A likely or materially damaging production failure, serious security/privacy weakness, unmet acceptance criterion, unsafe migration, or substantial scope/architecture violation.        | Prohibited                                           |
+| `MEDIUM`  | A real defect or maintainability/operability risk with bounded impact that does not meet `HIGH`.                                                                                         | Fix immediately or defer with rationale and tracking |
+| `LOW`     | A minor issue or improvement with limited production impact.                                                                                                                             | May be deferred with rationale                       |
 
 Severity reflects impact and likelihood, not the effort required to fix the issue. Findings cannot be hidden by downgrading them without evidence, omitting them from the final report, marking them resolved without verification, or moving them to an untracked channel.
 

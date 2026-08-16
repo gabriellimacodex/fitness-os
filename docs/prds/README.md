@@ -10,15 +10,15 @@ Registry presence is planning metadata, not implementation authorization. In par
 
 ## Lifecycle states
 
-| State | Meaning |
-| --- | --- |
-| `PROPOSED` | Roadmap candidate awaiting explicit approval. No design, contract, migration, implementation, or release authority is granted. |
-| `APPROVED` | Explicitly authorized for execution, subject to dependencies, stop conditions, and release gates. |
-| `IN_PROGRESS` | Approved PRD is actively in design or implementation. |
-| `IN_REVIEW` | Implementation is integrated and undergoing independent review, QA/security, correction, or merge gates. |
-| `BLOCKED` | Work cannot safely continue until a stated dependency, gate, or authorized decision is resolved. |
-| `COMPLETED` | Acceptance criteria and all applicable completion and release gates have passed, required PRs are merged, and documentation is current. |
-| `SUPERSEDED` | Replaced by an explicitly identified later decision or PRD; it is not executable and its historical record remains. |
+| State         | Meaning                                                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROPOSED`    | Roadmap candidate awaiting explicit approval. No design, contract, migration, implementation, or release authority is granted.          |
+| `APPROVED`    | Explicitly authorized for execution, subject to dependencies, stop conditions, and release gates.                                       |
+| `IN_PROGRESS` | Approved PRD is actively in design or implementation.                                                                                   |
+| `IN_REVIEW`   | Implementation is integrated and undergoing independent review, QA/security, correction, or merge gates.                                |
+| `BLOCKED`     | Work cannot safely continue until a stated dependency, gate, or authorized decision is resolved.                                        |
+| `COMPLETED`   | Acceptance criteria and all applicable completion and release gates have passed, required PRs are merged, and documentation is current. |
+| `SUPERSEDED`  | Replaced by an explicitly identified later decision or PRD; it is not executable and its historical record remains.                     |
 
 A state transition must be explicit and auditable. `PROPOSED → IN_PROGRESS` is invalid; approval is required first. `COMPLETED` requires acceptance criteria met, zero known `BLOCKER`, zero known `HIGH`, green CI, independent reviewer pass, security pass, QA pass, architecture pass, updated required documentation, merged relevant PRs, and any applicable external gate.
 

@@ -86,23 +86,23 @@ PRD 22 is an isolated proof-of-concept lane. Its dotted relationship to PRD 24 i
 
 Concurrency is optional. The Orchestrator should use only isolated work and must freeze shared executable contracts before dependent Web, API, and Data work proceeds in parallel.
 
-| Wave | Eligible work after dependencies complete | Safe parallelism and constraints |
-| --- | --- | --- |
-| 0 | 00 Engineering Bootstrap | Completed foundation; no additional work authorized by this row. |
-| 1 | 01 Platform Foundation | Run as the shared prerequisite; contract and architecture decisions precede consumers. |
-| 2 | 02 Student & Coach Domain; 03 Exercise Knowledge Base; 04 Movement Library | May proceed concurrently after 01 when contracts and ownership do not overlap. Their integration into 05 waits for all three. |
-| 3 | 05 Training Core; 07 Onboarding; 21 Privacy & Data Governance | May proceed concurrently after their respective dependencies. Privacy/data governance must complete before body-image capture begins. |
-| 4 | 06 Training Execution UX; 08 Body Scan Capture; 15 Training Evidence Engine; 20 Notifications | May proceed concurrently after their own dependencies and contract freezes. |
-| 5 | 09 Body Intelligence; 19 PWA Production Hardening | May proceed concurrently. Body Intelligence requires its capability validation; PWA hardening must not absorb native scope. |
-| 6 | 10 Body Snapshot; 16 Training Copilot | May proceed concurrently after their distinct dependency sets complete. Training Copilot remains evidence-grounded and human-in-the-loop. |
-| 7 | 11 Digital Twin; 14 Progress Photos | May proceed concurrently after 10. Contracts, body data, and reviewers must remain isolated. |
-| 8 | 12 Character Sheet | Starts after Digital Twin completes. |
-| 9 | 13 Evolution Engine | Starts after Body Snapshot and Character Sheet complete. |
-| 10 | 17 Adaptive Training; 23 Pilot Observability | May proceed concurrently after their distinct dependency sets complete. Adaptive changes remain subject to professional approval where consequential. |
-| 11 | 18 Coach Workspace | Integrates prior student, training, progress, and adaptive capabilities; treat this as an integration-heavy wave. |
-| POC | 22 Form Intelligence POC | May run as an isolated research/POC lane after 04 and 06. It must not alter production behavior, production contracts, or release scope before its gate passes. |
-| 12 | 24 Release Candidate | Integration and release-gate work only after every unconditional dependency completes. Form Intelligence is conditional as described above. |
-| 13 | 25 Pilot Release | Requires PRD 24 completion plus the separately authorized pilot release decision and gates. |
+| Wave | Eligible work after dependencies complete                                                     | Safe parallelism and constraints                                                                                                                                |
+| ---- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | 00 Engineering Bootstrap                                                                      | Completed foundation; no additional work authorized by this row.                                                                                                |
+| 1    | 01 Platform Foundation                                                                        | Run as the shared prerequisite; contract and architecture decisions precede consumers.                                                                          |
+| 2    | 02 Student & Coach Domain; 03 Exercise Knowledge Base; 04 Movement Library                    | May proceed concurrently after 01 when contracts and ownership do not overlap. Their integration into 05 waits for all three.                                   |
+| 3    | 05 Training Core; 07 Onboarding; 21 Privacy & Data Governance                                 | May proceed concurrently after their respective dependencies. Privacy/data governance must complete before body-image capture begins.                           |
+| 4    | 06 Training Execution UX; 08 Body Scan Capture; 15 Training Evidence Engine; 20 Notifications | May proceed concurrently after their own dependencies and contract freezes.                                                                                     |
+| 5    | 09 Body Intelligence; 19 PWA Production Hardening                                             | May proceed concurrently. Body Intelligence requires its capability validation; PWA hardening must not absorb native scope.                                     |
+| 6    | 10 Body Snapshot; 16 Training Copilot                                                         | May proceed concurrently after their distinct dependency sets complete. Training Copilot remains evidence-grounded and human-in-the-loop.                       |
+| 7    | 11 Digital Twin; 14 Progress Photos                                                           | May proceed concurrently after 10. Contracts, body data, and reviewers must remain isolated.                                                                    |
+| 8    | 12 Character Sheet                                                                            | Starts after Digital Twin completes.                                                                                                                            |
+| 9    | 13 Evolution Engine                                                                           | Starts after Body Snapshot and Character Sheet complete.                                                                                                        |
+| 10   | 17 Adaptive Training; 23 Pilot Observability                                                  | May proceed concurrently after their distinct dependency sets complete. Adaptive changes remain subject to professional approval where consequential.           |
+| 11   | 18 Coach Workspace                                                                            | Integrates prior student, training, progress, and adaptive capabilities; treat this as an integration-heavy wave.                                               |
+| POC  | 22 Form Intelligence POC                                                                      | May run as an isolated research/POC lane after 04 and 06. It must not alter production behavior, production contracts, or release scope before its gate passes. |
+| 12   | 24 Release Candidate                                                                          | Integration and release-gate work only after every unconditional dependency completes. Form Intelligence is conditional as described above.                     |
+| 13   | 25 Pilot Release                                                                              | Requires PRD 24 completion plus the separately authorized pilot release decision and gates.                                                                     |
 
 Wave placement describes dependency-safe opportunity, not an obligation to maximize agent count and not an approval of any PRD.
 
