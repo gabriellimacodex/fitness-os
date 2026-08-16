@@ -1,11 +1,12 @@
 import type { FastifyServerOptions } from 'fastify';
 
-import { buildApp } from './app.js';
+import { buildApp, type PlatformOptions } from './app.js';
 
 const DEFAULT_PORT = '3001';
 
 // Loopback is the safe local default; deployment must opt in to external binding.
 const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_CORS_ALLOWED_ORIGIN = 'http://localhost:3000';
 
 export interface ServerConfig {
   host: string;
@@ -22,7 +23,10 @@ interface BootstrapApp {
 }
 
 interface BootstrapDependencies {
-  createApp?: (options: FastifyServerOptions) => BootstrapApp;
+  createApp?: (
+    options: FastifyServerOptions,
+    platform: PlatformOptions,
+  ) => BootstrapApp;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -56,6 +60,34 @@ export function parsePort(value: string): number {
   return port;
 }
 
+export function parseCorsAllowedOrigins(value: string | undefined): string[] {
+  const origins = [
+    ...new Set(
+      (value ?? DEFAULT_CORS_ALLOWED_ORIGIN)
+        .split(',')
+        .map((origin) => origin.trim()),
+    ),
+  ];
+
+  for (const origin of origins) {
+    try {
+      const parsed = new URL(origin);
+      if (
+        !['http:', 'https:'].includes(parsed.protocol) ||
+        parsed.origin !== origin
+      ) {
+        throw new Error('invalid origin');
+      }
+    } catch {
+      throw new Error(
+        'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',
+      );
+    }
+  }
+
+  return origins;
+}
+
 export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   return {
     host: env.HOST ?? DEFAULT_HOST,
@@ -67,18 +99,22 @@ export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
 
   try {
-    app = createApp({ logger: LOGGER_OPTIONS });
+    app = createApp(
+      { logger: LOGGER_OPTIONS },
+      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+    );
   } catch (error) {
     runtime.exitCode = 1;
     throw error;
   }
 
   try {
-    await app.listen(readServerConfig(dependencies.env ?? process.env));
+    await app.listen(readServerConfig(env));
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
