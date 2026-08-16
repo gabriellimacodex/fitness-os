@@ -4,14 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @fitness-os/schemas build",
     "dev": "tsx watch src/server.ts",
-    "prebuild": "pnpm --filter @fitness-os/schemas build",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
-    "pretypecheck": "pnpm --filter @fitness-os/schemas build",
     "typecheck": "tsc --noEmit",
-    "pretest": "pnpm --filter @fitness-os/schemas build",
     "test": "vitest run"
   },
   "dependencies": {

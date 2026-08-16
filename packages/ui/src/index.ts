@@ -1,1 +1,1 @@
-export { FoundationMessage } from './foundation-message';
+export { FoundationMessage } from './foundation-message.js';
