@@ -117,6 +117,21 @@ const createModalityTerm = (
   label: `Fixture ${key}`,
 });
 
+const createReplacedModalityTerm = (
+  id: string,
+  key: string,
+  replacedByTermId: string,
+) => ({
+  ...createModalityTerm(id, key),
+  lifecycle: 'replaced' as const,
+  replacedByTermId,
+});
+
+const createEquipmentTerm = (id: string, key: string) => ({
+  ...createModalityTerm(id, key, 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'),
+  dimension: 'equipment' as const,
+});
+
 const compileOnlyMissingInvalidRequest = (
   app: ReturnType<typeof buildApp>,
   reader: ExerciseKnowledgeReader,
@@ -1448,6 +1463,240 @@ describe('exercise catalog read routes', () => {
     });
 
     expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed on a projected taxonomy replacement cycle', async () => {
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const secondId = '22222222-2222-4222-8222-222222222222';
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(firstId, 'cycle-one', secondId),
+          createReplacedModalityTerm(secondId, 'cycle-two', firstId),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed when projected taxonomy terms share one successor', async () => {
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const secondId = '22222222-2222-4222-8222-222222222222';
+    const successorId = '33333333-3333-4333-8333-333333333333';
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(firstId, 'predecessor-one', successorId),
+          createReplacedModalityTerm(secondId, 'predecessor-two', successorId),
+          createModalityTerm(successorId, 'shared-successor'),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed on a cross-dimension replacement in an exercise projection', async () => {
+    const successor = createEquipmentTerm(
+      '22222222-2222-4222-8222-222222222222',
+      'cross-dimension-successor',
+    );
+    const taxonomy = {
+      modality: createReplacedModalityTerm(
+        '11111111-1111-4111-8111-111111111111',
+        'cross-dimension-source',
+        successor.id,
+      ),
+      equipment: [successor],
+    };
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [
+          {
+            ...createActiveSummary(exerciseId, 'cross-dimension-exercise'),
+            taxonomy,
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed on a cross-dimension replacement in a detail projection', async () => {
+    const successor = createEquipmentTerm(
+      '22222222-2222-4222-8222-222222222222',
+      'cross-dimension-successor',
+    );
+    const taxonomy = {
+      modality: createReplacedModalityTerm(
+        '11111111-1111-4111-8111-111111111111',
+        'cross-dimension-source',
+        successor.id,
+      ),
+      equipment: [successor],
+    };
+    const reader = createReader();
+    vi.mocked(reader.getCurrentExercise).mockResolvedValue(
+      exerciseDetailSchema.parse({
+        ...archivedDetail,
+        taxonomy,
+        currentRevision: {
+          ...archivedDetail.currentRevision,
+          taxonomy,
+        },
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}`,
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed on a cross-dimension replacement in a taxonomy projection', async () => {
+    const successor = createEquipmentTerm(
+      '22222222-2222-4222-8222-222222222222',
+      'cross-dimension-successor',
+    );
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(
+            '11111111-1111-4111-8111-111111111111',
+            'cross-dimension-source',
+            successor.id,
+          ),
+          successor,
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('accepts a projected replacement whose successor is not projected', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(
+            '11111111-1111-4111-8111-111111111111',
+            'partial-edge-source',
+            '99999999-9999-4999-8999-999999999999',
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('accepts a projected same-dimension replacement chain', async () => {
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const secondId = '22222222-2222-4222-8222-222222222222';
+    const thirdId = '33333333-3333-4333-8333-333333333333';
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(firstId, 'chain-one', secondId),
+          createReplacedModalityTerm(secondId, 'chain-two', thirdId),
+          createModalityTerm(thirdId, 'chain-three'),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(200);
   });
 
   it('fails closed when one taxonomy dimension uses mixed dimension IDs', async () => {

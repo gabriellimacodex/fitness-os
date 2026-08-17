@@ -92,6 +92,7 @@ const isCatalogProjectionConsistent = ({
   const dimensionIdByKey = new Map<string, string>();
   const dimensionKeyById = new Map<string, string>();
   const termIdByDimensionAndKey = new Map<string, string>();
+  const termById = new Map<string, TaxonomyTerm>();
   const validateTerm = (term: TaxonomyTerm): boolean => {
     const projection = JSON.stringify([
       term.dimensionId,
@@ -121,6 +122,7 @@ const isCatalogProjectionConsistent = ({
     dimensionIdByKey.set(term.dimension, term.dimensionId);
     dimensionKeyById.set(term.dimensionId, term.dimension);
     termIdByDimensionAndKey.set(dimensionAndTermKey, term.id);
+    termById.set(term.id, term);
     return true;
   };
 
@@ -133,6 +135,7 @@ const isCatalogProjectionConsistent = ({
     ...allRevisions.map((revision) => revision.taxonomy),
     ...(detail === undefined ? [] : [detail.taxonomy]),
   ];
+  const taxonomyTermsAreConsistent = taxonomyTerms.every(validateTerm);
   const assignmentsAreConsistent = allAssignments.every((assignment) => {
     const terms = [assignment.modality, ...assignment.equipment];
     return (
@@ -178,12 +181,69 @@ const isCatalogProjectionConsistent = ({
       detail.currentRevision.displayName === detail.currentName &&
       JSON.stringify(detail.taxonomy) ===
         JSON.stringify(detail.currentRevision.taxonomy));
+  const visitedTermIds = new Set<string>();
+  const visitingTermIds = new Set<string>();
+  const hasReplacementCycleFrom = (termId: string): boolean => {
+    if (visitedTermIds.has(termId)) {
+      return false;
+    }
+    if (visitingTermIds.has(termId)) {
+      return true;
+    }
+    visitingTermIds.add(termId);
+    const successorId = termById.get(termId)?.replacedByTermId;
+    if (
+      successorId !== null &&
+      successorId !== undefined &&
+      termById.has(successorId) &&
+      hasReplacementCycleFrom(successorId)
+    ) {
+      return true;
+    }
+    visitingTermIds.delete(termId);
+    visitedTermIds.add(termId);
+    return false;
+  };
+  const replacementGraphIsAcyclic = [...termById.keys()].every(
+    (termId) => !hasReplacementCycleFrom(termId),
+  );
+  const predecessorBySuccessorId = new Map<string, string>();
+  const replacementDimensionsAreConsistent = [...termById.values()].every(
+    (term) => {
+      const successor =
+        term.replacedByTermId === null
+          ? undefined
+          : termById.get(term.replacedByTermId);
+      return (
+        successor === undefined ||
+        (successor.dimensionId === term.dimensionId &&
+          successor.dimension === term.dimension)
+      );
+    },
+  );
+  const replacementPredecessorsAreUnique = [...termById.values()].every(
+    (term) => {
+      const successorId = term.replacedByTermId;
+      if (successorId === null || !termById.has(successorId)) {
+        return true;
+      }
+      const predecessorId = predecessorBySuccessorId.get(successorId);
+      if (predecessorId !== undefined && predecessorId !== term.id) {
+        return false;
+      }
+      predecessorBySuccessorId.set(successorId, term.id);
+      return true;
+    },
+  );
 
   return (
-    taxonomyTerms.every(validateTerm) &&
+    taxonomyTermsAreConsistent &&
     assignmentsAreConsistent &&
     revisionsAreConsistent &&
-    detailIsConsistent
+    detailIsConsistent &&
+    replacementGraphIsAcyclic &&
+    replacementDimensionsAreConsistent &&
+    replacementPredecessorsAreUnique
   );
 };
 
