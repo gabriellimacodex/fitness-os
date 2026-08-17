@@ -157,6 +157,11 @@ export function registerExerciseCatalogRoutes(
       if (
         !page.success ||
         page.data.items.length > query.data.limit ||
+        (page.data.nextCursor !== null &&
+          page.data.items.length !== query.data.limit) ||
+        page.data.items.some(
+          (item, index, items) => index > 0 && item.id <= items[index - 1]!.id,
+        ) ||
         page.data.items.some((item) => {
           if (item.lifecycle !== 'active') {
             return true;
@@ -354,6 +359,20 @@ export function registerExerciseCatalogRoutes(
       if (
         !page.success ||
         page.data.items.length > query.data.limit ||
+        (page.data.nextCursor !== null &&
+          page.data.items.length !== query.data.limit) ||
+        new Set(page.data.items.map((item) => item.dimensionId)).size > 1 ||
+        page.data.items.some((item, index, items) => {
+          if (index === 0) {
+            return false;
+          }
+          const previous = items[index - 1]!;
+          return (
+            item.dimensionId < previous.dimensionId ||
+            (item.dimensionId === previous.dimensionId &&
+              item.id <= previous.id)
+          );
+        }) ||
         page.data.items.some(
           (item) =>
             item.dimension !== query.data.dimension ||
