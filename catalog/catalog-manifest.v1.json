@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "catalog-manifest.v1",
+  "manifestId": "fitness-os-pilot-catalog",
+  "taxonomy": {
+    "modality": [
+      {
+        "key": "strength",
+        "label": "Strength",
+        "meaning": "A broad catalog category for strength exercises."
+      }
+    ],
+    "equipment": [
+      {
+        "key": "bodyweight",
+        "label": "Bodyweight",
+        "meaning": "A catalog category for exercises performed without external equipment."
+      }
+    ]
+  },
+  "exercises": [
+    {
+      "canonicalKey": "bodyweight-squat",
+      "displayName": "Bodyweight Squat",
+      "aliases": ["Air Squat"],
+      "description": "A catalog entry for the bodyweight squat exercise.",
+      "modalityKey": "strength",
+      "equipmentKeys": ["bodyweight"],
+      "provenance": {
+        "originKind": "internally_curated",
+        "changeReason": "Initial Fitness OS pilot catalog publication.",
+        "primaryProvenanceReferenceKey": null
+      },
+      "references": []
+    }
+  ]
+}
