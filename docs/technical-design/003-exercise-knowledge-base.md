@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-- Status: Proposed for independent pre-flight review
+- Status: Approved after independent Agent 90 pre-flight
 - PRD: [PRD 03 — Exercise Knowledge Base](../prds/003-exercise-knowledge-base.md)
 - Authority: Inherited Autonomous Pilot V1 approval for registered PRD 03
 - Dependency: PRD 01 — `COMPLETED`

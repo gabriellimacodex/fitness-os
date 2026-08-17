@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-- Status: Proposed for independent pre-flight review
+- Status: Approved after independent Agent 90 pre-flight
 - PRD: [PRD 04 — Movement Library](../prds/004-movement-library.md)
 - Authority: Inherited approved PRD 04 scope after completed PRD 01
 - Architecture: existing modular monolith and canonical Fastify client/API topology
