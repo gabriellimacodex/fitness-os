@@ -225,13 +225,17 @@ trimming; array order is preserved because it is instructional meaning. A
 durable record at
 `docs/execution/content-reviews/movements/<movementId>-v<contentVersion>.md`
 binds the ID, version, canonical SHA-256, and exact catalog-source commit SHA to
-the author, both reviewer roles, Movement/safety credential title, issuer,
-current-as-of date, movement-scope rationale, intended-reader basis, and every
-rubric result. The source/manifest commit is created first; reviewers inspect
-that immutable commit; the review record is added in a later commit. Gate A
-proves the reviewed commit is an ancestor of the exact head and recalculates the
-same digest from the head, preventing post-review content drift. Personal
-contact details are not copied into runtime content.
+two non-personal role attestations and every rubric result. Each attestation
+contains only a role, broad qualification category, scope-fit result, reader
+perspective when applicable, independence self-attestation, and a fresh random
+reference that is never reused or mapped to a person. The record schema rejects
+names, handles, signatures, contact details, employers, credential/license
+titles or numbers, issuers, and reviewer-specific free text. Fitness OS neither
+collects nor retains the underlying identity or credential evidence. The
+source/manifest commit is created first; reviewers inspect that immutable
+commit; the privacy-minimized record is added later. Gate A proves the reviewed
+commit is an ancestor of the exact head and recalculates the same digest from
+the head, preventing post-review content drift.
 
 The qualified Movement/safety reviewer must be independent of the author and
 hold a current recognized exercise-professional, movement-coaching,
@@ -257,10 +261,10 @@ clarity item:
 4. section headings and the safety prompt are easy to find; and
 5. the entry is understandable without a media asset.
 
-One person may fill both roles only when the record explicitly documents both
-the professional qualification and why the person represents an intended
-reader. The person still must not be the author, must record each rubric
-separately, and must pass every item; a partial result is a failure.
+One person may fill both roles only by submitting both non-personal role
+attestations, including qualification-category/scope and intended-reader
+perspective, plus an independence self-attestation. Each rubric remains separate
+and every item must pass; a partial result is a failure.
 
 Automated checks enforce structure, bounds, manifest history, content digests,
 identifiers, versions, reserved-ID rules, review-record presence, and output
@@ -330,6 +334,12 @@ approved migration and compatibility plan.
 ## Security and privacy review points
 
 - Confirm the catalog and responses contain only public, non-personal text.
+- Confirm review-record schemas reject names, handles, signatures, contact
+  details, employers, credential/license details, issuers, reusable reviewer
+  identifiers, and free text; per-review references have no retained mapping.
+- If identity or credential verification would require collecting linkable
+  reviewer information, stop with `LEGAL_PRIVACY_DECISION_REQUIRED` before
+  collection rather than committing it to Git or another store.
 - Confirm invalid, unknown, withdrawn, malformed-provider, and internal failures
   retain safe envelopes and correlated server-generated IDs.
 - Confirm route IDs are bounded and cannot inject a path, query, URL, HTML, or

@@ -15,8 +15,10 @@ refer to the exact catalog revision they used. Without a governed catalog,
 teams would encode exercise names, aliases, classifications, and source
 references independently and silently change their meaning over time.
 
-PRD 03 is dependency-ready on PRD 01 alone. PRD 02 and PRD 04 may proceed in
-parallel and are not prerequisites for this capability.
+PRD 03 is dependency-ready on PRD 01 alone. PRD 02 and PRD 04 are not
+prerequisites. Their design work may proceed in isolated worktrees, while shared
+contracts, barrels, API composition, and the PRD 02/03 migration lanes follow
+the serialized Wave 2 integration schedule in the Master Execution Plan.
 
 ## Problem
 
@@ -62,7 +64,10 @@ locators are clearly labeled unassessed and cannot drive recommendations.
   archive/reactivate, taxonomy maintenance, and idempotent retry behavior.
 - Add one strict, version-controlled, non-empty production manifest and an
   explicit one-shot ingestion workflow. The manifest is independently reviewed
-  before ingestion and is never treated as a recurring sync or remote feed.
+  before ingestion and is never treated as a recurring sync or remote feed. The
+  command is deployment-only, absent from public/runtime route registration,
+  and refuses content that does not match the exact reviewed source commit and
+  digest.
 - Add read-only Fastify endpoints for catalog listing, current exercise detail,
   immutable revision retrieval, and taxonomy discovery.
 - Add PostgreSQL/Drizzle persistence, one owned forward migration, validation,
@@ -204,6 +209,13 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
 
 - All public mutation methods are absent; unsupported methods return the safe
   platform not-found contract.
+- The production ingestion command is excluded from API and web composition and
+  from the ordinary runtime image. Only an authorized deployment operator with
+  access to the environment's restricted migration/ingestion job and database
+  secret may invoke it; repository access alone grants no execution authority.
+- Before opening a database transaction, ingestion verifies the manifest digest,
+  path, schema version, and source commit against the independently approved
+  review record carried in the deployment artifact. A mismatch fails closed.
 - Identifiers are opaque and carry no user identity or secrets.
 - Route parameters, cursors, filters, keys, names, aliases, descriptions,
   reasons, and locators have strict type, count, and length limits.
@@ -302,7 +314,9 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
     ingested once through executable schemas in a single transaction. Exact
     evidence includes its commit, canonical digest, validated counts, created
     IDs/revisions, operation-ledger result, pre/post database counts, atomic
-    failure test, and identical second-run no-change result.
+    failure test, and identical second-run no-change result. Evidence also proves
+    deployment-only operator execution, absence from API/runtime registration,
+    and exact reviewed-artifact matching.
 12. Canonical input hashing is deterministic and server-owned, and one global
     namespaced operation ledger prevents cross-operation collisions, mismatched
     retries, and duplicate results for publication, lifecycle, taxonomy, and
@@ -358,11 +372,14 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
 - PostgreSQL and Drizzle already selected by ADR 001; no provider or financial
   decision is introduced.
 
-PRD 03 has no dependency on PRD 02 or PRD 04. PRDs 03 and 04 may proceed in
-parallel with non-overlapping contracts. PRD 05 may later consume stable
-exercise and revision identifiers only after its own dependencies and gate are
-satisfied. PRD 15 may later assess reference candidates and build a versioned
-Evidence Base; PRD 03 does not pre-authorize that work.
+PRD 03 has no dependency on PRD 02 or PRD 04. Isolated implementation may
+overlap only in the disjoint paths and ordered lanes defined by the Master
+Execution Plan; schema barrels, domain barrels, API composition, database
+schema, Drizzle metadata, and migration generation are serialized. PRD 05 may
+later consume stable exercise and revision identifiers only after its own
+dependencies and gate are satisfied. PRD 15 may later assess reference
+candidates and build a versioned Evidence Base; PRD 03 does not pre-authorize
+that work.
 
 No current stop condition applies. Production credentials are not required for
 contract, domain, migration, or injected integration validation. If a later

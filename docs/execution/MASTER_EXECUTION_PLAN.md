@@ -90,7 +90,7 @@ Concurrency is optional. The Orchestrator should use only isolated work and must
 | ---- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0    | 00 Engineering Bootstrap                                                                      | Completed foundation; no additional work authorized by this row.                                                                                                |
 | 1    | 01 Platform Foundation                                                                        | Run as the shared prerequisite; contract and architecture decisions precede consumers.                                                                          |
-| 2    | 02 Student & Coach Domain; 03 Exercise Knowledge Base; 04 Movement Library                    | May proceed concurrently after 01 when contracts and ownership do not overlap. Their integration into 05 waits for all three.                                   |
+| 2    | 02 Student & Coach Domain; 03 Exercise Knowledge Base; 04 Movement Library                    | Design may proceed concurrently. Runtime work follows the serialized Wave 2 integration schedule below; integration into 05 waits for all three.                |
 | 3    | 05 Training Core; 07 Onboarding; 21 Privacy & Data Governance                                 | May proceed concurrently after their respective dependencies. Privacy/data governance must complete before body-image capture begins.                           |
 | 4    | 06 Training Execution UX; 08 Body Scan Capture; 15 Training Evidence Engine; 20 Notifications | May proceed concurrently after their own dependencies and contract freezes.                                                                                     |
 | 5    | 09 Body Intelligence; 19 PWA Production Hardening                                             | May proceed concurrently. Body Intelligence requires its capability validation; PWA hardening must not absorb native scope.                                     |
@@ -105,6 +105,27 @@ Concurrency is optional. The Orchestrator should use only isolated work and must
 | 13   | 25 Pilot Release                                                                              | Requires PRD 24 completion plus the separately authorized pilot release decision and gates.                                                                     |
 
 Wave placement describes dependency-safe opportunity, not an obligation to maximize agent count and not an approval of any PRD.
+
+### Wave 2 integration schedule
+
+`IN_PROGRESS` records authorization and lifecycle, not permission for owners to
+edit the same path concurrently. Wave 2 uses one integration branch and these
+ordered lanes:
+
+| Order | Lane            | Exclusive paths and integration rule                                                                                                                                                                                                                                                            |
+| ----- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Design          | PRD 02–04 prose may be authored in isolated worktrees. The Orchestrator alone integrates registry and control-plane changes.                                                                                                                                                                    |
+| 2     | Contract freeze | PRD 02, then PRD 03, then PRD 04 add distinct schema modules/tests. After each addition, the Orchestrator alone updates schema barrels and `docs/contracts`; no provider or consumer begins before the combined freeze head passes review.                                                      |
+| 3     | Domain modules  | Owners may implement only their disjoint `student-coach`, `exercise-catalog`, or `movement-library` module directories against the frozen head. The Orchestrator serializes all domain-barrel changes.                                                                                          |
+| 4     | Data/migrations | One global Data/Infrastructure owner completes and integrates the PRD 02 schema/migration/metadata/adapter lane first. PRD 03 migration generation starts only from that merged main head and is then completed by the sole global database/migration owner. PRD 04 never edits database paths. |
+| 5     | API composition | PRD 03 and PRD 04 owners may add disjoint route modules/tests only after their provider dependencies exist. The Orchestrator alone updates application registration, readiness composition, and shared API tests, one integration at a time. PRD 02 adds no route.                              |
+| 6     | Web             | PRD 04 web files may proceed after the combined contract freeze because they do not edit domain, database, schema barrels, or API registration.                                                                                                                                                 |
+| 7     | Completion      | Each PRD receives its own exact-head tests, review, CI, Gate A record, documentation transition, and merge. A later PRD rebases on every earlier shared-path or migration merge before continuing.                                                                                              |
+
+At no point may two agents generate migrations, edit Drizzle metadata, update a
+shared barrel, or modify API composition concurrently. A change that crosses an
+exclusive path returns to the Orchestrator instead of relying on a later merge
+conflict to discover unsafe ownership.
 
 ## Isolated research and POC lanes
 

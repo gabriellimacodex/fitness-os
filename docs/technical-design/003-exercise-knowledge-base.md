@@ -213,8 +213,9 @@ the candidate; it must not mutate PRD 03 history or reinterpret `unassessed`.
 ### Internal curation boundary
 
 No curation method is registered as an HTTP route. An internal
-`ExerciseCatalogService` exposes narrowly typed operations to trusted
-composition code and tests:
+`ExerciseCatalogService` exposes narrowly typed operations only to the isolated
+deployment command and tests; `apps/api`, `apps/web`, and ordinary runtime
+composition neither import nor register its mutation surface:
 
 - publish an initial or next revision;
 - archive or reactivate an exercise;
@@ -251,11 +252,15 @@ conflict and makes no change. A raw UUID reused in another namespace is a
 different safe key. A stale expected revision is a conflict. These internal
 conflicts are typed domain results, not new public platform error codes.
 
-There is deliberately no actor/user ID because PRD 03 has no dependency on an
-identity or authorization capability. The operation ID, manifest/change reason,
-timestamp, and lifecycle events provide bounded operational traceability.
-Authenticated human authoring and actor attribution require later approved
-scope rather than an invented identity contract.
+There is deliberately no product actor/user ID because PRD 03 has no dependency
+on an identity or authorization capability. Production mutation authority is
+operational instead: only an authorized deployment operator may run the
+restricted ingestion job with its environment-managed database secret. The
+deployment system records the operator/job identity, exact artifact SHA,
+operation ID, outcome, and time without copying credentials into catalog data.
+Repository access or the ability to call public Fastify routes grants no such
+authority. Authenticated product authoring and catalog actor attribution require
+later approved scope rather than an invented identity contract.
 
 ### Production manifest and one-shot ingestion
 
@@ -270,23 +275,35 @@ version control. Its strict executable schema requires:
 - no caller timestamps, generated IDs, content hashes, technique/safety
   guidance, evidence grades, remote payloads, or synthetic fixture markers.
 
-An independent reviewer approves the exact manifest commit before execution.
-An explicit one-shot command reads that repository file, parses the entire
-artifact through its Zod schema, resolves all cross-record invariants in memory,
-canonicalizes it with the server-owned algorithm, and only then begins one
-database transaction under `manifest.ingest:<operationUuid>`. The command uses
-the trusted server clock and server-generated entity IDs, writes all terms,
+An independent reviewer approves the exact manifest commit and records its path,
+schema version, canonical digest, and source commit before execution. The build
+packages that immutable manifest and review record into a dedicated deployment
+artifact; the one-shot command is excluded from API/web registration and the
+ordinary application runtime image. Only the restricted deployment
+migration/ingestion job exposes it.
+
+Before any database access, the command verifies that the packaged manifest's
+path, schema version, source commit, and recomputed canonical digest exactly
+match the approved record and that the reviewed source commit is an ancestor of
+the candidate build SHA. Dirty, untracked, substituted, or mismatched content
+fails closed. The command then parses the entire artifact through its Zod
+schema, resolves all cross-record invariants in memory, and only then begins one
+database transaction under `manifest.ingest:<operationUuid>`. It uses the
+trusted server clock and server-generated entity IDs, writes all terms,
 references, exercises, revisions, associations, lifecycle events, and the
 global ledger result atomically, then exits. There is no watcher, recurring
-sync, remote import, or partial-record fallback.
+sync, remote import, public invocation, or partial-record fallback.
 
 Exact completion evidence records the manifest path and Git commit, schema
 version, independently reviewed disposition, server-computed digest and
 canonicalization version, validated counts by entity type, created stable IDs
 and revision numbers, database and ledger row counts before/after, transaction
 result, and an identical second invocation showing the same result with zero
-row changes. A deliberately invalid manifest proves zero catalog or ledger rows
-survive failure.
+row changes. It also records the deployment job identity, redacted operator
+identity, candidate artifact SHA, proof that no API/runtime import or route can
+invoke the command, and a deliberate reviewed-artifact mismatch rejected before
+database access. A deliberately invalid manifest proves zero catalog or ledger
+rows survive failure.
 
 ## Persistence design
 
@@ -487,7 +504,9 @@ telemetry provider.
   hashes are server-owned, and every mutation resolves the global namespaced
   operation ledger before domain writes.
 - Verify the production manifest is non-empty, independently reviewed,
-  schema-valid, one-shot, atomic, and free of synthetic or out-of-scope content.
+  schema-valid, one-shot, atomic, deployment-operator-only, exactly matched to
+  its reviewed source commit/digest, absent from runtime registration, and free
+  of synthetic or out-of-scope content.
 - Verify database errors and readiness never expose credentials, hosts, SQL,
   schema internals, or stack traces.
 - Verify migrations and seed dimensions contain no secret, personal data,
@@ -566,18 +585,26 @@ that is visibly marked as fixture data.
 
 1. **Pre-flight** — Agent 90 challenges scope, taxonomy/evidence boundaries,
    migration safety, and contract overlap.
-2. **Contract freeze** — API/Domain owns `packages/schemas` tests and the
-   Orchestrator coordinates `docs/contracts`.
-3. **Domain and data** — API/Domain implements rules/ports while one
-   Data/Infrastructure task owns schema, migration, adapter, and database tests.
-4. **API integration** — API/Domain adds read routes and database-backed
-   readiness after frozen contracts and reader port are available.
-5. **QA and correction** — integration, migration/recovery, security,
+2. **Contract freeze** — the PRD 03 owner adds only its distinct exercise
+   schema module/tests after PRD 02's contract addition. The Orchestrator alone
+   integrates schema barrels and `docs/contracts`, then admits PRD 04's distinct
+   movement contract files.
+3. **Domain** — API/Domain owns only the PRD 03 exercise-catalog module files;
+   the Orchestrator serializes the domain barrel with PRD 02 and PRD 04.
+4. **Data** — after the PRD 02 migration is merged, one global
+   Data/Infrastructure owner rebases on that exact main head and exclusively
+   owns the PRD 03 schema, migration, Drizzle metadata, adapter, and database
+   tests. No other migration generation or metadata edit runs concurrently.
+5. **API integration** — API/Domain adds only the distinct exercise route
+   module/tests after frozen contracts and reader port exist. The Orchestrator
+   alone serializes readiness, application registration, and shared API tests
+   with PRD 04.
+6. **QA and correction** — integration, migration/recovery, security,
    architecture, scope, Agent 90, exact-head CI, and Gate A.
 
-PRD 04 may run concurrently only with separate ownership and no modification of
-PRD 03 contracts. Any proposed shared exercise/movement field is a coordinated
-contract decision, not an implicit dependency.
+The Master Execution Plan's Wave 2 schedule is authoritative. PRD 04 may overlap
+only in its listed disjoint files; any proposed shared exercise/movement field
+is a coordinated contract decision, not an implicit dependency.
 
 ## Alternatives considered
 
@@ -629,7 +656,8 @@ contract decision, not an implicit dependency.
   forward-fix-first/safe-restore evidence preserving unrelated sentinel data.
 - Exact non-empty production-manifest review and one-shot ingestion evidence,
   including canonical digest, entity IDs/counts, ledger result, atomic failure,
-  and identical no-change retry.
+  identical no-change retry, restricted deployment-job/operator evidence,
+  reviewed-artifact verification, and absence from API/runtime registration.
 - Deterministic server canonicalization/hash and global namespaced operation
   ledger tests for every mutation family.
 - Architecture pass for modular-monolith, package, dist-first, and Fastify
