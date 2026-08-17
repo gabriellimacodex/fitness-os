@@ -6,6 +6,7 @@ import {
 } from '@fitness-os/schemas';
 import cors from '@fastify/cors';
 import Fastify, {
+  errorCodes,
   type FastifyInstance,
   type FastifyServerOptions,
 } from 'fastify';
@@ -16,6 +17,31 @@ export type ReadinessCheck = () => boolean | Promise<boolean>;
 export interface PlatformOptions {
   corsAllowedOrigins?: readonly string[];
   readinessCheck?: ReadinessCheck;
+}
+
+function isFastifyClientInputError(error: unknown): boolean {
+  if (
+    error instanceof errorCodes.FST_ERR_CTP_BODY_TOO_LARGE ||
+    error instanceof errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY ||
+    error instanceof errorCodes.FST_ERR_CTP_INVALID_CONTENT_LENGTH ||
+    error instanceof errorCodes.FST_ERR_CTP_INVALID_JSON_BODY ||
+    error instanceof errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE
+  ) {
+    return true;
+  }
+
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'FST_ERR_VALIDATION' &&
+    'statusCode' in error &&
+    error.statusCode === 400 &&
+    'validation' in error &&
+    Array.isArray(error.validation) &&
+    'validationContext' in error &&
+    typeof error.validationContext === 'string'
+  );
 }
 
 export function buildApp(
@@ -77,13 +103,7 @@ export function buildApp(
   );
 
   app.setErrorHandler((error, request, reply) => {
-    const isClientError =
-      typeof error === 'object' &&
-      error !== null &&
-      'statusCode' in error &&
-      typeof error.statusCode === 'number' &&
-      error.statusCode >= 400 &&
-      error.statusCode < 500;
+    const isClientError = isFastifyClientInputError(error);
 
     if (!isClientError) {
       request.log.error({ err: error }, 'Request failed');

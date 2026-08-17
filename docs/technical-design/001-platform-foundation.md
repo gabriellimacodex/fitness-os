@@ -79,7 +79,8 @@ request
 
 failure
   → centralized mapping
-  → malformed URL, parser/body-limit, validation → 400 BAD_REQUEST
+  → malformed URL, recognized Fastify parser/body-limit/validation → 400 BAD_REQUEST
+  → all other thrown values, regardless of incidental metadata → 500 INTERNAL_ERROR + log
   → public stable code + safe message + request ID
   → internal error logged with existing redaction
 ```

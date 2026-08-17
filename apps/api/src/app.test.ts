@@ -154,6 +154,8 @@ describe('public errors', () => {
     const app = buildApp({ logger: false });
     app.get('/validation-shaped-explosion', async () => {
       throw Object.assign(new Error('private failure detail'), {
+        code: 'FST_ERR_CTP_INVALID_JSON_BODY',
+        statusCode: 400,
         validation: [],
       });
     });
