@@ -1,5 +1,7 @@
 import type { MovementDetail, MovementSummary } from '@fitness-os/schemas';
 
+import { MovementSession } from './movement-session';
+
 export type CatalogLoadState =
   | { status: 'empty' }
   | { status: 'ready'; items: readonly MovementSummary[] }
@@ -109,14 +111,7 @@ export function MovementDetailView({ state }: { state: MovementLoadState }) {
           ))}
         </ul>
       </section>
-      <section>
-        <h2>Steps</h2>
-        <ol>
-          {movement.steps.map((item, index) => (
-            <li key={`step-${String(index)}`}>{item}</li>
-          ))}
-        </ol>
-      </section>
+      <MovementSession steps={movement.steps} />
       <section>
         <h2>Cues</h2>
         <ul>

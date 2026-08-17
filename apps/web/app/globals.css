@@ -81,10 +81,98 @@ input:focus-visible {
   max-width: 28rem;
 }
 
+.rail {
+  align-items: center;
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--iron) 86%, transparent);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1.15rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rail nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.rail a {
+  color: var(--mute);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.mark {
+  color: var(--chalk) !important;
+  font-size: 1.15rem;
+}
+
 .bar {
   background: var(--sodium);
   height: 0.35rem;
   width: 4.5rem;
+}
+
+.today {
+  background: var(--plate);
+  border: 1px solid var(--line);
+  border-top: 0.35rem solid var(--sodium);
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.15rem 1.05rem 1.25rem;
+  text-decoration: none;
+}
+
+.today strong {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 10vw, 3.4rem);
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.session {
+  background: var(--plate);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.session-line {
+  color: var(--chalk) !important;
+  font-size: 1.25rem;
+}
+
+.session-actions {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.session-actions button {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--chalk);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  padding: 0.7rem;
+  text-transform: uppercase;
+}
+
+.session-actions button:disabled {
+  color: var(--mute);
+}
+
+.rules {
+  color: var(--mute);
+  display: grid;
+  gap: 0.45rem;
+  padding-left: 1.15rem;
 }
 
 .doors {

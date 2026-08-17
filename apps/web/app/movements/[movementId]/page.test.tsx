@@ -26,7 +26,7 @@ describe('MovementDetailView', () => {
       <MovementDetailView state={{ movement: squat, status: 'ready' }} />,
     );
 
-    expect(markup).toContain('<ol');
+    expect(markup).toContain('Step 1 of');
     expect(markup).toContain('Lower with control.');
     expect(markup).toContain('href="/movements"');
     expect(markup).toContain('Version 1');

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Barlow_Condensed, IBM_Plex_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 
+import { AppChrome } from './chrome';
 import './globals.css';
 
 const display = Barlow_Condensed({
@@ -36,7 +37,10 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${body.variable}`}>{children}</body>
+      <body className={`${display.variable} ${body.variable}`}>
+        <AppChrome />
+        {children}
+      </body>
     </html>
   );
 }
