@@ -60,6 +60,9 @@ locators are clearly labeled unassessed and cannot drive recommendations.
   as `unassessed` references.
 - Add an internal transactional curation service for create/publish,
   archive/reactivate, taxonomy maintenance, and idempotent retry behavior.
+- Add one strict, version-controlled, non-empty production manifest and an
+  explicit one-shot ingestion workflow. The manifest is independently reviewed
+  before ingestion and is never treated as a recurring sync or remote feed.
 - Add read-only Fastify endpoints for catalog listing, current exercise detail,
   immutable revision retrieval, and taxonomy discovery.
 - Add PostgreSQL/Drizzle persistence, one owned forward migration, validation,
@@ -106,8 +109,12 @@ rendered as an endorsement, recommendation, or verified scientific citation.
 - Publication is atomic. The catalog's current revision changes only after the
   new revision, taxonomy assignments, provenance, and reference associations
   all validate and commit.
-- The same publication operation identifier and content hash is idempotent. A
-  repeated identifier with different content fails without mutation.
+- Every mutation is registered in one catalog-wide operation ledger. The
+  service owns the operation namespace, canonicalizes validated semantic input,
+  and computes its SHA-256 digest; callers cannot supply or override the digest.
+  Repeating the same namespaced operation identifier and digest returns the
+  committed result. Reusing it with different canonical input fails without
+  mutation.
 - Concurrent publication uses an expected current revision and row-level
   serialization. A stale writer fails rather than overwriting newer content.
 - Public catalog listing includes active exercises only. Direct lookup may
@@ -119,15 +126,23 @@ rendered as an endorsement, recommendation, or verified scientific citation.
   meanings, including after archive.
 - Taxonomy term semantics are immutable. Corrections create a replacement term
   and archive the old term; published revisions keep their original term IDs.
+- Replacement is a permanent, same-dimension, acyclic one-to-one chain. A term
+  may have at most one predecessor and one successor, cannot replace itself,
+  and cannot target an archived or replaced term. Replacement and archive occur
+  atomically. A replaced term cannot be reactivated; an independently archived
+  unchanged term may be reactivated.
 - Initial dimensions are `modality` and `equipment`. Movement-pattern,
   muscle-target, body-region, technique, and safety vocabularies are not
   silently added by this PRD.
 - Each published exercise revision has exactly one active modality term at
   publication time and zero or more equipment terms. Historical assignments
   remain valid if a term is later archived.
-- Revision provenance identifies whether content was internally curated or
-  derived from a recorded public locator and includes a change reason and
-  timestamp. It does not claim scientific validity.
+- Revision provenance uses only `internally_curated` with no primary provenance
+  reference, or `derived_from_public_locator` with exactly one relationally
+  linked primary reference whose purpose is `provenance`. Additional
+  `evidence_candidate` references do not satisfy that invariant. Recorded and
+  publication timestamps come only from the trusted backend clock; manifests
+  and callers cannot set them. Provenance does not claim scientific validity.
 - DOI and HTTPS locators are syntax-validated but never fetched automatically.
   Every PRD 03 reference carries the literal assessment state `unassessed`.
 - PRD 03 reference candidates cannot be used to calculate evidence strength,
@@ -136,6 +151,11 @@ rendered as an endorsement, recommendation, or verified scientific citation.
 - The public HTTP surface is read-only. Internal curation is not a bypass
   around future authentication or authorization; exposing it requires later
   approved scope and security review.
+- The production manifest contains at least one exercise, at least one active
+  modality term, and at least one active equipment term. It passes the same
+  executable schemas and invariants as individual curation commands, contains
+  no synthetic fixture or unassessed claim presented as fact, and commits
+  atomically under one manifest-ingestion ledger operation.
 - All clients use Fastify. Web code never imports the database package.
 
 ## Data
@@ -153,10 +173,13 @@ PRD 03 introduces non-personal catalog data only:
 - append-only lifecycle events and publication operation identifiers.
 
 No student, coach, body, health, biometric-like, credential, or behavioral data
-is stored. Production seed content, if supplied, must be version-controlled,
+is stored. The required production manifest is version-controlled, non-empty,
 plain, provenance-labeled, independently reviewed, and free of technique,
 safety, medical, or evidence claims. Synthetic fixtures are never represented
-as production knowledge.
+as production knowledge. Completion evidence records the manifest path and
+commit, server-computed canonical digest, reviewer disposition, validated item
+counts, created stable IDs and revision numbers, pre/post table counts, ledger
+result, and an identical second-run no-change result.
 
 ## Contracts
 
@@ -212,18 +235,28 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
   request correlation, and returns the generic internal-error envelope.
 - An invalid, duplicate, archived, or wrong-dimension taxonomy term prevents
   publication atomically.
+- A self, cross-dimension, cyclic, branching, merging, second-successor,
+  second-predecessor, archived-target, or concurrent conflicting replacement is
+  rejected atomically. Historical assignments continue to resolve to their
+  original term.
 - A stale expected revision, reused operation identifier with different
   content, or canonical-key collision rejects the internal operation without
   partial writes.
-- A same-operation retry with identical content returns the original result and
-  creates no duplicate revision, association, or lifecycle event.
+- A same namespaced-operation retry with identical server-canonicalized content
+  returns the original result and creates no duplicate revision, association,
+  lifecycle event, or ledger row. A raw operation UUID reused by a different
+  operation kind is isolated by the service-owned namespace.
 - A malformed or unsupported locator is rejected. Network availability never
   affects publication because PRD 03 does not fetch the locator.
 - Archive/reactivate retries are idempotent, and a failed transaction leaves
   lifecycle state and events unchanged.
 - Migration failure stops startup or deployment before catalog traffic. Applied
-  migrations are never rewritten; recovery follows the approved forward-fix or
-  restore procedure.
+  migrations are never rewritten; recovery is forward-fix-first. Restore is a
+  last resort and must preserve unrelated database data and all writes outside
+  the proven affected scope.
+- Production-manifest validation or ingestion failure rolls back the entire
+  manifest and ledger operation. There is no partially published production
+  catalog and no background retry.
 
 ## Acceptance criteria
 
@@ -241,14 +274,20 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
    hard-deleted through the domain/repository API. Archive and reactivate retain
    all prior revisions and append lifecycle evidence.
 5. Taxonomy terms have stable non-reusable keys and immutable semantics;
-   replacement/archive behavior preserves historical revision assignments.
+   replacement/archive behavior enforces same-dimension, acyclic, one-to-one
+   chains and preserves historical revision assignments under concurrency.
 6. Every published revision has valid required provenance, exactly one modality
-   term, valid equipment assignments, and only syntactically valid references
-   whose assessment is explicitly `unassessed`.
+   term, valid equipment assignments, server-owned timestamps, one of the exact
+   permitted origin/reference combinations, and only syntactically valid
+   references whose assessment is explicitly `unassessed`. Database-backed
+   relational tests prove derived provenance cannot exist without its linked
+   provenance-purpose reference.
 7. `GET /exercises`, `GET /exercises/:exerciseId`,
    `GET /exercises/:exerciseId/revisions/:revision`, and
    `GET /exercise-taxonomy` return only schema-valid payloads with bounded,
-   deterministic pagination where applicable.
+   deterministic pagination. Empty exercise or known-dimension results return
+   HTTP 200 with `items: []` and `nextCursor: null`; an unknown dimension is a
+   validated bad request.
 8. Public APIs expose no mutation path, and method, validation, not-found,
    unavailable-storage, corrupt-data, and unexpected-error tests preserve the
    PRD 01 error envelope and server-generated request correlation.
@@ -256,13 +295,22 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
    dependency is unavailable and returns ready only after required migrations
    and a minimal dependency check succeed.
 10. Migration verification covers clean apply, exact schema constraints,
-    idempotent deployment behavior, failure interruption, backup/restore or
-    forward-fix recovery, and protection against destructive rollback after
-    catalog data exists.
-11. No implementation, seed, contract, or documentation adds movement guidance,
+    idempotent deployment behavior, failure interruption, forward-fix-first
+    recovery, and safe restore rehearsal while proving unrelated sentinel data
+    survives apply, failure, correction, and recovery.
+11. A strict non-empty production manifest is independently reviewed and
+    ingested once through executable schemas in a single transaction. Exact
+    evidence includes its commit, canonical digest, validated counts, created
+    IDs/revisions, operation-ledger result, pre/post database counts, atomic
+    failure test, and identical second-run no-change result.
+12. Canonical input hashing is deterministic and server-owned, and one global
+    namespaced operation ledger prevents cross-operation collisions, mismatched
+    retries, and duplicate results for publication, lifecycle, taxonomy, and
+    manifest operations.
+13. No implementation, manifest, contract, or documentation adds movement guidance,
     training behavior, evidence appraisal, a paid provider, user data, public
     authoring, product UI, or a dependency on PRD 02 or PRD 04.
-12. TDD evidence, lint, formatting, typecheck, unit/integration tests,
+14. TDD evidence, lint, formatting, typecheck, unit/integration tests,
     production build, repository check, security/architecture/scope review,
     migration validation, independent Agent 90 review, and exact-head CI all
     pass with zero known `BLOCKER` or `HIGH` findings.
@@ -272,13 +320,18 @@ existing codes. It does not broaden or reinterpret PRD 01 error semantics.
 - 100% of shared PRD 03 request/response variants have executable schemas and
   automated contract tests.
 - 100% of published exercise revisions have immutable identity, required
-  provenance, a content hash, and one modality assignment.
+  relationally valid provenance, a server-owned content hash, and one modality
+  assignment.
 - 100% of stored PRD 03 source locators are syntax-valid and labeled
   `unassessed`; 0 are presented as evidence grades or recommendations.
 - 0 supported operations hard-delete or rewrite published revisions,
   historical taxonomy assignments, or lifecycle events.
 - 0 duplicate revisions or lifecycle events are produced by tested identical
   operation retries.
+- 1 independently reviewed non-empty production manifest is ingested exactly
+  once, with 0 row changes on its identical retry and 0 partial rows on failure.
+- 100% of catalog mutations use the global namespaced operation ledger and the
+  server-owned canonicalization/hash algorithm.
 - 0 known `BLOCKER` and 0 known `HIGH` findings at merge.
 
 ## Technical constraints

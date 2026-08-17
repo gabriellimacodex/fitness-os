@@ -77,18 +77,18 @@ provider, consumer, test, and registry references move together.
 
 ### Proposed shared contract groups
 
-| Group               | Responsibility                                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Identity            | Opaque UUID-based exercise, revision, taxonomy-dimension, taxonomy-term, and reference identifiers           |
-| Lifecycle           | Active and archived catalog states; active, archived, and replaced taxonomy-term states                      |
-| Taxonomy            | Stable dimension/term identity and immutable display semantics                                               |
-| Provenance          | Curated origin kind, recorded timestamp, bounded change reason, and associated reference IDs                 |
-| Reference candidate | DOI or HTTPS locator, provenance/evidence-candidate purpose, and literal `unassessed` assessment             |
-| Exercise summary    | Stable exercise identity, current revision number, current name, lifecycle, and compact taxonomy assignments |
-| Exercise detail     | Summary plus aliases, neutral description, provenance, references, and immutable revision identity           |
-| Historical revision | Exact published revision and the taxonomy/reference associations frozen with it                              |
-| Collection          | Opaque cursor, bounded page size, active-only default, items, and next cursor                                |
-| Queries             | Strict IDs, positive revision number, optional repeated taxonomy-term filters, cursor, and bounded limit     |
+| Group               | Responsibility                                                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Identity            | Opaque UUID-based exercise, revision, taxonomy-dimension, taxonomy-term, and reference identifiers                           |
+| Lifecycle           | Active and archived catalog states; active, archived, and replaced taxonomy-term states                                      |
+| Taxonomy            | Stable dimension/term identity and immutable display semantics                                                               |
+| Provenance          | Curated origin kind, recorded timestamp, bounded change reason, and associated reference IDs                                 |
+| Reference candidate | DOI or HTTPS locator, provenance/evidence-candidate purpose, and literal `unassessed` assessment                             |
+| Exercise summary    | Stable exercise identity, current revision number, current name, lifecycle, and compact taxonomy assignments                 |
+| Exercise detail     | Summary plus aliases, neutral description, provenance, references, and immutable revision identity                           |
+| Historical revision | Exact published revision and the taxonomy/reference associations frozen with it                                              |
+| Collection          | Opaque cursor, bounded page size, items, and nullable next cursor for exercise and taxonomy pages                            |
+| Queries             | Strict IDs, positive revision number, dimension/lifecycle filters, optional taxonomy-term filters, cursor, and bounded limit |
 
 All objects are strict. Free text is normalized to Unicode NFC, trimmed, and
 bounded. Canonical keys use lowercase ASCII letters, digits, and hyphens with a
@@ -103,13 +103,22 @@ states.
 | `GET /exercises`                                 | Returns active current summaries ordered by immutable exercise ID with an opaque cursor; optional taxonomy-term filters use AND semantics |
 | `GET /exercises/:exerciseId`                     | Returns the current published detail, including explicit archived state when directly addressed                                           |
 | `GET /exercises/:exerciseId/revisions/:revision` | Returns the exact published historical revision even when the exercise or assigned terms are archived                                     |
-| `GET /exercise-taxonomy`                         | Returns the two dimensions, active terms, and archived/replacement metadata needed to interpret returned revisions                        |
+| `GET /exercise-taxonomy`                         | Returns a bounded page of terms for a required known dimension, with lifecycle and replacement metadata needed to interpret revisions     |
 
-Default page size is 25 and the maximum is 100. Cursor contents are an
-implementation detail, authenticated only for structural integrity rather than
-treated as authorization, and decoded through the executable query schema.
-Ordering by immutable exercise ID prevents a name change from duplicating or
-skipping rows during traversal.
+Exercise pages default to 25 items. Taxonomy pages default to 50 items. Both
+have a maximum of 100. Taxonomy discovery requires `dimension=modality` or
+`dimension=equipment`, accepts lifecycle `active` by default or explicit
+`archived`/`all`, and orders by immutable `(dimensionId, termId)`. Exercise
+pages order by immutable exercise ID. Cursor contents are an implementation
+detail, authenticated only for structural integrity rather than treated as
+authorization, and decoded through the executable query schema.
+
+A valid query with no exercises or no matching terms returns HTTP 200 with
+`items: []` and `nextCursor: null`. A known dimension with no terms is not an
+error. Missing/unknown dimensions, invalid lifecycle values, out-of-range
+limits, or malformed/mismatched cursors return the safe 400 contract. Archived
+terms referenced by historical revisions remain available through the explicit
+archived/all taxonomy filter; the endpoint never attempts an unbounded dump.
 
 There are no `POST`, `PUT`, `PATCH`, or `DELETE` catalog routes. The routes reuse
 the PRD 01 platform envelope:
@@ -152,24 +161,41 @@ keys. The initial dimension keys are:
 - `modality` — one broad catalog modality per published revision; and
 - `equipment` — zero or more equipment classifications per revision.
 
-Terms are curated data and are not hard-coded as closed TypeScript enums.
-Production terms are supplied through a separately reviewed,
-version-controlled manifest. The implementation may use clearly synthetic terms
-in tests, but it may not represent fixtures as production knowledge.
+Terms are curated data and are not hard-coded as closed TypeScript enums. The
+required production terms are supplied through the independently reviewed,
+version-controlled manifest described below. The implementation may use clearly
+synthetic terms in tests, but it may not represent fixtures as production
+knowledge.
 
 A term's key, dimension, label, and meaning do not change in place. A semantic
-correction creates a new term with `replacesTermId`, then archives the old term.
-Archived terms cannot be assigned to a new revision but remain resolvable for
-historical revisions. Keys from archived/replaced terms remain reserved.
+correction atomically creates an active target term, records a permanent
+same-dimension replacement edge, and archives the source. Each term has at most
+one predecessor and one successor: merges, splits, branching, self-replacement,
+cross-dimension edges, cycles, and replacement by an archived/replaced target
+are prohibited. Replacement chains therefore resolve to exactly one terminal
+active term. Archived terms cannot be assigned to a new revision but remain
+resolvable for historical revisions. Keys from archived/replaced terms remain
+reserved. A replaced term cannot reactivate; only an independently archived,
+semantically unchanged term with no replacement edge may reactivate.
 
 ### Provenance and reference readiness
 
-Every revision has required provenance:
+Every revision has required provenance with exactly one permitted relational
+combination:
 
-- origin kind: internally curated or derived from a recorded public locator;
-- bounded change reason;
-- recorded timestamp; and
-- zero or more associated reference-candidate IDs.
+- `internally_curated`: `primaryProvenanceReferenceId` is null; or
+- `derived_from_public_locator`: `primaryProvenanceReferenceId` identifies one
+  associated reference whose purpose is `provenance`.
+
+Additional references with purpose `evidence_candidate` never satisfy derived
+provenance. A nullable primary-reference foreign key plus database check and
+composite relational constraint (or an equivalently strong deferred constraint
+owned by the migration) makes the combination a database invariant, not only
+an application convention. The service also validates it before insertion.
+Recorded/publication timestamps are created by the injected trusted backend
+clock after validation; manifests and callers do not contain or override them.
+The bounded change reason is caller data, but server time and provenance linkage
+are not.
 
 A reference candidate stores only:
 
@@ -196,15 +222,34 @@ composition code and tests:
 - replace/archive a taxonomy term; and
 - resolve current or historical catalog records.
 
-Each mutation accepts an opaque operation ID. Publication also accepts an
-expected current revision and a content hash derived from the canonical input.
-The service performs validation before opening a transaction and rechecks
-database-owned invariants inside it.
+Each mutation accepts an opaque operation UUID, while the invoked service method
+supplies a fixed namespace such as `exercise.publish`, `exercise.lifecycle`,
+`taxonomy.create`, `taxonomy.replace`, or `manifest.ingest`. Callers cannot
+select the namespace. The global operation key is the namespace plus UUID.
 
-The same operation ID and hash returns the committed result. Reusing an
-operation ID with different input is a conflict and makes no change. A stale
-expected revision is a conflict. These internal conflicts are typed domain
-results, not new public platform error codes.
+After strict schema/domain validation, the service builds canonical semantic
+input by applying Unicode NFC and whitespace rules, serializing fields in a
+fixed schema order, representing null explicitly, omitting no required field,
+sorting aliases by normalized value, sorting taxonomy IDs bytewise, and sorting
+references by `(kind, canonicalLocator, purpose)`. Server-generated IDs,
+timestamps, operation keys, and previous database results are excluded. The
+service computes SHA-256 over UTF-8 canonical JSON with a fixed canonicalization
+version. No caller-supplied hash is accepted or compared as authoritative.
+
+The operation digest covers every validated caller-controlled semantic and
+guard input, including target key/ID, expected current revision, reason,
+taxonomy assignments, references, and manifest ID/version where applicable.
+The immutable revision content hash uses the same versioned canonicalizer over
+the revision-content subset only. Both values are computed by the service after
+validation; neither depends on object insertion order, database row order,
+locale, server time, or generated identifiers.
+
+The service opens a transaction and resolves the global ledger entry before any
+domain write. The same global operation key and server-computed digest returns
+the committed typed result. The same key with different canonical input is a
+conflict and makes no change. A raw UUID reused in another namespace is a
+different safe key. A stale expected revision is a conflict. These internal
+conflicts are typed domain results, not new public platform error codes.
 
 There is deliberately no actor/user ID because PRD 03 has no dependency on an
 identity or authorization capability. The operation ID, manifest/change reason,
@@ -212,28 +257,63 @@ timestamp, and lifecycle events provide bounded operational traceability.
 Authenticated human authoring and actor attribution require later approved
 scope rather than an invented identity contract.
 
+### Production manifest and one-shot ingestion
+
+PRD 03 completion requires one non-empty `catalog-manifest.v1` artifact in
+version control. Its strict executable schema requires:
+
+- a stable manifest ID and schema version;
+- at least one active modality term and one active equipment term;
+- at least one publishable exercise with exactly one modality assignment;
+- canonical keys, plain neutral content, provenance input, and optional inert
+  unassessed references; and
+- no caller timestamps, generated IDs, content hashes, technique/safety
+  guidance, evidence grades, remote payloads, or synthetic fixture markers.
+
+An independent reviewer approves the exact manifest commit before execution.
+An explicit one-shot command reads that repository file, parses the entire
+artifact through its Zod schema, resolves all cross-record invariants in memory,
+canonicalizes it with the server-owned algorithm, and only then begins one
+database transaction under `manifest.ingest:<operationUuid>`. The command uses
+the trusted server clock and server-generated entity IDs, writes all terms,
+references, exercises, revisions, associations, lifecycle events, and the
+global ledger result atomically, then exits. There is no watcher, recurring
+sync, remote import, or partial-record fallback.
+
+Exact completion evidence records the manifest path and Git commit, schema
+version, independently reviewed disposition, server-computed digest and
+canonicalization version, validated counts by entity type, created stable IDs
+and revision numbers, database and ledger row counts before/after, transaction
+result, and an identical second invocation showing the same result with zero
+row changes. A deliberately invalid manifest proves zero catalog or ledger rows
+survive failure.
+
 ## Persistence design
 
 One Data/Infrastructure owner creates one migration and its metadata. Proposed
 tables are:
 
-| Table                             | Purpose and material constraints                                                                                                                                                   |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `exercise`                        | Stable UUID, immutable unique canonical key, lifecycle state, current revision ID/number, timestamps; no hard-delete repository method                                             |
-| `exercise_revision`               | UUID, exercise FK, positive revision number, normalized content, provenance, content hash, publication operation ID, published timestamp; unique exercise/version and operation ID |
-| `taxonomy_dimension`              | Stable UUID and immutable unique key; only `modality` and `equipment` seeded by this capability                                                                                    |
-| `taxonomy_term`                   | Stable UUID, dimension FK, immutable unique key within dimension, label/meaning, lifecycle, optional replacement FK, timestamps                                                    |
-| `exercise_revision_taxonomy_term` | Immutable revision/term association; composite uniqueness and dimension checks enforced by service plus integration tests                                                          |
-| `exercise_reference_candidate`    | Stable UUID, kind, normalized locator, purpose, literal unassessed state, unique kind/locator/purpose                                                                              |
-| `exercise_revision_reference`     | Immutable revision/reference association with composite uniqueness                                                                                                                 |
-| `exercise_lifecycle_event`        | Append-only operation ID, exercise ID, event kind, bounded reason, previous/next state, timestamp                                                                                  |
-| `taxonomy_lifecycle_event`        | Append-only operation ID, term ID, event kind, bounded reason, previous/next state, timestamp                                                                                      |
+| Table                             | Purpose and material constraints                                                                                                                                                                                       |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exercise`                        | Stable UUID, immutable unique canonical key, lifecycle state, current revision ID/number, timestamps; no hard-delete repository method                                                                                 |
+| `catalog_operation`               | Global namespaced operation key, operation kind, canonicalization version, server-computed SHA-256 input digest, status, typed-result locator, server timestamps; one authoritative idempotency ledger                 |
+| `exercise_revision`               | UUID, exercise FK, positive revision number, normalized content, origin kind, nullable primary provenance-reference FK, server-owned content hash/timestamps, operation-ledger FK; unique exercise/version             |
+| `taxonomy_dimension`              | Stable UUID and immutable unique key; only `modality` and `equipment` seeded by this capability                                                                                                                        |
+| `taxonomy_term`                   | Stable UUID, dimension FK, immutable unique key within dimension, label/meaning, lifecycle, optional permanent successor FK, operation-ledger FK, timestamps; same-dimension one-to-one acyclic replacement invariants |
+| `exercise_revision_taxonomy_term` | Immutable revision/term association; composite uniqueness and dimension checks enforced by service plus integration tests                                                                                              |
+| `exercise_reference_candidate`    | Stable UUID, kind, normalized locator, purpose, literal unassessed state, unique kind/locator/purpose                                                                                                                  |
+| `exercise_revision_reference`     | Immutable revision/reference/purpose association with composite uniqueness; supports the deferred primary-provenance relation                                                                                          |
+| `exercise_lifecycle_event`        | Append-only operation-ledger FK, exercise ID, event kind, bounded reason, previous/next state, server timestamp                                                                                                        |
+| `taxonomy_lifecycle_event`        | Append-only operation-ledger FK, term ID, event kind, bounded reason, previous/next state, server timestamp                                                                                                            |
 
 Database constraints enforce foreign keys, uniqueness, positive revision
 numbers, permitted lifecycle/reference literals, nonempty bounded values where
-practical, and replacement terms in the same dimension. Domain validation owns
-cross-row rules that PostgreSQL cannot express safely as a simple constraint,
-and integration tests prove them against a real PostgreSQL instance.
+practical, exact origin/reference combinations, and replacement terms in the
+same dimension. Named uniqueness plus deferred/composite constraints or a
+constraint trigger enforce primary provenance linkage and acyclic one-to-one
+replacement integrity at commit. Domain validation rejects invalid input early;
+PostgreSQL integration tests prove that bypassing the service still cannot
+commit an invalid relational state.
 
 Indexes support:
 
@@ -242,7 +322,7 @@ Indexes support:
 - exercise/revision lookup;
 - active term lookup by dimension;
 - revision assignment joins; and
-- operation-ID idempotency lookup.
+- globally namespaced operation-ledger idempotency lookup.
 
 No generic repository framework, search engine, cache, queue, or external
 catalog service is introduced.
@@ -252,21 +332,26 @@ catalog service is introduced.
 ### Publish revision
 
 1. Parse the internal command through the domain input contract.
-2. Compute or verify the canonical content hash.
-3. Begin a transaction and resolve an existing operation ID.
+2. Canonicalize semantic input with the fixed server algorithm and compute its
+   SHA-256 digest; ignore no field and accept no caller hash.
+3. Begin a transaction and resolve or insert the global namespaced operation
+   ledger entry before any catalog row.
 4. Lock the stable exercise row, or insert the first aggregate under the unique
    canonical-key constraint.
 5. Compare the expected current revision.
 6. Resolve taxonomy terms and reject archived, missing, or wrong-dimension
    assignments; require exactly one modality.
-7. Validate and resolve inert reference candidates without network access.
-8. Insert the immutable revision and associations.
+7. Validate and resolve inert reference candidates without network access, and
+   enforce the exact origin/primary-provenance-reference combination.
+8. Generate IDs and timestamps from trusted server dependencies, then insert
+   the immutable revision and associations.
 9. Update the current revision pointer and append a lifecycle publication event.
 10. Commit and validate the result through the executable output schema.
 
 Any error rolls back the revision, associations, current pointer, and event.
 Unique constraints resolve races that pass prechecks. A retry with the same
-operation ID returns the existing row only after matching its content hash.
+global operation key returns the existing row only after the service recomputes
+and matches the canonical digest and canonicalization version.
 
 ### Archive and reactivate
 
@@ -276,10 +361,14 @@ appends one event in the same transaction. It never modifies the current
 revision or deletes any row. Default list queries filter to active state; direct
 and historical reads do not.
 
-Taxonomy archive/replacement follows the same transaction pattern. A term may
-be archived while historical revisions reference it. New publication cannot
-assign it. Reactivation is allowed only for the same unchanged semantics;
-semantic correction uses replacement instead.
+Taxonomy archive/replacement follows the same transaction and global-ledger
+pattern. Replacement locks the source, proposed target, and existing adjacent
+chain rows in stable ID order. It atomically verifies same dimension, active
+target, no predecessor/successor conflict, no self-edge, and no path back to the
+source before recording the single successor and archiving the source. A unique
+predecessor constraint plus deferred acyclicity enforcement resolves concurrent
+races. Historical references remain unchanged. A replaced term cannot
+reactivate; only an independently archived term with no replacement edge may.
 
 ## API and database composition
 
@@ -300,55 +389,76 @@ the public response contains no dependency name or connection detail.
 ### Forward plan
 
 1. Create a single new immutable migration owned by one assigned data task.
-2. Create tables in dependency order, then constraints and indexes.
+2. Create the global operation ledger and catalog tables in dependency order,
+   then named relational constraints, deferred invariants, and indexes.
 3. Seed only the two taxonomy dimensions with stable predetermined IDs/keys.
 4. Apply against an empty disposable PostgreSQL database in CI.
 5. Verify table, constraint, index, seed, and migration-journal state exactly.
 6. Run repository and route integration tests against the migrated database.
-7. Apply in a production-like environment before enabling catalog routes.
-8. Confirm readiness and read-only smoke behavior without logging credentials.
+7. Create unrelated sentinel schema/data, execute deliberate migration failure
+   and forward correction paths, and prove the sentinel remains byte-for-byte
+   present.
+8. Apply in a production-like environment before enabling catalog routes.
+9. Ingest the exact independently reviewed production manifest once and capture
+   the required digest, IDs, counts, ledger, and no-change retry evidence.
+10. Confirm readiness and read-only smoke behavior without logging credentials.
 
 The migration contains no exercise facts, movement guidance, citations, paid
-source content, or synthetic fixtures. A later production catalog manifest is
-ingested only through the reviewed internal service and is not a schema
-migration.
+source content, or synthetic fixtures. The required production catalog manifest
+is ingested only through the reviewed one-shot internal service and is not a
+schema migration.
 
-### Rollback and recovery
+### Recovery
 
-- Before first catalog data or downstream references exist, rollback may drop
-  only the PRD 03 tables after verifying they contain no non-seed rows and after
-  preserving migration evidence.
-- Once catalog data, published revisions, or downstream references exist, a
-  destructive down migration is prohibited. Recovery uses a new forward
-  migration or restoration from the pre-deployment backup.
-- An applied migration is never edited. A defect receives a new migration.
-- Deployment captures a database backup or restorable snapshot before apply,
-  records the exact migration SHA, and verifies row counts and constraints
-  afterward.
-- Partial apply or failed validation leaves routes disabled/not-ready until a
-  forward fix or verified restore completes.
-- Internal manifest ingestion is independently retryable by operation ID and
-  does not require rolling back schema migration.
+- After any migration has been applied, recovery is forward-fix-first. The
+  applied file is never edited and routine recovery never drops PRD 03 tables,
+  truncates the database, recreates the database, or restores an entire shared
+  database merely because the catalog is empty.
+- Before apply, the operator records the exact migration SHA, migration journal,
+  catalog and unrelated row counts, a sentinel value in an unrelated table, and
+  a verified restorable backup/snapshot appropriate to the environment.
+- A defect receives a new additive corrective migration. Routes remain disabled
+  or not-ready until the forward fix passes schema, invariant, manifest, and
+  sentinel verification.
+- Restore is a last resort only when a forward fix cannot safely recover. The
+  recovery record must prove the restore boundary is catalog-only, or use an
+  approved point-in-time/database recovery procedure that preserves unrelated
+  tables and all newer unrelated writes. A stale whole-database restore that
+  would erase unrelated data is prohibited.
+- Before restore, preserve the failed database and migration evidence, inventory
+  all writes since the backup, verify the restore target and checksum, and obtain
+  the responsible recovery review. After restore, compare unrelated sentinel
+  data and row counts, migration journal, catalog constraints, and any replayed
+  writes before traffic resumes.
+- Manifest ingestion failure needs no database restore: its catalog rows and
+  ledger entry roll back in one transaction. An identical retry is resolved by
+  the manifest operation key and server-computed digest.
 
-Migration tests must exercise clean apply, repeat deployment behavior, a
-deliberate failure, schema verification, non-destructive recovery rules, and a
-restore/forward-fix rehearsal appropriate to the test environment.
+Migration/recovery tests create unrelated sentinel schema/data before apply and
+exercise clean apply, repeat deployment, deliberate partial failure, a new
+forward corrective migration, and a safe restore rehearsal. Every phase asserts
+the sentinel and unrelated row counts are unchanged. Exact evidence records the
+commands, SHAs, migration-journal state, pre/post counts, sentinel digest,
+backup/restore boundary, result, and responsible reviewer.
 
 ## Failure and observability design
 
-| Failure                       | Required behavior                                          |
-| ----------------------------- | ---------------------------------------------------------- |
-| Invalid route input           | 400 safe platform envelope; no handler execution           |
-| Missing/unpublished resource  | 404 safe envelope without disclosing draft/internal state  |
-| Archived exercise in list     | Omitted; direct lookup remains explicit and stable         |
-| Database unavailable          | Readiness not-ready; read request 503 safe envelope        |
-| Stale concurrent publication  | Typed internal conflict; transaction rollback              |
-| Identical publication retry   | Existing result returned; no duplicate rows/events         |
-| Operation-ID/content mismatch | Typed internal conflict; no mutation                       |
-| Invalid taxonomy assignment   | Reject before commit; no partial revision                  |
-| Invalid reference locator     | Reject locally; never issue a network request              |
-| Corrupt row/schema mismatch   | Log correlated internal error; 500 safe envelope           |
-| Migration mismatch            | Startup/deployment fails closed; routes remain unavailable |
+| Failure                                 | Required behavior                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| Invalid route input                     | 400 safe platform envelope; no handler execution                                    |
+| Valid empty exercise/taxonomy query     | 200 with empty items and null cursor                                                |
+| Missing/unpublished resource            | 404 safe envelope without disclosing draft/internal state                           |
+| Archived exercise in list               | Omitted; direct lookup remains explicit and stable                                  |
+| Database unavailable                    | Readiness not-ready; read request 503 safe envelope                                 |
+| Stale concurrent publication            | Typed internal conflict; transaction rollback                                       |
+| Identical namespaced retry              | Existing result returned after server digest match; no duplicate ledger/domain rows |
+| Operation-key/input mismatch            | Typed internal conflict; no mutation                                                |
+| Invalid provenance relation             | Reject before commit and through database constraint                                |
+| Invalid/concurrent taxonomy replacement | Reject entire operation; preserve chain and history                                 |
+| Invalid production manifest             | Reject before transaction, or roll back catalog and ledger atomically               |
+| Invalid reference locator               | Reject locally; never issue a network request                                       |
+| Corrupt row/schema mismatch             | Log correlated internal error; 500 safe envelope                                    |
+| Migration mismatch                      | Startup/deployment fails closed; forward fix preserves unrelated data               |
 
 Structured internal logs use request ID for HTTP reads and operation ID plus
 stable entity IDs for curation. They record outcome categories, duration, and
@@ -368,8 +478,16 @@ telemetry provider.
   as trusted links by the API.
 - Verify `unassessed` is the only PRD 03 assessment state and cannot influence a
   recommendation or safety decision.
+- Verify origin kind, primary provenance reference, association purpose, and
+  server-owned timestamps satisfy only the two permitted combinations even
+  when writes bypass service validation.
 - Verify archived/historical data cannot be hard-deleted through supported
   services and keys cannot be reused.
+- Verify canonicalization is deterministic across input orderings and runtimes,
+  hashes are server-owned, and every mutation resolves the global namespaced
+  operation ledger before domain writes.
+- Verify the production manifest is non-empty, independently reviewed,
+  schema-valid, one-shot, atomic, and free of synthetic or out-of-scope content.
 - Verify database errors and readiness never expose credentials, hosts, SQL,
   schema internals, or stack traces.
 - Verify migrations and seed dimensions contain no secret, personal data,
@@ -392,12 +510,17 @@ Every behavior follows observable Red → minimal Green → refactor evidence.
 ### Domain tests
 
 - first and next publication, immutable older revision, stale expected revision,
-  same-operation retry, operation/content mismatch, and canonical-key race;
+  same namespaced-operation retry, cross-namespace UUID reuse,
+  operation/content mismatch, deterministic canonicalization under permuted
+  equivalent input, rejection of caller hashes/timestamps, and canonical-key
+  race;
 - exact one-modality rule, equipment multiplicity, archived/missing/wrong-
-  dimension terms, replacement semantics, and key non-reuse;
+  dimension terms, key non-reuse, and replacement rejection for self,
+  cross-dimension, cycle, merge, split, second predecessor/successor,
+  archived/replaced target, reactivation, and concurrent races;
 - archive/reactivate idempotency and append-only lifecycle events; and
-- reference syntax, no evidence grading, no remote-fetch port, and provenance
-  requirements.
+- reference syntax, no evidence grading, no remote-fetch port, exact
+  origin/reference combinations, and trusted server-clock requirements.
 
 ### Persistence and migration tests
 
@@ -405,15 +528,31 @@ Every behavior follows observable Red → minimal Green → refactor evidence.
   journal;
 - transaction rollback on each material failure point;
 - uniqueness and concurrent publication behavior;
+- database rejection of invalid primary provenance relations and taxonomy
+  replacement chains when the service is bypassed;
 - historical reads after exercise and term archive;
 - clean database unavailability and corrupt-row mapping; and
-- backup/restore or forward-fix recovery rehearsal with destructive rollback
-  protection once non-seed data exists.
+- forward-fix-first and last-resort safe-restore rehearsals that preserve an
+  unrelated sentinel table, row digest, and post-backup unrelated writes.
+
+### Manifest ingestion tests
+
+- reject an empty manifest, missing dimension vocabulary, synthetic markers,
+  caller timestamps/hashes, invalid cross-references, and any out-of-scope
+  movement/evidence field before mutation;
+- ingest the exact schema-valid non-empty manifest atomically and record its
+  server digest, entity IDs, revisions, counts, and global ledger result;
+- rerun the same manifest operation and prove the same result with zero row
+  changes; and
+- inject a mid-transaction failure and prove zero catalog or ledger rows remain.
 
 ### API integration tests
 
 - active list and opaque cursor boundaries, taxonomy AND filters, detail,
-  archived direct lookup, historical revision, and taxonomy discovery;
+  archived direct lookup, historical revision, and bounded taxonomy discovery
+  across active/archived/all pages;
+- 200 empty exercise pages and known-dimension taxonomy pages with null cursor,
+  plus 400 missing/unknown dimensions and mismatched/tampered cursors;
 - invalid request, unknown resource, unsupported method, unavailable database,
   and corrupted provider result;
 - every success parses through the frozen schema; and
@@ -464,8 +603,9 @@ contract decision, not an implicit dependency.
 
 ## Known limitations
 
-- The public catalog may initially be empty or minimally populated; this design
-  validates governed capability and does not invent a comprehensive catalog.
+- The public catalog is non-empty at completion but deliberately small. The
+  reviewed production manifest proves governed ingestion, not comprehensive
+  exercise coverage or scientific validity.
 - No authenticated curation UI or actor identity exists. Curation remains an
   internal reviewed operation with operation-level traceability.
 - Modality and equipment are deliberately narrow. Movement patterns, muscles,
@@ -486,7 +626,12 @@ contract decision, not an implicit dependency.
 - TDD evidence and green lint, formatting, typecheck, unit/integration tests,
   production build, repository check, and exact-head CI.
 - PostgreSQL migration apply, constraints, concurrency, recovery, and
-  non-destructive rollback evidence.
+  forward-fix-first/safe-restore evidence preserving unrelated sentinel data.
+- Exact non-empty production-manifest review and one-shot ingestion evidence,
+  including canonical digest, entity IDs/counts, ledger result, atomic failure,
+  and identical no-change retry.
+- Deterministic server canonicalization/hash and global namespaced operation
+  ledger tests for every mutation family.
 - Architecture pass for modular-monolith, package, dist-first, and Fastify
   boundaries.
 - Security/privacy pass for read-only public scope, safe errors, inert
