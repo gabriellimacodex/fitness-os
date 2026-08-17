@@ -13,7 +13,11 @@ interface MovementDetailPageProps {
 
 export async function loadMovement(
   movementId: string,
-  client?: { movement: (id: string) => Promise<import('@fitness-os/schemas').MovementDetail> },
+  client?: {
+    movement: (
+      id: string,
+    ) => Promise<import('@fitness-os/schemas').MovementDetail>;
+  },
 ): Promise<MovementLoadState> {
   try {
     const api = client ?? createApiClient({ baseUrl: getApiBaseUrl() });

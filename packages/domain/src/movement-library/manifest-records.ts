@@ -19,7 +19,9 @@ export function assertManifestHistory(
     }
 
     if (JSON.stringify(candidate) !== JSON.stringify(record)) {
-      throw new Error('Existing manifest records cannot be mutated or reordered.');
+      throw new Error(
+        'Existing manifest records cannot be mutated or reordered.',
+      );
     }
   }
 

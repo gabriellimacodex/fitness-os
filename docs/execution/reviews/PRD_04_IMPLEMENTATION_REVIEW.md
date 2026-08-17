@@ -2,19 +2,19 @@
 
 ## Review identity
 
-| Field | Value |
-| --- | --- |
-| Type | Independent Agent 90 implementation review |
-| Round | 1 |
-| Repository | `gabriellimacodex/fitness-os` |
-| Pull request | https://github.com/gabriellimacodex/fitness-os/pull/15 |
-| Candidate branch | `feat/prd-04-movement-library` |
-| Base branch | `main` (`e1bc9e996da1a6df035c63987f6471f4b358f7a9`) |
-| Exact head SHA | `7731903f283e715dac0007465f2163ea864ea806` |
-| Date | 2026-08-17 |
-| Authority | PRD 04 Movement Library (`IN_PROGRESS`), Technical Design 004 approved, contracts frozen |
-| Disposition | `FAIL` |
-| Final recommendation | `CORRECTION_REQUIRED` |
+| Field                | Value                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| Type                 | Independent Agent 90 implementation review                                               |
+| Round                | 1                                                                                        |
+| Repository           | `gabriellimacodex/fitness-os`                                                            |
+| Pull request         | https://github.com/gabriellimacodex/fitness-os/pull/15                                   |
+| Candidate branch     | `feat/prd-04-movement-library`                                                           |
+| Base branch          | `main` (`e1bc9e996da1a6df035c63987f6471f4b358f7a9`)                                      |
+| Exact head SHA       | `7731903f283e715dac0007465f2163ea864ea806`                                               |
+| Date                 | 2026-08-17                                                                               |
+| Authority            | PRD 04 Movement Library (`IN_PROGRESS`), Technical Design 004 approved, contracts frozen |
+| Disposition          | `FAIL`                                                                                   |
+| Final recommendation | `CORRECTION_REQUIRED`                                                                    |
 
 The reviewer did not author PR #15 or its handoff. Builder claims were treated
 as hypotheses and checked against the exact-head tree, the complete
@@ -78,20 +78,20 @@ CI on `7731903` is the engine result relied upon.
 
 ## Required review-area outcomes table
 
-| Review area | Outcome | Rationale |
-| --- | --- | --- |
-| Product / authority | `FAIL` | PRD 04 is `APPROVED` / `IN_PROGRESS` and this mechanics slice is authorized, but shipped identity/version governance and error freshness do not meet the approved PRD/TD. Empty catalog itself is authorized. |
-| DAG | `PASS` | PRD 04 depends only on completed PRD 01. No PRD 03 import, runtime type, or contract reuse. PRD 02/07/21/25 surfaces were not opened. |
-| Product Principles | `FAIL` | PP-09/PP-11 hold for the empty read path. PP-12 is broken by an unauthorized injectable catalog port. PP-08/PP-07 are intact for empty public text. |
-| Architecture | `FAIL` | Fastify remains the only data plane and web pages are dynamic clients. TD 004 forbids an injected catalog/repository; `PlatformOptions.movementCatalog` adds one and is the only 200-detail proof. |
-| Contracts | `PASS` | No schema/registry change. Frozen movement Zod is consumed, not rewritten. No new public error code. |
-| Identity / sessions | `NOT_APPLICABLE` | No account, authn, authz, student, or coach context is introduced. Public catalog access is not reused as a later private-data policy. |
-| Operations | `FAIL` | `.env.example` documents `API_BASE_URL`, but authoring, review, version increment, withdrawal, rollback, and failure runbooks required by PRD Scope are absent. Invalid `API_BASE_URL` crashes the page default-arg path instead of a safe operational state. |
-| Persistence | `PASS` | `packages/database` is untouched. No migration, seed, connection, or product table. `NOT_APPLICABLE` for migrations is justified. |
-| Security / privacy | `FAIL` | Review objects reject listed identifying fields and test authorities cannot satisfy `verifyReviewRecord` unless opted in. Movement 500s omit `Cache-Control: no-store`. Injection can serve unreviewed instructional text. |
-| Failure / recovery | `FAIL` | 400/404 envelopes are correlated and generic. Unexpected catalog/handler failures inherit the platform 500 path without no-store and without a movement-route test. Invalid API origin throws before the page `try`. |
-| Tests / CI | `FAIL` | Job `quality` is green on `7731903`. Required merge-base/history, unexpected-500, detail-query, sequential-withdrawal, and build-inspection evidence is missing. The only 200-detail test uses a fake catalog. |
-| Scope / docs | `FAIL` | Diff stays inside PRD 04 mechanics and does not start another PRD. Required operational/governance documentation was not added. |
+| Review area         | Outcome          | Rationale                                                                                                                                                                                                                                                     |
+| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product / authority | `FAIL`           | PRD 04 is `APPROVED` / `IN_PROGRESS` and this mechanics slice is authorized, but shipped identity/version governance and error freshness do not meet the approved PRD/TD. Empty catalog itself is authorized.                                                 |
+| DAG                 | `PASS`           | PRD 04 depends only on completed PRD 01. No PRD 03 import, runtime type, or contract reuse. PRD 02/07/21/25 surfaces were not opened.                                                                                                                         |
+| Product Principles  | `FAIL`           | PP-09/PP-11 hold for the empty read path. PP-12 is broken by an unauthorized injectable catalog port. PP-08/PP-07 are intact for empty public text.                                                                                                           |
+| Architecture        | `FAIL`           | Fastify remains the only data plane and web pages are dynamic clients. TD 004 forbids an injected catalog/repository; `PlatformOptions.movementCatalog` adds one and is the only 200-detail proof.                                                            |
+| Contracts           | `PASS`           | No schema/registry change. Frozen movement Zod is consumed, not rewritten. No new public error code.                                                                                                                                                          |
+| Identity / sessions | `NOT_APPLICABLE` | No account, authn, authz, student, or coach context is introduced. Public catalog access is not reused as a later private-data policy.                                                                                                                        |
+| Operations          | `FAIL`           | `.env.example` documents `API_BASE_URL`, but authoring, review, version increment, withdrawal, rollback, and failure runbooks required by PRD Scope are absent. Invalid `API_BASE_URL` crashes the page default-arg path instead of a safe operational state. |
+| Persistence         | `PASS`           | `packages/database` is untouched. No migration, seed, connection, or product table. `NOT_APPLICABLE` for migrations is justified.                                                                                                                             |
+| Security / privacy  | `FAIL`           | Review objects reject listed identifying fields and test authorities cannot satisfy `verifyReviewRecord` unless opted in. Movement 500s omit `Cache-Control: no-store`. Injection can serve unreviewed instructional text.                                    |
+| Failure / recovery  | `FAIL`           | 400/404 envelopes are correlated and generic. Unexpected catalog/handler failures inherit the platform 500 path without no-store and without a movement-route test. Invalid API origin throws before the page `try`.                                          |
+| Tests / CI          | `FAIL`           | Job `quality` is green on `7731903`. Required merge-base/history, unexpected-500, detail-query, sequential-withdrawal, and build-inspection evidence is missing. The only 200-detail test uses a fake catalog.                                                |
+| Scope / docs        | `FAIL`           | Diff stays inside PRD 04 mechanics and does not start another PRD. Required operational/governance documentation was not added.                                                                                                                               |
 
 ## Findings
 

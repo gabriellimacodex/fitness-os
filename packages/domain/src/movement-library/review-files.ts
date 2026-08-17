@@ -1,9 +1,11 @@
-import { movementContentVersionSchema, movementIdSchema } from '@fitness-os/schemas';
+import {
+  movementContentVersionSchema,
+  movementIdSchema,
+} from '@fitness-os/schemas';
 
 import type { MovementReviewRecord } from './review-record.js';
 
-const FIELD = (name: string) =>
-  new RegExp(`^${name}:\\s*(.+)$`, 'm');
+const FIELD = (name: string) => new RegExp(`^${name}:\\s*(.+)$`, 'm');
 
 export function parseReviewRecordMarkdown(
   markdown: string,

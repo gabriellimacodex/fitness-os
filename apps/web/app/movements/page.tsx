@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function loadMovements(client?: {
-  movements: () => Promise<{ items: readonly import('@fitness-os/schemas').MovementSummary[] }>;
+  movements: () => Promise<{
+    items: readonly import('@fitness-os/schemas').MovementSummary[];
+  }>;
 }): Promise<CatalogLoadState> {
   try {
     const api = client ?? createApiClient({ baseUrl: getApiBaseUrl() });

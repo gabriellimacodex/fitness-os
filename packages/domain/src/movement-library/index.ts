@@ -13,7 +13,10 @@ export {
   cloneMovementDetail,
   digestMovementDetail,
 } from './canonical.js';
-export { COMMITTED_MOVEMENT_MANIFEST, assertManifestHistory } from './manifest-records.js';
+export {
+  COMMITTED_MOVEMENT_MANIFEST,
+  assertManifestHistory,
+} from './manifest-records.js';
 export { COMMITTED_PUBLISHED_MOVEMENTS } from './published.js';
 export {
   assertValidManifestRecord,
