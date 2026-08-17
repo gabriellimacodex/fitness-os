@@ -94,6 +94,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 repositories', () => {
       missing: ['coach'],
     });
     await expect(database.links.findById(linkInput.id)).resolves.toBeNull();
+
+    await database.db.execute(
+      sql`TRUNCATE student_coach_links, students, coaches`,
+    );
+    await database.coaches.create(coach);
+
+    await expect(database.links.create(linkInput)).resolves.toEqual({
+      status: 'missing_references',
+      missing: ['student'],
+    });
+    await expect(database.links.findById(linkInput.id)).resolves.toBeNull();
   });
 
   it('creates and reads one active student-coach link', async () => {
