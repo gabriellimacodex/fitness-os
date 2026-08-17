@@ -3,10 +3,17 @@ import { readFile } from 'node:fs/promises';
 import { catalogManifestSchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { hashManifestIngestionOperation } from '../src/exercise-catalog/index.js';
+import {
+  CATALOG_CANONICALIZATION_VERSION,
+  hashManifestIngestionOperation,
+} from '../src/exercise-catalog/index.js';
 
 const manifestUrl = new URL(
   '../../../catalog/catalog-manifest.v1.json',
+  import.meta.url,
+);
+const reviewUrl = new URL(
+  '../../../catalog/catalog-manifest.v1.review.json',
   import.meta.url,
 );
 
@@ -20,5 +27,30 @@ describe('production catalog manifest', () => {
     expect(manifest.exercises.length).toBeGreaterThan(0);
     expect(source.toLowerCase()).not.toMatch(/synthetic|fixture/);
     expect(hashManifestIngestionOperation(manifest)).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('is bound to the exact independently approved source commit and digest', async () => {
+    const manifest = catalogManifestSchema.parse(
+      JSON.parse(await readFile(manifestUrl, 'utf8')),
+    );
+    const review = JSON.parse(await readFile(reviewUrl, 'utf8')) as unknown;
+
+    expect(review).toEqual({
+      recordVersion: 'catalog-manifest-review.v1',
+      disposition: 'PASS',
+      reviewerRole: 'independent-agent-90',
+      manifestPath: 'catalog/catalog-manifest.v1.json',
+      schemaVersion: manifest.schemaVersion,
+      canonicalizationVersion: CATALOG_CANONICALIZATION_VERSION,
+      sourceCommit: '199671a797b49325e2cf165bc1ce84d7ef3a212b',
+      canonicalDigest: hashManifestIngestionOperation(manifest),
+      counts: {
+        modalityTerms: 1,
+        equipmentTerms: 1,
+        exercises: 1,
+        references: 0,
+      },
+      findings: { blocker: 0, high: 0, medium: 0, low: 0 },
+    });
   });
 });
