@@ -63,3 +63,19 @@ literally `unassessed`; the contracts contain no evidence grade, movement
 instruction, training behavior, user data, or public mutation command. The
 production manifest is non-empty and contains no generated IDs, caller
 timestamps, or hashes; provider logic supplies those values after validation.
+
+### PRD 04 — Movement Library
+
+| Contract                                  | Executable schema                                                                            | Provider                         | Consumers                          | Status |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------- | ------ |
+| Movement identity/version                 | `movementIdSchema` and `movementContentVersionSchema`                                        | Movement catalog                 | Domain, API, web client, and tests | Frozen |
+| Movement summary/detail                   | `movementSummarySchema` and `movementDetailSchema`                                           | Movement catalog                 | API routes and web rendering       | Frozen |
+| `GET /movements` input/output             | `movementEmptyQuerySchema` and `movementListResponseSchema`                                  | `apps/api` movement list route   | Web API client and future clients  | Frozen |
+| `GET /movements/:movementId` input/output | `movementDetailParamsSchema`, `movementEmptyQuerySchema`, and `movementDetailResponseSchema` | `apps/api` movement detail route | Web API client and future clients  | Frozen |
+
+Movement objects are strict, text-only, normalized, bounded, and free of
+HTML-like markup and control characters. The list contains at most 100 items;
+every query key is rejected. These contracts expose no search, pagination,
+personalization, PRD 03 taxonomy, persistence, media, suitability decision, or
+training prescription. Existing platform error schemas remain the only public
+error envelopes.
