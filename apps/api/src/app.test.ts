@@ -250,6 +250,24 @@ describe('public errors', () => {
     expect(response.statusCode).toBe(400);
     expect(body.error.code).toBe('BAD_REQUEST');
     expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    expect(response.headers['cache-control']).toBe('no-store');
+    await app.close();
+  });
+
+  it('maps overlong route parameters to the no-store bad-request envelope', async () => {
+    const app = buildApp({ logger: false });
+    app.get('/bounded/:value', async () => ({ ok: true }));
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/bounded/${'a'.repeat(101)}`,
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    expect(response.headers['cache-control']).toBe('no-store');
     await app.close();
   });
 

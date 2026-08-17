@@ -14,6 +14,10 @@ import { randomUUID } from 'node:crypto';
 
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
+type RouterErrorHandler = NonNullable<
+  NonNullable<FastifyServerOptions['routerOptions']>['onBadUrl']
+>;
+
 export interface PlatformOptions {
   corsAllowedOrigins?: readonly string[];
   readinessCheck?: ReadinessCheck;
@@ -46,28 +50,35 @@ export function buildApp(
     validationErrors.add(error);
     return error;
   };
+  const sendRouterBadRequest: RouterErrorHandler = (
+    _path,
+    _request,
+    response,
+  ) => {
+    const requestId = randomUUID();
+    const payload = JSON.stringify(
+      apiErrorResponseSchema.parse({
+        error: {
+          code: 'BAD_REQUEST',
+          message: 'Invalid request',
+          requestId,
+        },
+      }),
+    );
+
+    response.statusCode = 400;
+    response.setHeader('cache-control', 'no-store');
+    response.setHeader('content-type', 'application/json; charset=utf-8');
+    response.setHeader('x-request-id', requestId);
+    response.end(payload);
+  };
   const app = Fastify({
     ...options,
     genReqId: () => randomUUID(),
     routerOptions: {
       ...options.routerOptions,
-      onBadUrl: (_path, _request, response) => {
-        const requestId = randomUUID();
-        const payload = JSON.stringify(
-          apiErrorResponseSchema.parse({
-            error: {
-              code: 'BAD_REQUEST',
-              message: 'Invalid request',
-              requestId,
-            },
-          }),
-        );
-
-        response.statusCode = 400;
-        response.setHeader('content-type', 'application/json; charset=utf-8');
-        response.setHeader('x-request-id', requestId);
-        response.end(payload);
-      },
+      onBadUrl: sendRouterBadRequest,
+      onMaxParamLength: sendRouterBadRequest,
     },
     requestIdHeader: false,
     schemaErrorFormatter: formatSchemaError,
