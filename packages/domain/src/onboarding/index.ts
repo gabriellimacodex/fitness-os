@@ -6,7 +6,11 @@ export {
   transitionAttempt,
   type AttemptTransitionResult,
 } from './attempt.js';
-export { evaluateClaimEligibility, type ClaimDenial } from './claim.js';
+export {
+  evaluateClaimEligibility,
+  type ClaimDenial,
+  type ProposedRole,
+} from './claim.js';
 export {
   claimInvitation,
   inspectInvitationState,

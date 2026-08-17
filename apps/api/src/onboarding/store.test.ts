@@ -1,0 +1,44 @@
+import { invitationClaimSecretSchema } from '@fitness-os/schemas';
+import { describe, expect, it } from 'vitest';
+
+import {
+  createOnboardingStore,
+  digestClaimSecret,
+  findInvitationBySecret,
+  mappingIdFor,
+} from './store.js';
+import { seedIssuedInvitation } from './test-store.js';
+
+describe('onboarding store', () => {
+  it('stores only a versioned HMAC of a claim secret', () => {
+    const store = createOnboardingStore();
+    const secret = invitationClaimSecretSchema.parse(
+      'synthetic-claim-secret-01',
+    );
+    const invitation = seedIssuedInvitation(store, { claimSecret: secret });
+
+    expect(invitation.claimDigest).toBe(
+      digestClaimSecret(secret, store.pepper),
+    );
+    expect(invitation.claimDigest.startsWith('hmac-sha256.v1:')).toBe(true);
+    expect(invitation.claimDigest).not.toContain(secret);
+    expect(JSON.stringify([...store.invitations.values()])).not.toContain(
+      secret,
+    );
+    expect(findInvitationBySecret(store, secret)?.invitationId).toBe(
+      invitation.invitationId,
+    );
+  });
+
+  it('derives a stable mapping identifier from principal and role', () => {
+    expect(mappingIdFor('principal-a', 'student')).toBe(
+      mappingIdFor('principal-a', 'student'),
+    );
+    expect(mappingIdFor('principal-a', 'student')).not.toBe(
+      mappingIdFor('principal-a', 'coach'),
+    );
+    expect(mappingIdFor('principal-a', 'student')).not.toBe(
+      mappingIdFor('principal-b', 'student'),
+    );
+  });
+});
