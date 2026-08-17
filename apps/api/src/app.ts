@@ -12,12 +12,21 @@ import Fastify, {
 } from 'fastify';
 import { randomUUID } from 'node:crypto';
 
+import {
+  registerOnboardingRoutes,
+  type ResolveOnboardingContext,
+} from './onboarding/routes.js';
+import type { OnboardingStore } from './onboarding/store.js';
 import { registerMovementRoutes } from './movement-routes.js';
 
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
 export interface PlatformOptions {
   corsAllowedOrigins?: readonly string[];
+  onboarding?: {
+    resolveContext?: ResolveOnboardingContext;
+    store?: OnboardingStore;
+  };
   readinessCheck?: ReadinessCheck;
 }
 
@@ -155,6 +164,7 @@ export function buildApp(
   });
 
   registerMovementRoutes(app);
+  registerOnboardingRoutes(app, platform.onboarding);
 
   return app;
 }
