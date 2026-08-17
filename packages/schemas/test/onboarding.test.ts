@@ -54,9 +54,9 @@ describe('onboarding identity contracts', () => {
 
 describe('onboarding public requests', () => {
   it('accepts inspect, create, and claim bodies without server-owned fields', () => {
-    expect(
-      inspectInvitationRequestSchema.parse({ claimSecret }),
-    ).toEqual({ claimSecret });
+    expect(inspectInvitationRequestSchema.parse({ claimSecret })).toEqual({
+      claimSecret,
+    });
     expect(
       createAttemptRequestSchema.parse({ retryToken, claimSecret }),
     ).toEqual({ retryToken, claimSecret });
@@ -117,6 +117,30 @@ describe('onboarding operation envelope', () => {
 
     expect(response.result?.outcome).toBe('selection_required');
     expect(response.operation.state).toBe('operation_committed');
+  });
+
+  it('rejects a claim secret on a non-issue command success', () => {
+    expect(
+      onboardingOperationResponseSchema.safeParse({
+        operation: {
+          operationId: '33333333-3333-4333-8333-333333333333',
+          namespace: 'inspect_invitation',
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'c'.repeat(64),
+          state: 'operation_committed',
+        },
+        result: {
+          outcome: 'command_succeeded',
+          command: 'inspect_invitation',
+          issued: {
+            invitationId: '66666666-6666-4666-8666-666666666666',
+            claimSecret: 'A'.repeat(22),
+            purpose: 'student_onboarding',
+            state: 'issued',
+          },
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it('accepts locator-only attempt and invitation identifiers', () => {

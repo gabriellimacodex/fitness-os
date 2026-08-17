@@ -29,7 +29,7 @@ Authenticated onboarding also uses the coordinated `UNAUTHENTICATED`,
 `FORBIDDEN`, and `CONFLICT` members of `apiErrorCodeSchema`. Existing
 `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_ERROR`, and `SERVICE_UNAVAILABLE`
 meanings remain unchanged.
-| Public API error envelope           | `apiErrorResponseSchema` in `packages/schemas`                   | `apps/api` | Web API client and future clients             | Frozen |
+| Public API error envelope | `apiErrorResponseSchema` in `packages/schemas` | `apps/api` | Web API client and future clients | Frozen |
 
 The platform contracts were frozen before the API provider and web consumer implementation. Provider and consumer tests must validate through these schemas. Public API errors carry the server-generated correlation identifier and must not expose raw exception or dependency details.
 
@@ -87,14 +87,14 @@ error envelopes.
 
 ### PRD 07 — Onboarding
 
-| Contract group       | Executable schemas                                                                                         | Provider                         | Consumers                                      | Status |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------- | ---------------------------------------------- | ------ |
-| Identity             | Nominal principal/binding/mapping IDs and backend-only `principalReferenceSchema` in `onboarding.ts`       | Onboarding domain/API            | Domain services and adapters                   | Frozen |
-| Invitations          | Invitation IDs, purpose/state, inspect/issue/revoke request and safe result schemas in `onboarding.ts`     | Onboarding invitation services   | API handlers, web client, and tests            | Frozen |
-| Attempts             | Attempt IDs, lifecycle, summaries, locators, and detail schemas in `onboarding.ts`                         | Onboarding attempt services      | API handlers, web client, and tests            | Frozen |
-| Policy handoff       | Reference-only interaction/package/evidence schemas in `onboarding.ts`                                     | Policy gateway adapter           | Attempt/policy refresh handlers                | Frozen |
-| Operation protocol   | `retryTokenSchema`, `operationEnvelopeSchema`, and closed operation states in `onboarding.ts`              | Onboarding operation services    | API mutation handlers and tests                | Frozen |
-| Commands and results | Browser request schemas and `onboardingCommandResultSchema` / `onboardingOperationResponseSchema`          | `apps/api` onboarding routes     | Web client and tests                           | Frozen |
+| Contract group       | Executable schemas                                                                                     | Provider                       | Consumers                           | Status |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------- | ------ |
+| Identity             | Nominal principal/binding/mapping IDs and backend-only `principalReferenceSchema` in `onboarding.ts`   | Onboarding domain/API          | Domain services and adapters        | Frozen |
+| Invitations          | Invitation IDs, purpose/state, inspect/issue/revoke request and safe result schemas in `onboarding.ts` | Onboarding invitation services | API handlers, web client, and tests | Frozen |
+| Attempts             | Attempt IDs, lifecycle, summaries, locators, and detail schemas in `onboarding.ts`                     | Onboarding attempt services    | API handlers, web client, and tests | Frozen |
+| Policy handoff       | Reference-only interaction/package/evidence schemas in `onboarding.ts`                                 | Policy gateway adapter         | Attempt/policy refresh handlers     | Frozen |
+| Operation protocol   | `retryTokenSchema`, `operationEnvelopeSchema`, and closed operation states in `onboarding.ts`          | Onboarding operation services  | API mutation handlers and tests     | Frozen |
+| Commands and results | Browser request schemas and `onboardingCommandResultSchema` / `onboardingOperationResponseSchema`      | `apps/api` onboarding routes   | Web client and tests                | Frozen |
 
 Onboarding IDs are nominally incompatible with PRD 02 `StudentId`, `CoachId`,
 and `StudentCoachLinkId`. Public browser requests accept only retry tokens and

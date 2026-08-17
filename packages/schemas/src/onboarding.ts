@@ -4,12 +4,14 @@ const uuidV4 = () => z.uuidv4();
 
 export const principalIdSchema = uuidV4().brand<'PrincipalId'>();
 export const principalBindingIdSchema = uuidV4().brand<'PrincipalBindingId'>();
-export const principalRoleMappingIdSchema = uuidV4().brand<'PrincipalRoleMappingId'>();
+export const principalRoleMappingIdSchema =
+  uuidV4().brand<'PrincipalRoleMappingId'>();
 export const principalReferenceAliasIdSchema =
   uuidV4().brand<'PrincipalReferenceAliasId'>();
 export const onboardingInvitationIdSchema =
   uuidV4().brand<'OnboardingInvitationId'>();
-export const onboardingAttemptIdSchema = uuidV4().brand<'OnboardingAttemptId'>();
+export const onboardingAttemptIdSchema =
+  uuidV4().brand<'OnboardingAttemptId'>();
 export const onboardingOperationIdSchema =
   uuidV4().brand<'OnboardingOperationId'>();
 export const onboardingCompletionIdSchema =
@@ -286,14 +288,33 @@ export const operationEnvelopeSchema = z
   })
   .strict();
 
-export const onboardingCommandResultSchema = z.discriminatedUnion('outcome', [
+export const onboardingCommandResultSchema = z.union([
   z
     .object({
       outcome: z.literal('command_succeeded'),
-      attempt: attemptDetailSchema.optional(),
-      invitation: studentInvitationMetadataSchema.optional(),
-      issued: issuedInvitationResponseSchema.optional(),
-      inspection: inspectInvitationResponseSchema.optional(),
+      command: z.literal('inspect_invitation'),
+      inspection: inspectInvitationResponseSchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal('command_succeeded'),
+      command: z.literal('attempt'),
+      attempt: attemptDetailSchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal('command_succeeded'),
+      command: z.literal('issue_student_invitation'),
+      issued: issuedInvitationResponseSchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal('command_succeeded'),
+      command: z.literal('revoke_student_invitation'),
+      invitation: studentInvitationMetadataSchema,
     })
     .strict(),
   z
@@ -363,9 +384,13 @@ export const onboardingMechanismReadinessSchema = z
 
 export type PrincipalId = z.infer<typeof principalIdSchema>;
 export type PrincipalBindingId = z.infer<typeof principalBindingIdSchema>;
-export type PrincipalRoleMappingId = z.infer<typeof principalRoleMappingIdSchema>;
+export type PrincipalRoleMappingId = z.infer<
+  typeof principalRoleMappingIdSchema
+>;
 export type PrincipalReference = z.infer<typeof principalReferenceSchema>;
-export type OnboardingInvitationId = z.infer<typeof onboardingInvitationIdSchema>;
+export type OnboardingInvitationId = z.infer<
+  typeof onboardingInvitationIdSchema
+>;
 export type OnboardingAttemptId = z.infer<typeof onboardingAttemptIdSchema>;
 export type OnboardingOperationId = z.infer<typeof onboardingOperationIdSchema>;
 export type InvitationClaimSecret = z.infer<typeof invitationClaimSecretSchema>;
