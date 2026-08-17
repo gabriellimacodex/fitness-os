@@ -84,7 +84,8 @@ The existing `healthResponseSchema` remains unchanged. `docs/contracts/README.md
 - A readiness check that returns `false`, throws, or rejects returns HTTP 503 with the not-ready contract; only an explicit `true` returns ready.
 - An invalid configured origin is rejected without enabling cross-origin access.
 - An unknown route returns the stable not-found error contract.
-- A validation failure returns a stable bad-request error contract.
+- Malformed URLs, parser/body-limit failures, and validation failures return the
+  stable bad-request error contract with server-generated request correlation.
 - An unexpected exception is logged server-side and returns a generic internal-error contract.
 - A successful response that violates its client schema is rejected by the typed web client rather than trusted.
 - A non-success response that violates the error schema becomes a generic client-side protocol error without exposing raw response content.
@@ -94,7 +95,9 @@ The existing `healthResponseSchema` remains unchanged. `docs/contracts/README.md
 1. `GET /health` remains HTTP 200 with the existing exact contract.
 2. `GET /ready` returns HTTP 200 when the injected readiness check passes and HTTP 503 when it fails, with both payloads validated by the shared executable schema.
 3. Every API response carries the server-generated `x-request-id`; public error envelopes carry that same identifier, and a client-supplied ID is never reflected.
-4. Unknown routes, validation failures, and unexpected exceptions return the shared error schema with stable codes and no internal error detail.
+4. Unknown routes, malformed URLs, parser/body-limit failures, validation
+   failures, and unexpected exceptions return the shared error schema with
+   stable codes and no internal error detail.
 5. CORS permits configured origins, rejects unconfigured origins, and does not enable credentials by default.
 6. The reusable web client validates success and error payloads with `packages/schemas` and supports an injected fetch implementation for deterministic tests.
 7. New behavior is developed with observable Red → Green test evidence and all existing tests remain green.

@@ -61,31 +61,37 @@ export function parsePort(value: string): number {
 }
 
 export function parseCorsAllowedOrigins(value: string | undefined): string[] {
-  const origins = [
-    ...new Set(
-      (value ?? DEFAULT_CORS_ALLOWED_ORIGIN)
-        .split(',')
-        .map((origin) => origin.trim()),
-    ),
-  ];
+  const normalizedOrigins = (value ?? DEFAULT_CORS_ALLOWED_ORIGIN)
+    .split(',')
+    .map((origin) => origin.trim())
+    .map((origin) => {
+      let parsed: URL;
 
-  for (const origin of origins) {
-    try {
-      const parsed = new URL(origin);
+      try {
+        parsed = new URL(origin);
+      } catch {
+        throw new Error(
+          'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',
+        );
+      }
+
       if (
         !['http:', 'https:'].includes(parsed.protocol) ||
-        parsed.origin !== origin
+        parsed.username !== '' ||
+        parsed.password !== '' ||
+        parsed.pathname !== '/' ||
+        parsed.search !== '' ||
+        parsed.hash !== ''
       ) {
-        throw new Error('invalid origin');
+        throw new Error(
+          'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',
+        );
       }
-    } catch {
-      throw new Error(
-        'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',
-      );
-    }
-  }
 
-  return origins;
+      return parsed.origin;
+    });
+
+  return [...new Set(normalizedOrigins)];
 }
 
 export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {

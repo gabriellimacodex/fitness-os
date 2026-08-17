@@ -45,12 +45,23 @@ describe('parseCorsAllowedOrigins', () => {
     ).toEqual(['https://student.example', 'https://coach.example']);
   });
 
+  it('normalizes equivalent absolute HTTP(S) origins before deduplication', () => {
+    expect(
+      parseCorsAllowedOrigins(
+        'HTTPS://EXAMPLE.COM/,https://example.com:443,http://LOCALHOST:80',
+      ),
+    ).toEqual(['https://example.com', 'http://localhost']);
+  });
+
   it('rejects empty and non-HTTP absolute origins', () => {
     for (const value of [
       '',
       'https://valid.example,',
       'relative',
       'ftp://host',
+      'https://user:secret@host',
+      'https://host/path',
+      'https://host?query=value',
     ]) {
       expect(() => parseCorsAllowedOrigins(value)).toThrow(
         'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',

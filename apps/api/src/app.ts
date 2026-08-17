@@ -9,6 +9,7 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from 'fastify';
+import { randomUUID } from 'node:crypto';
 
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
@@ -21,7 +22,31 @@ export function buildApp(
   options: FastifyServerOptions = {},
   platform: PlatformOptions = {},
 ): FastifyInstance {
-  const app = Fastify(options);
+  const app = Fastify({
+    ...options,
+    genReqId: () => randomUUID(),
+    routerOptions: {
+      ...options.routerOptions,
+      onBadUrl: (_path, _request, response) => {
+        const requestId = randomUUID();
+        const payload = JSON.stringify(
+          apiErrorResponseSchema.parse({
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'Invalid request',
+              requestId,
+            },
+          }),
+        );
+
+        response.statusCode = 400;
+        response.setHeader('content-type', 'application/json; charset=utf-8');
+        response.setHeader('x-request-id', requestId);
+        response.end(payload);
+      },
+    },
+    requestIdHeader: false,
+  });
   const corsAllowedOrigins = new Set(
     platform.corsAllowedOrigins ?? ['http://localhost:3000'],
   );
@@ -52,18 +77,23 @@ export function buildApp(
   );
 
   app.setErrorHandler((error, request, reply) => {
-    const isValidationError =
-      typeof error === 'object' && error !== null && 'validation' in error;
+    const isClientError =
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      typeof error.statusCode === 'number' &&
+      error.statusCode >= 400 &&
+      error.statusCode < 500;
 
-    if (!isValidationError) {
+    if (!isClientError) {
       request.log.error({ err: error }, 'Request failed');
     }
 
-    return reply.code(isValidationError ? 400 : 500).send(
+    return reply.code(isClientError ? 400 : 500).send(
       apiErrorResponseSchema.parse({
         error: {
-          code: isValidationError ? 'BAD_REQUEST' : 'INTERNAL_ERROR',
-          message: isValidationError ? 'Invalid request' : 'Unexpected error',
+          code: isClientError ? 'BAD_REQUEST' : 'INTERNAL_ERROR',
+          message: isClientError ? 'Invalid request' : 'Unexpected error',
           requestId: request.id,
         },
       }),
@@ -80,7 +110,7 @@ export function buildApp(
     let ready = false;
 
     try {
-      ready = await readinessCheck();
+      ready = (await readinessCheck()) === true;
     } catch (error) {
       request.log.error({ err: error }, 'Readiness check failed');
     }

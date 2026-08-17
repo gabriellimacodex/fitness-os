@@ -40,6 +40,26 @@ describe('GET /health', () => {
     expect(response.headers['x-request-id']).toBeTruthy();
     expect(response.headers['x-request-id']).not.toBe('client-controlled');
   });
+
+  it('enforces server-generated identifiers even when Fastify options request client IDs', async () => {
+    const appWithUnsafeOption = buildApp({
+      genReqId: () => 'caller-controlled',
+      requestIdHeader: 'x-request-id',
+    });
+
+    const response = await appWithUnsafeOption.inject({
+      method: 'GET',
+      url: '/missing',
+      headers: { 'x-request-id': 'client-controlled' },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.headers['x-request-id']).toBeTruthy();
+    expect(response.headers['x-request-id']).not.toBe('client-controlled');
+    expect(response.headers['x-request-id']).not.toBe('caller-controlled');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    await appWithUnsafeOption.close();
+  });
 });
 
 describe('GET /ready', () => {
@@ -86,6 +106,19 @@ describe('GET /ready', () => {
     });
     await app.close();
   });
+
+  it('treats every non-literal-true runtime result as not ready', async () => {
+    const invalidCheck = (() => 'yes') as unknown as () => boolean;
+    const app = buildApp({}, { readinessCheck: invalidCheck });
+
+    const response = await app.inject({ method: 'GET', url: '/ready' });
+
+    expect(response.statusCode).toBe(503);
+    expect(readinessResponseSchema.parse(response.json())).toEqual({
+      status: 'not_ready',
+    });
+    await app.close();
+  });
 });
 
 describe('public errors', () => {
@@ -117,6 +150,26 @@ describe('public errors', () => {
     await app.close();
   });
 
+  it('does not mistake an unrelated validation-shaped exception for client input', async () => {
+    const app = buildApp({ logger: false });
+    app.get('/validation-shaped-explosion', async () => {
+      throw Object.assign(new Error('private failure detail'), {
+        validation: [],
+      });
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/validation-shaped-explosion',
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private failure detail');
+    await app.close();
+  });
+
   it('maps Fastify validation failures to the bad-request envelope', async () => {
     const app = buildApp({ logger: false });
     app.get(
@@ -134,6 +187,47 @@ describe('public errors', () => {
     );
 
     const response = await app.inject({ method: 'GET', url: '/validated' });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    await app.close();
+  });
+
+  it('maps malformed URLs to the bad-request envelope with correlation', async () => {
+    const app = buildApp({ logger: false });
+
+    const response = await app.inject({ method: 'GET', url: '/%' });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    await app.close();
+  });
+
+  it.each([
+    {
+      name: 'malformed JSON',
+      options: { logger: false },
+      payload: '{"broken":',
+    },
+    {
+      name: 'the configured body limit',
+      options: { logger: false, bodyLimit: 4 },
+      payload: '{"value":"too large"}',
+    },
+  ])('maps $name to the bad-request envelope', async ({ options, payload }) => {
+    const app = buildApp(options);
+    app.post('/body', async () => ({ ok: true }));
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/body',
+      headers: { 'content-type': 'application/json' },
+      payload,
+    });
     const body = apiErrorResponseSchema.parse(response.json());
 
     expect(response.statusCode).toBe(400);

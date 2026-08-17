@@ -40,21 +40,26 @@ Zod remains the only executable Source of Truth. The human contract registry ref
 
 - an injected readiness check with the exact signature `() => boolean | Promise<boolean>` and a default in-process `true` result;
 - a `/ready` route that maps check success to 200 and failure/exception to 503 without exposing dependency details;
-- centralized not-found and error handlers that emit the shared error envelope;
+- centralized malformed-URL, not-found, parser/validation, and unexpected-error
+  handling that emits the shared error envelope;
 - a response hook that publishes Fastify's request identifier as `x-request-id`;
 - `@fastify/cors` configured from a parsed comma-separated `CORS_ALLOWED_ORIGINS` environment value, with credentials disabled.
 
 `buildApp` receives explicit platform options for tests and composition. Bootstrap owns environment parsing and passes the resulting CORS allowlist. Business/domain logic is not added.
 
-Fastify's client request-ID header option remains disabled. The API always uses Fastify's server-generated `request.id`; it never accepts or reflects a client-supplied request identifier. The response header and error envelope copy only that generated value.
+Fastify's client request-ID header option remains disabled and `buildApp`
+overrides any conflicting passthrough option. The API always uses an opaque,
+server-generated identifier; it never accepts or reflects a client-supplied
+request identifier. The response header and error envelope copy only that
+generated value, including Fastify's pre-routing malformed-URL path.
 
 Readiness mapping is exact:
 
-| Check outcome               | HTTP | Payload                                        |
-| --------------------------- | ---- | ---------------------------------------------- |
-| resolves or returns `true`  | 200  | ready variant                                  |
-| resolves or returns `false` | 503  | not-ready variant                              |
-| throws or rejects           | 503  | not-ready variant; exception logged internally |
+| Check outcome                | HTTP | Payload                                        |
+| ---------------------------- | ---- | ---------------------------------------------- |
+| resolves or returns `true`   | 200  | ready variant                                  |
+| any non-literal-`true` value | 503  | not-ready variant                              |
+| throws or rejects            | 503  | not-ready variant; exception logged internally |
 
 No dependency name, exception message, or stack is included in the response.
 
@@ -74,6 +79,7 @@ request
 
 failure
   → centralized mapping
+  → malformed URL, parser/body-limit, validation → 400 BAD_REQUEST
   → public stable code + safe message + request ID
   → internal error logged with existing redaction
 ```
@@ -81,8 +87,12 @@ failure
 ## Configuration
 
 - `HOST` and `PORT` retain their existing validated behavior.
-- `CORS_ALLOWED_ORIGINS` is optional, comma-separated, trimmed, deduplicated, and defaults to `http://localhost:3000` for local development.
-- Empty entries and invalid absolute HTTP(S) origins fail startup configuration validation.
+- `CORS_ALLOWED_ORIGINS` is optional, comma-separated, trimmed, normalized
+  through the URL origin serializer, deduplicated, and defaults to
+  `http://localhost:3000` for local development.
+- Scheme/host casing, a root trailing slash, and default ports are normalized.
+  Empty entries and values containing credentials, non-root paths, queries,
+  fragments, or invalid/non-HTTP(S) URLs fail startup configuration validation.
 - No credentials are stored in the setting.
 
 `.env.example` documents the local non-secret value.
@@ -101,7 +111,8 @@ Every behavior follows one-test Red → minimal Green → refactor:
 
 - schema parsing for every readiness/error variant;
 - readiness 200/503 and exception containment;
-- not-found, validation, and unexpected-error mapping;
+- malformed-URL, not-found, parser/body-limit, validation, and unexpected-error
+  mapping;
 - request-ID header/body correlation;
 - CORS allowed/disallowed/no-origin behavior;
 - environment parsing defaults and rejection cases;
