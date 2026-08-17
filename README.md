@@ -4,7 +4,7 @@ Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly 
 
 ## Status
 
-**Epic 00 and PRDs 01–02 are complete.** PRDs 03–04 are in progress, and Autonomous Pilot V1 authorizes PRDs 05–24 through the Pilot Release Candidate subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
+**Epic 00 and PRDs 01–02 are complete.** PRD 03 is blocked by `ARCHITECTURE_DECISION_REQUIRED`, PRD 04 is in progress, and Autonomous Pilot V1 authorizes PRDs 05–24 through the Pilot Release Candidate subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
 
 ## Stack
 

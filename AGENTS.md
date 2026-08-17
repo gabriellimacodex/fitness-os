@@ -15,7 +15,7 @@ A lower-level instruction may not violate a higher-level decision. Stop and repo
 
 ## Authorization boundary
 
-Follow the [Autonomous Delivery Control Plane](docs/execution/README.md). Standing authority applies only to a current `APPROVED` PRD. A `PROPOSED` roadmap entry never authorizes implementation. PRDs 00–02 are complete; PRDs 03–04 are in progress; PRDs 05–24 remain approved under Autonomous Pilot V1 authorization; PRD 25 remains proposed and must not begin without separate explicit authorization.
+Follow the [Autonomous Delivery Control Plane](docs/execution/README.md). Standing authority applies only to a current `APPROVED` PRD. A `PROPOSED` roadmap entry never authorizes implementation. PRDs 00–02 are complete; PRD 03 is blocked by `ARCHITECTURE_DECISION_REQUIRED`; PRD 04 is in progress; PRDs 05–24 remain approved under Autonomous Pilot V1 authorization; PRD 25 remains proposed and must not begin without separate explicit authorization.
 
 The Next.js application is PWA-ready; it is not a full offline-capable PWA. A service worker, offline cache, icon matrix, and advanced install experience remain deferred.
 
