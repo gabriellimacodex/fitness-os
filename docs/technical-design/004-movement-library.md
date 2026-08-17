@@ -225,17 +225,25 @@ trimming; array order is preserved because it is instructional meaning. A
 durable record at
 `docs/execution/content-reviews/movements/<movementId>-v<contentVersion>.md`
 binds the ID, version, canonical SHA-256, and exact catalog-source commit SHA to
-two non-personal role attestations and every rubric result. Each attestation
+two non-personal role approval receipts and every rubric result. Each receipt
 contains only a role, broad qualification category, scope-fit result, reader
-perspective when applicable, independence self-attestation, and a fresh random
-reference that is never reused or mapped to a person. The record schema rejects
-names, handles, signatures, contact details, employers, credential/license
-titles or numbers, issuers, and reviewer-specific free text. Fitness OS neither
-collects nor retains the underlying identity or credential evidence. The
-source/manifest commit is created first; reviewers inspect that immutable
-commit; the privacy-minimized record is added later. Gate A proves the reviewed
-commit is an ancestor of the exact head and recalculates the same digest from
-the head, preventing post-review content drift.
+perspective when applicable, verified-humanness and verified-independence
+booleans, issuance instant, and a fresh random single-use nonce. A
+founder-designated Human Review Authority verifies the human reviewer's
+independence and applicable qualification before signing the exact payload with
+a dedicated offline/private key. Repository validation uses only its public key,
+rejects nonce reuse, and binds the signature to the exact content commit/digest;
+neither an author nor an agent can mint a valid production receipt.
+
+The record schema rejects names, handles, contact details, employers,
+credential/license titles or numbers, issuers, reviewer signatures, reusable or
+linkable reviewer identifiers, and reviewer-specific free text. Fitness OS
+neither collects nor retains the underlying identity or credential evidence.
+The source/manifest commit is created first; reviewers inspect that immutable
+commit; the authority performs the approved private verification and adds the
+privacy-minimized signed receipt later. Gate A proves the reviewed commit is an
+ancestor of the exact head, recalculates the same digest, validates both
+signatures, and proves every nonce is unique.
 
 The qualified Movement/safety reviewer must be independent of the author and
 hold a current recognized exercise-professional, movement-coaching,
@@ -261,10 +269,9 @@ clarity item:
 4. section headings and the safety prompt are easy to find; and
 5. the entry is understandable without a media asset.
 
-One person may fill both roles only by submitting both non-personal role
-attestations, including qualification-category/scope and intended-reader
-perspective, plus an independence self-attestation. Each rubric remains separate
-and every item must pass; a partial result is a failure.
+One person may fill both roles only when the Human Review Authority verifies the
+requirements for both roles and issues two separately scoped receipts. Each
+rubric remains separate and every item must pass; a partial result is a failure.
 
 Automated checks enforce structure, bounds, manifest history, content digests,
 identifiers, versions, reserved-ID rules, review-record presence, and output
@@ -337,9 +344,14 @@ approved migration and compatibility plan.
 - Confirm review-record schemas reject names, handles, signatures, contact
   details, employers, credential/license details, issuers, reusable reviewer
   identifiers, and free text; per-review references have no retained mapping.
-- If identity or credential verification would require collecting linkable
-  reviewer information, stop with `LEGAL_PRIVACY_DECISION_REQUIRED` before
-  collection rather than committing it to Git or another store.
+- Confirm signed receipts verify against the Human Review Authority public key,
+  cannot be minted with test keys, bind the exact artifact, and reject nonce
+  reuse, failed qualification/scope/independence, or failed rubric fields.
+- Before the authority processes linkable identity or credential information,
+  even transiently, stop with `LEGAL_PRIVACY_DECISION_REQUIRED` unless an
+  explicit handling/storage/access/retention/deletion policy exists. Obtaining
+  the real signing key requires `CREDENTIALS_REQUIRED`; synthetic keys prove
+  mechanics only and never satisfy Gate A.
 - Confirm invalid, unknown, withdrawn, malformed-provider, and internal failures
   retain safe envelopes and correlated server-generated IDs.
 - Confirm route IDs are bounded and cannot inject a path, query, URL, HTML, or
@@ -382,6 +394,10 @@ implementation, then is refactored without changing assertions.
 - Merge-base/history fixtures prove manifest records cannot be changed, removed,
   or reordered; versions cannot be reused or skipped; digest drift and missing
   exact-version review records fail CI.
+- Receipt tests use an explicitly synthetic test key to prove signature and
+  exact-payload verification, single-use nonces, required passing fields, and
+  rejection of identifying fields. The test key is denylisted for Gate A and
+  can never make content publishable.
 - Publish, revision, withdrawal, and reviewed republish fixtures prove current
   catalog state is derived from the latest append-only lifecycle record.
 - Returned data cannot mutate the source catalog.

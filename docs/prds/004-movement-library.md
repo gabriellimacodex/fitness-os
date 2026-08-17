@@ -115,13 +115,14 @@ schema tests alone. Before publication, every exact content version must pass:
    not author the entry and can judge whether the text is understandable without
    unstated movement knowledge.
 
-One person may fill both roles only when the privacy-minimized attestation
+One person may fill both roles only when the privacy-minimized approval receipt
 affirms both the relevant qualification category/scope and an intended-reader
-perspective. The reviewer self-attests that they are not the content author.
-Every rubric item must be recorded as `PASS`; a partial pass is not publication
-approval. A failed or unavailable required review activates
-`HUMAN_PERCEPTION_REQUIRED` at the completion gate and cannot be replaced by an
-agent's opinion.
+perspective. A founder-designated Human Review Authority must verify humanness,
+independence from the author, and qualification before issuing that receipt;
+self-attestation alone is insufficient. Every rubric item must be `PASS`; a
+partial pass is not publication approval. A failed or unavailable required
+review activates `HUMAN_PERCEPTION_REQUIRED` at the completion gate and cannot
+be replaced by an agent's opinion.
 
 ## Business rules
 
@@ -178,25 +179,35 @@ withdrawal appends a record rather than deleting identity history. Catalog
 construction is deterministic and has no network, clock, random, database, or
 provider input.
 
-The durable review record contains two non-personal role attestations. It records
-only `movement_safety` or `intended_reader`, a broad qualification category,
-scope-fit result, reader perspective (`student` or `coach`), independence
-self-attestation, every rubric result, and a fresh random per-review reference
-that is not reused or mapped to a person. It binds the decision to
-`(movementId, contentVersion)`, the canonical content digest, and exact
-catalog-source commit SHA. Names, handles, signatures, contact details,
-employers, credential/license titles or numbers, issuers, and reviewer-specific
-free text are prohibited. Fitness OS does not collect, retain, or link the
-underlying identity or credential evidence. The content and manifest are
-committed first so that SHA exists; reviewers assess that immutable commit and
-digest; then the privacy-minimized record is committed under
+The durable review record contains two non-personal, cryptographically signed
+role approval receipts. Each records only `movement_safety` or
+`intended_reader`, a broad qualification category, scope-fit result, reader
+perspective (`student` or `coach`), verified-humanness and verified-independence
+booleans, every rubric result, an issuance instant, and a fresh random
+single-use nonce. It binds the decision to `(movementId, contentVersion)`, the
+canonical content digest, and exact catalog-source commit SHA. CI verifies the
+receipt against a dedicated Human Review Authority public key and rejects a
+reused nonce, invalid signature, failed boolean/rubric, or mismatched artifact.
+An author or agent cannot mint a valid receipt without the separately controlled
+human-held signing key.
+
+Names, handles, contact details, employers, credential/license titles or
+numbers, issuers, reviewer signatures, linkable reviewer identifiers, and
+reviewer-specific free text are prohibited from the receipt and repository.
+Fitness OS does not collect, retain, or link the underlying identity or
+credential evidence. The content and manifest are committed first so that SHA
+exists; reviewers assess that immutable commit and digest; the Human Review
+Authority verifies the required properties through the approved private process
+and then issues the privacy-minimized receipt under
 `docs/execution/content-reviews/movements/<movementId>-v<contentVersion>.md`.
 Gate A verifies the reviewed source commit is an ancestor of the exact head and
 that the head still produces the recorded digest. These governance records are
 not exposed in the public API. If verified identities, credential evidence, or
-linkable reviewer records are later required, collection stops under
-`LEGAL_PRIVACY_DECISION_REQUIRED` until storage, access, retention, and deletion
-policy is explicitly decided.
+linkable reviewer records must be processed even transiently by the verification
+process, collection stops under `LEGAL_PRIVACY_DECISION_REQUIRED` until storage,
+access, retention, deletion, and handling are explicitly decided. Provisioning
+or accessing the real signing key triggers `CREDENTIALS_REQUIRED`; tests use an
+obviously synthetic key and cannot satisfy the human completion gate.
 
 No persistence layer or migration is authorized. `packages/database` remains
 unchanged. Moving the catalog to persistent storage requires a later approved
@@ -342,12 +353,14 @@ or fabricate professional authority.
    checks, and provide safe empty, unavailable, malformed, and not-found states.
 7. Every exact published version has a durable record showing every rubric item
    passed by a qualified independent Movement/safety reviewer and an independent
-   intended reader through the non-personal attestation fields above. A combined
-   reviewer supplies both role attestations. If either review is failed or
-   unavailable, publication and Gate A stop with `HUMAN_PERCEPTION_REQUIRED`.
-   No published field contains HTML, remote media, diagnosis, rehabilitation,
-   suitability decisions, personalized advice, training prescription, invented
-   citation, or claim of universal safety.
+   intended reader through signed non-personal approval receipts from the Human
+   Review Authority. A combined reviewer receives both role receipts. CI proves
+   their signatures, single-use nonces, exact-artifact binding, and passing
+   fields. If either review or authority is failed or unavailable, publication
+   and Gate A stop with `HUMAN_PERCEPTION_REQUIRED`. No published field contains
+   HTML, remote media, diagnosis, rehabilitation, suitability decisions,
+   personalized advice, training prescription, invented citation, or claim of
+   universal safety.
 8. The implementation introduces no PRD 03 import or runtime dependency, no
    authentication or private-data behavior, no provider integration, and no
    database schema or migration.
@@ -366,8 +379,8 @@ or fabricate professional authority.
   detail schema and have unique, non-reserved IDs and positive versions.
 - 100% of published entries have recorded independent content-review evidence
   bound to the exact ID, version, digest, and source commit, with both reviewer
-  role attestations present and every rubric item passing, but no reviewer
-  personal or credential identifier retained.
+  role receipts valid and every rubric item passing, but no reviewer personal or
+  credential identifier retained.
 - 100% of movement provider and consumer response variants have executable
   schema tests.
 - 100% of movement pages have automated semantic-state coverage and documented
