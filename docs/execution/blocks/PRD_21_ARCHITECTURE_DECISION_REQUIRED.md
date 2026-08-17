@@ -1,7 +1,10 @@
 # PRD 21 — Architecture Decision Required
 
-- Status: `ACTIVE`
+- Status: `DECISION_RECORDED`
 - Recorded: 2026-08-17
+- Decision recorded: 2026-08-17
+- Selected option: `A`
+- Decision record: [PRD 21 Option A](../decisions/PRD_21_OPTION_A.md)
 - Stop condition: `ARCHITECTURE_DECISION_REQUIRED`
 - Affected path: PRD 21 and every dependency path that requires PRD 21
 - Independent review target: `df76f91c1f73f12031eaacfa9da9af38d1b39670`
@@ -15,8 +18,10 @@ The third exact-head independent review still found two architectural HIGH
 findings across canonical idempotency and durable lifecycle proof. The
 Autonomous Delivery Charter therefore prohibits another autonomous patch
 round. No schema freeze, Gate A PASS, merge, completion transition, real-data
-processing, or production activation is permitted until an authorized
-architecture decision is recorded.
+processing, or production activation was permitted until an authorized
+architecture decision was recorded. Option A is now recorded; implementation
+has not resumed. `LEGAL_PRIVACY_DECISION_REQUIRED` remains independently
+active.
 
 ## Unresolved conflicts
 
@@ -102,17 +107,16 @@ Approve Option A. It resolves both findings without weakening the reviewed
 replay or proof model and keeps reconstruction deterministic from persisted
 operation kind plus canonicalization version.
 
-Until a decision is explicitly recorded:
+The founder recorded Option A on 2026-08-17. The architecture stop is
+satisfied for the two findings above. Implementation has not resumed.
 
-- PRD 21 remains `BLOCKED` and cannot receive a schema freeze, Gate A PASS, or
-  `COMPLETED` transition;
+- PRD 21 remains `BLOCKED` until an Option A implementation wave starts from
+  current `main`;
+- a fourth autonomous correction of the failed candidate is still prohibited;
+- schema freeze, Gate A PASS, and `COMPLETED` remain unavailable;
 - PRDs 08, 14, 23, and 24 cannot begin or complete paths that require PRD 21;
 - PRD 07 may continue only in its separately authorized synthetic,
   policy-reference-only lane because PRD 02 is its sole registry dependency;
 - `LEGAL_PRIVACY_DECISION_REQUIRED` remains independently active for all real
   data and production policy paths; and
 - PRD 25 remains outside authorized scope.
-
-The minimum human determination required is selection of Option A, Option B,
-or another explicitly specified architecture that makes canonical replay and
-partial lifecycle proof coherent without weakening PRD 21 acceptance criteria.
