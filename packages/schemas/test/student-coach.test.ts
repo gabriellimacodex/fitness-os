@@ -107,7 +107,12 @@ describe('student-coach links', () => {
   );
 
   it('rejects omitted nullability and unknown fields', () => {
-    const { endedAt: _endedAt, ...withoutEndedAt } = activeLink;
+    const withoutEndedAt = {
+      id: activeLink.id,
+      studentId: activeLink.studentId,
+      coachId: activeLink.coachId,
+      startedAt: activeLink.startedAt,
+    };
     expect(studentCoachLinkSchema.safeParse(withoutEndedAt).success).toBe(
       false,
     );

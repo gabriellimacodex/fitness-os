@@ -21,7 +21,11 @@ const plainTextSchema = (maximum: number) =>
     .refine((value) => value.trim() === value, 'Expected trimmed text')
     .refine((value) => value.normalize('NFC') === value, 'Expected NFC text')
     .refine(
-      (value) => !/[\u0000-\u001f\u007f-\u009f]/u.test(value),
+      (value) =>
+        !Array.from(value).some((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159);
+        }),
       'Control characters are not allowed',
     )
     .refine((value) => !/[<>]/u.test(value), 'HTML-like markup is not allowed');
