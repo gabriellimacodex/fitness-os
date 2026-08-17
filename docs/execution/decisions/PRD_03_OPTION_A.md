@@ -5,7 +5,7 @@
 - Decision maker: Founder
 - Selected option: `A` — versioned ledger key ring
 - Source stop: [PRD 03 Architecture Decision Required](../blocks/PRD_03_ARCHITECTURE_DECISION_REQUIRED.md)
-- Implementation: not resumed
+- Implementation: resumed on `feat/prd-03-option-a-keyring` from current `main`
 
 ## Decision
 
@@ -40,8 +40,8 @@ autonomous correction round, production ingestion, or PRD 03 completion.
 
 ## Remaining blocks
 
-- PRD 03 remains `BLOCKED` in the registry until the Option A implementation
-  wave starts. Gate A PASS and `COMPLETED` remain unavailable.
+- PRD 03 is `IN_PROGRESS` on the isolated Option A wave. Gate A PASS and
+  `COMPLETED` remain unavailable.
 - PRDs 05 and 15 still cannot begin because they require PRD 03 `COMPLETED`.
 - PRD 04, PRD 07, and recorded PRD 21 Option A work are not invalidated.
 - PRD 25 remains outside authorized scope.

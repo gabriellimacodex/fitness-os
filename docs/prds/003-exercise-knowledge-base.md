@@ -5,7 +5,7 @@
 - Parent registry outcome: Governed exercise knowledge and evidence-ready taxonomy
 - Dependencies: PRD 01 — `COMPLETED`
 - Release gate: Gate A
-- Active stop: architecture decision recorded as [Option A](../execution/decisions/PRD_03_OPTION_A.md); implementation has not resumed. The original stop record remains at [`ARCHITECTURE_DECISION_REQUIRED`](../execution/blocks/PRD_03_ARCHITECTURE_DECISION_REQUIRED.md).
+- Active stop: architecture decision recorded as [Option A](../execution/decisions/PRD_03_OPTION_A.md). Isolated implementation wave started from current `main`; Gate A and `COMPLETED` remain unavailable. Mechanics: [ledger key ring](../execution/decisions/PRD_03_OPTION_A_KEYRING.md). The original stop record remains at [`ARCHITECTURE_DECISION_REQUIRED`](../execution/blocks/PRD_03_ARCHITECTURE_DECISION_REQUIRED.md).
 
 ## Context
 
