@@ -1,11 +1,11 @@
 # PRD 21 — Privacy & Data Governance
 
-- Status: `APPROVED`
+- Status: `IN_PROGRESS`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Enforced consent, access, retention, deletion, audit, and data-use controls
 - Dependencies: PRD 02 — `COMPLETED`
 - Release gate: Gate A
-- Pre-flight: Independent privacy/security and architecture review required before executable contract freeze
+- Design pre-flight: `PASS` — see [independent review](../execution/reviews/PRD_21_DESIGN_PREFLIGHT.md); executable contract freeze remains subject to exact technical-design review
 - Stop boundary: Policy-agnostic design and synthetic-data implementation may proceed; material legal or privacy policy choices require `LEGAL_PRIVACY_DECISION_REQUIRED`
 
 ## Context
