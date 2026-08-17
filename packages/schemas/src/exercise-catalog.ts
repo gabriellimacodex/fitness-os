@@ -143,29 +143,39 @@ const taxonomyTermBaseShape = {
   meaning: descriptionSchema,
 };
 
-export const taxonomyTermSchema = z.discriminatedUnion('lifecycle', [
-  z
-    .object({
-      ...taxonomyTermBaseShape,
-      lifecycle: z.literal('active'),
-      replacedByTermId: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...taxonomyTermBaseShape,
-      lifecycle: z.literal('archived'),
-      replacedByTermId: z.null(),
-    })
-    .strict(),
-  z
-    .object({
-      ...taxonomyTermBaseShape,
-      lifecycle: z.literal('replaced'),
-      replacedByTermId: taxonomyTermIdSchema,
-    })
-    .strict(),
-]);
+export const taxonomyTermSchema = z
+  .discriminatedUnion('lifecycle', [
+    z
+      .object({
+        ...taxonomyTermBaseShape,
+        lifecycle: z.literal('active'),
+        replacedByTermId: z.null(),
+      })
+      .strict(),
+    z
+      .object({
+        ...taxonomyTermBaseShape,
+        lifecycle: z.literal('archived'),
+        replacedByTermId: z.null(),
+      })
+      .strict(),
+    z
+      .object({
+        ...taxonomyTermBaseShape,
+        lifecycle: z.literal('replaced'),
+        replacedByTermId: taxonomyTermIdSchema,
+      })
+      .strict(),
+  ])
+  .superRefine((term, context) => {
+    if (term.lifecycle === 'replaced' && term.replacedByTermId === term.id) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A taxonomy term cannot replace itself',
+        path: ['replacedByTermId'],
+      });
+    }
+  });
 
 export const exerciseTaxonomyAssignmentsSchema = z
   .object({
@@ -193,6 +203,20 @@ export const exerciseTaxonomyAssignmentsSchema = z
       context.addIssue({
         code: 'custom',
         message: 'Equipment assignments must be unique',
+        path: ['equipment'],
+      });
+    }
+    const equipmentDimensionIds = new Set(
+      taxonomy.equipment.map((term) => term.dimensionId),
+    );
+    if (
+      equipmentDimensionIds.size > 1 ||
+      equipmentDimensionIds.has(taxonomy.modality.dimensionId)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Equipment assignments must share one dimension ID distinct from modality',
         path: ['equipment'],
       });
     }

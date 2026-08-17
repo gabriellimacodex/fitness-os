@@ -37,6 +37,7 @@ import {
 const exerciseId = '11111111-1111-4111-8111-111111111111';
 const revisionId = '22222222-2222-4222-8222-222222222222';
 const dimensionId = '33333333-3333-4333-8333-333333333333';
+const equipmentDimensionId = '88888888-8888-4888-8888-888888888888';
 const termId = '44444444-4444-4444-8444-444444444444';
 const referenceId = '55555555-5555-4555-8555-555555555555';
 const recordedAt = '2026-08-16T12:34:56.789Z';
@@ -54,6 +55,7 @@ const modalityTerm = {
 const equipmentTerm = {
   ...modalityTerm,
   id: '66666666-6666-4666-8666-666666666666',
+  dimensionId: equipmentDimensionId,
   dimension: 'equipment',
   key: 'none',
   label: 'None',
@@ -215,6 +217,40 @@ describe('exercise catalog public read contracts', () => {
       exerciseRevisionSchema.safeParse({
         ...revision,
         taxonomy: { modality: equipmentTerm, equipment: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      taxonomyTermSchema.safeParse({
+        ...modalityTerm,
+        lifecycle: 'replaced',
+        replacedByTermId: modalityTerm.id,
+      }).success,
+    ).toBe(false);
+    expect(
+      exerciseRevisionSchema.safeParse({
+        ...revision,
+        taxonomy: {
+          modality: modalityTerm,
+          equipment: [
+            { ...equipmentTerm, dimensionId: modalityTerm.dimensionId },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      exerciseRevisionSchema.safeParse({
+        ...revision,
+        taxonomy: {
+          modality: modalityTerm,
+          equipment: [
+            equipmentTerm,
+            {
+              ...equipmentTerm,
+              id: '99999999-9999-4999-8999-999999999999',
+              dimensionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            },
+          ],
+        },
       }).success,
     ).toBe(false);
     expect(
