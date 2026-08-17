@@ -195,6 +195,16 @@ interface ServerOwnedRepositoryCommand {
   readonly [serverOwnedCommandBrand]: true;
 }
 
+const deepFreeze = <Value>(value: Value): Value => {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    deepFreeze((value as Record<PropertyKey, unknown>)[key]);
+  }
+  return Object.freeze(value);
+};
+
 const markServerOwned = <Command extends object>(
   command: Command,
 ): Command & ServerOwnedRepositoryCommand => {
@@ -204,7 +214,7 @@ const markServerOwned = <Command extends object>(
     configurable: false,
     writable: false,
   });
-  return Object.freeze(command) as Command & ServerOwnedRepositoryCommand;
+  return deepFreeze(command) as Command & ServerOwnedRepositoryCommand;
 };
 
 export interface PublishExerciseRepositoryCommand extends ServerOwnedRepositoryCommand {
@@ -249,6 +259,7 @@ export interface ManifestIngestionRepositoryCommand extends ServerOwnedRepositor
 }
 
 export type CatalogCommandViolation =
+  | 'invalid_command_shape'
   | 'invalid_operation_id'
   | 'unknown_field'
   | 'invalid_canonical_key'
@@ -271,10 +282,9 @@ export type CatalogCommandViolation =
   | 'self_replacement'
   | 'invalid_manifest';
 
-export type CatalogCommandViolations = readonly [
-  CatalogCommandViolation,
-  ...CatalogCommandViolation[],
-];
+export type NonEmptyReadonlyArray<Value> = readonly [Value, ...Value[]];
+export type CatalogCommandViolations =
+  NonEmptyReadonlyArray<CatalogCommandViolation>;
 
 export type CatalogCommandFactoryResult<Command> =
   | { readonly status: 'ready'; readonly command: Command }
@@ -305,7 +315,7 @@ export type PublishExerciseResult =
     }
   | {
       readonly status: 'invalid_publication';
-      readonly violations: readonly PublicationViolation[];
+      readonly violations: NonEmptyReadonlyArray<PublicationViolation>;
     }
   | OperationInputMismatchResult;
 
@@ -425,7 +435,7 @@ export type PublicationInvariantResult =
   | { readonly status: 'valid' }
   | {
       readonly status: 'invalid_publication';
-      readonly violations: readonly PublicationViolation[];
+      readonly violations: NonEmptyReadonlyArray<PublicationViolation>;
     };
 
 export const validatePublicationInvariants = (input: {
@@ -457,9 +467,13 @@ export const validatePublicationInvariants = (input: {
   ) {
     violations.push('derived_provenance_reference_missing_or_ambiguous');
   }
-  return violations.length === 0
+  const firstViolation = violations[0];
+  return firstViolation === undefined
     ? { status: 'valid' }
-    : { status: 'invalid_publication', violations };
+    : {
+        status: 'invalid_publication',
+        violations: [firstViolation, ...violations.slice(1)],
+      };
 };
 
 export type TaxonomyReplacementFailure =
@@ -616,6 +630,9 @@ export const hashPublicationContent = (
   ) as CatalogContentHash;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 const hasOnlyKeys = (
   value: object,
   expectedKeys: readonly string[],
@@ -624,7 +641,10 @@ const hasOnlyKeys = (
   return Object.keys(value).every((key) => expected.has(key));
 };
 
-const validateText = (value: string, maximum: number): string | null => {
+const validateText = (value: unknown, maximum: number): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
   const trimmed = value.trim();
   return trimmed.length > 0 &&
     trimmed.length <= maximum &&
@@ -653,9 +673,16 @@ const canonicalTaxonomyTermId = (value: string): TaxonomyTermId =>
 const canonicalTaxonomyDimensionId = (value: string): TaxonomyDimensionId =>
   taxonomyDimensionIdSchema.parse(canonicalUuid(value));
 
-const referenceIsValid = (reference: PublicationReferenceInput): boolean => {
+const referenceIsValid = (
+  reference: unknown,
+): reference is PublicationReferenceInput => {
   if (
+    !isRecord(reference) ||
     !hasOnlyKeys(reference, ['kind', 'locator', 'purpose', 'assessment']) ||
+    typeof reference.kind !== 'string' ||
+    typeof reference.locator !== 'string' ||
+    typeof reference.purpose !== 'string' ||
+    typeof reference.assessment !== 'string' ||
     !['provenance', 'evidence_candidate'].includes(reference.purpose) ||
     reference.assessment !== 'unassessed'
   ) {
@@ -681,8 +708,55 @@ const referenceIsValid = (reference: PublicationReferenceInput): boolean => {
   }
 };
 
+const hasPublicationRuntimeShape = (
+  input: unknown,
+): input is PublicationSemanticInput => {
+  if (!isRecord(input)) return false;
+  const target = input.target;
+  const content = input.content;
+  if (!isRecord(target) || !isRecord(content)) return false;
+  const taxonomy = content.taxonomy;
+  const provenance = content.provenance;
+  const references = content.references;
+  if (
+    !isRecord(taxonomy) ||
+    !isRecord(provenance) ||
+    !Array.isArray(content.aliases) ||
+    !Array.isArray(taxonomy.equipmentTermIds) ||
+    !Array.isArray(references)
+  ) {
+    return false;
+  }
+  const primary = provenance.primaryProvenanceReference;
+  return (
+    typeof target.canonicalKey === 'string' &&
+    (target.exerciseId === null || typeof target.exerciseId === 'string') &&
+    (input.expectedCurrentRevision === null ||
+      typeof input.expectedCurrentRevision === 'number') &&
+    typeof content.displayName === 'string' &&
+    content.aliases.every((alias) => typeof alias === 'string') &&
+    typeof content.description === 'string' &&
+    typeof taxonomy.modalityTermId === 'string' &&
+    taxonomy.equipmentTermIds.every((termId) => typeof termId === 'string') &&
+    typeof provenance.originKind === 'string' &&
+    typeof provenance.changeReason === 'string' &&
+    (primary === null ||
+      (isRecord(primary) &&
+        typeof primary.kind === 'string' &&
+        typeof primary.locator === 'string')) &&
+    references.every(
+      (reference) =>
+        isRecord(reference) &&
+        typeof reference.kind === 'string' &&
+        typeof reference.locator === 'string' &&
+        typeof reference.purpose === 'string' &&
+        typeof reference.assessment === 'string',
+    )
+  );
+};
+
 const validatePublicationSemanticInput = (
-  input: PublicationSemanticInput,
+  input: unknown,
 ):
   | { readonly status: 'valid'; readonly value: PublicationSemanticInput }
   | {
@@ -690,6 +764,9 @@ const validatePublicationSemanticInput = (
       readonly violations: CatalogCommandViolation[];
     } => {
   const violations: CatalogCommandViolation[] = [];
+  if (!hasPublicationRuntimeShape(input)) {
+    return { status: 'invalid', violations: ['invalid_command_shape'] };
+  }
   if (
     !hasOnlyKeys(input, ['target', 'expectedCurrentRevision', 'content']) ||
     !hasOnlyKeys(input.target, ['canonicalKey', 'exerciseId']) ||
@@ -878,28 +955,33 @@ const createOperationAttempt = (
     digest,
   });
 
-export const createPublishExerciseCommand = (input: {
-  readonly operationId: string;
-  readonly semanticInput: PublicationSemanticInput;
-}): CatalogCommandFactoryResult<PublishExerciseRepositoryCommand> => {
+export const createPublishExerciseCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<PublishExerciseRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const validation = validatePublicationSemanticInput(input.semanticInput);
   const violations =
     validation.status === 'invalid' ? [...validation.violations] : [];
   if (!hasOnlyKeys(input, ['operationId', 'semanticInput'])) {
     violations.unshift('unknown_field');
   }
-  if (!operationUuidPattern.test(input.operationId)) {
+  if (
+    typeof input.operationId !== 'string' ||
+    !operationUuidPattern.test(input.operationId)
+  ) {
     violations.unshift('invalid_operation_id');
   }
   if (violations.length > 0 || validation.status === 'invalid') {
     return invalidCommand(violations);
   }
-  const semanticInput = validation.value;
+  const semanticInput = deepFreeze(validation.value);
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createPublishOperationKey(input.operationId),
+        createPublishOperationKey(input.operationId as string),
         hashPublicationOperation(semanticInput),
       ),
       semanticInput,
@@ -971,20 +1053,23 @@ export const hashTaxonomyReplacementOperation = (
   hashCanonicalInput(canonicalizeTaxonomyReplacementInput(input));
 
 const validateOperationId = (
-  operationId: string,
+  operationId: unknown,
   violations: CatalogCommandViolation[],
 ): void => {
-  if (!operationUuidPattern.test(operationId)) {
+  if (
+    typeof operationId !== 'string' ||
+    !operationUuidPattern.test(operationId)
+  ) {
     violations.push('invalid_operation_id');
   }
 };
 
-export const createExerciseLifecycleCommand = (input: {
-  readonly operationId: string;
-  readonly exerciseId: ExerciseId;
-  readonly targetLifecycle: ExerciseLifecycle;
-  readonly reason: string;
-}): CatalogCommandFactoryResult<ExerciseLifecycleRepositoryCommand> => {
+export const createExerciseLifecycleCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<ExerciseLifecycleRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const violations: CatalogCommandViolation[] = [];
   validateOperationId(input.operationId, violations);
   if (
@@ -996,23 +1081,28 @@ export const createExerciseLifecycleCommand = (input: {
     ])
   )
     violations.push('unknown_field');
-  if (!exerciseIdSchema.safeParse(input.exerciseId).success)
-    violations.push('invalid_exercise_id');
-  if (!exerciseLifecycleSchema.safeParse(input.targetLifecycle).success)
-    violations.push('invalid_lifecycle');
+  const exerciseId = exerciseIdSchema.safeParse(input.exerciseId);
+  const targetLifecycle = exerciseLifecycleSchema.safeParse(
+    input.targetLifecycle,
+  );
+  if (!exerciseId.success) violations.push('invalid_exercise_id');
+  if (!targetLifecycle.success) violations.push('invalid_lifecycle');
   const reason = validateText(input.reason, 500);
   if (reason === null) violations.push('invalid_change_reason');
   if (violations.length > 0) return invalidCommand(violations);
+  if (!exerciseId.success || !targetLifecycle.success || reason === null) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const semanticInput: ExerciseLifecycleSemanticInput = {
-    exerciseId: canonicalExerciseId(input.exerciseId),
-    targetLifecycle: input.targetLifecycle,
-    reason: reason as string,
+    exerciseId: canonicalExerciseId(exerciseId.data),
+    targetLifecycle: targetLifecycle.data,
+    reason,
   };
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createExerciseLifecycleOperationKey(input.operationId),
+        createExerciseLifecycleOperationKey(input.operationId as string),
         hashExerciseLifecycleOperation(semanticInput),
       ),
       ...semanticInput,
@@ -1020,14 +1110,12 @@ export const createExerciseLifecycleCommand = (input: {
   };
 };
 
-export const createTaxonomyTermCommand = (input: {
-  readonly operationId: string;
-  readonly dimensionId: TaxonomyDimensionId;
-  readonly dimension: TaxonomyDimensionKey;
-  readonly key: string;
-  readonly label: string;
-  readonly meaning: string;
-}): CatalogCommandFactoryResult<CreateTaxonomyTermRepositoryCommand> => {
+export const createTaxonomyTermCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<CreateTaxonomyTermRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const violations: CatalogCommandViolation[] = [];
   validateOperationId(input.operationId, violations);
   if (
@@ -1041,30 +1129,38 @@ export const createTaxonomyTermCommand = (input: {
     ])
   )
     violations.push('unknown_field');
-  if (
-    !taxonomyDimensionIdSchema.safeParse(input.dimensionId).success ||
-    !taxonomyDimensionKeySchema.safeParse(input.dimension).success
-  )
+  const dimensionId = taxonomyDimensionIdSchema.safeParse(input.dimensionId);
+  const dimension = taxonomyDimensionKeySchema.safeParse(input.dimension);
+  const key = canonicalCatalogKeySchema.safeParse(input.key);
+  if (!dimensionId.success || !dimension.success)
     violations.push('invalid_taxonomy_dimension');
-  if (!canonicalCatalogKeySchema.safeParse(input.key).success)
-    violations.push('invalid_canonical_key');
+  if (!key.success) violations.push('invalid_canonical_key');
   const label = validateText(input.label, 120);
   const meaning = validateText(input.meaning, 1_000);
   if (label === null) violations.push('invalid_display_name');
   if (meaning === null) violations.push('invalid_description');
   if (violations.length > 0) return invalidCommand(violations);
+  if (
+    !dimensionId.success ||
+    !dimension.success ||
+    !key.success ||
+    label === null ||
+    meaning === null
+  ) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const semanticInput: TaxonomyCreateSemanticInput = {
-    dimensionId: canonicalTaxonomyDimensionId(input.dimensionId),
-    dimension: input.dimension,
-    key: input.key,
-    label: label as string,
-    meaning: meaning as string,
+    dimensionId: canonicalTaxonomyDimensionId(dimensionId.data),
+    dimension: dimension.data,
+    key: key.data,
+    label,
+    meaning,
   };
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createTaxonomyCreateOperationKey(input.operationId),
+        createTaxonomyCreateOperationKey(input.operationId as string),
         hashTaxonomyCreateOperation(semanticInput),
       ),
       ...semanticInput,
@@ -1072,35 +1168,41 @@ export const createTaxonomyTermCommand = (input: {
   };
 };
 
-export const createTaxonomyTermLifecycleCommand = (input: {
-  readonly operationId: string;
-  readonly termId: TaxonomyTermId;
-  readonly targetLifecycle: 'active' | 'archived';
-  readonly reason: string;
-}): CatalogCommandFactoryResult<TaxonomyTermLifecycleRepositoryCommand> => {
+export const createTaxonomyTermLifecycleCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<TaxonomyTermLifecycleRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const violations: CatalogCommandViolation[] = [];
   validateOperationId(input.operationId, violations);
   if (
     !hasOnlyKeys(input, ['operationId', 'termId', 'targetLifecycle', 'reason'])
   )
     violations.push('unknown_field');
-  if (!taxonomyTermIdSchema.safeParse(input.termId).success)
-    violations.push('invalid_taxonomy_term_id');
-  if (!['active', 'archived'].includes(input.targetLifecycle))
-    violations.push('invalid_lifecycle');
+  const termId = taxonomyTermIdSchema.safeParse(input.termId);
+  const targetLifecycle =
+    input.targetLifecycle === 'active' || input.targetLifecycle === 'archived'
+      ? input.targetLifecycle
+      : null;
+  if (!termId.success) violations.push('invalid_taxonomy_term_id');
+  if (targetLifecycle === null) violations.push('invalid_lifecycle');
   const reason = validateText(input.reason, 500);
   if (reason === null) violations.push('invalid_change_reason');
   if (violations.length > 0) return invalidCommand(violations);
+  if (!termId.success || targetLifecycle === null || reason === null) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const semanticInput: TaxonomyLifecycleSemanticInput = {
-    termId: canonicalTaxonomyTermId(input.termId),
-    targetLifecycle: input.targetLifecycle,
-    reason: reason as string,
+    termId: canonicalTaxonomyTermId(termId.data),
+    targetLifecycle,
+    reason,
   };
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createTaxonomyLifecycleOperationKey(input.operationId),
+        createTaxonomyLifecycleOperationKey(input.operationId as string),
         hashTaxonomyLifecycleOperation(semanticInput),
       ),
       ...semanticInput,
@@ -1108,12 +1210,12 @@ export const createTaxonomyTermLifecycleCommand = (input: {
   };
 };
 
-export const createTaxonomyReplacementCommand = (input: {
-  readonly operationId: string;
-  readonly sourceTermId: TaxonomyTermId;
-  readonly targetTermId: TaxonomyTermId;
-  readonly reason: string;
-}): CatalogCommandFactoryResult<ReplaceTaxonomyTermRepositoryCommand> => {
+export const createTaxonomyReplacementCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<ReplaceTaxonomyTermRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const violations: CatalogCommandViolation[] = [];
   validateOperationId(input.operationId, violations);
   if (
@@ -1125,26 +1227,32 @@ export const createTaxonomyReplacementCommand = (input: {
     ])
   )
     violations.push('unknown_field');
-  if (
-    !taxonomyTermIdSchema.safeParse(input.sourceTermId).success ||
-    !taxonomyTermIdSchema.safeParse(input.targetTermId).success
-  )
+  const sourceTermId = taxonomyTermIdSchema.safeParse(input.sourceTermId);
+  const targetTermId = taxonomyTermIdSchema.safeParse(input.targetTermId);
+  if (!sourceTermId.success || !targetTermId.success)
     violations.push('invalid_taxonomy_term_id');
-  if (canonicalUuid(input.sourceTermId) === canonicalUuid(input.targetTermId))
+  if (
+    sourceTermId.success &&
+    targetTermId.success &&
+    canonicalUuid(sourceTermId.data) === canonicalUuid(targetTermId.data)
+  )
     violations.push('self_replacement');
   const reason = validateText(input.reason, 500);
   if (reason === null) violations.push('invalid_change_reason');
   if (violations.length > 0) return invalidCommand(violations);
+  if (!sourceTermId.success || !targetTermId.success || reason === null) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const semanticInput: TaxonomyReplacementSemanticInput = {
-    sourceTermId: canonicalTaxonomyTermId(input.sourceTermId),
-    targetTermId: canonicalTaxonomyTermId(input.targetTermId),
-    reason: reason as string,
+    sourceTermId: canonicalTaxonomyTermId(sourceTermId.data),
+    targetTermId: canonicalTaxonomyTermId(targetTermId.data),
+    reason,
   };
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createTaxonomyReplaceOperationKey(input.operationId),
+        createTaxonomyReplaceOperationKey(input.operationId as string),
         hashTaxonomyReplacementOperation(semanticInput),
       ),
       ...semanticInput,
@@ -1220,10 +1328,12 @@ export const hashManifestIngestionOperation = (
 ): CatalogInputDigest =>
   hashCanonicalInput(canonicalizeManifestIngestionInput(manifest));
 
-export const createManifestIngestionCommand = (input: {
-  readonly operationId: string;
-  readonly manifest: CatalogManifest;
-}): CatalogCommandFactoryResult<ManifestIngestionRepositoryCommand> => {
+export const createManifestIngestionCommand = (
+  input: unknown,
+): CatalogCommandFactoryResult<ManifestIngestionRepositoryCommand> => {
+  if (!isRecord(input)) {
+    return invalidCommand(['invalid_command_shape']);
+  }
   const violations: CatalogCommandViolation[] = [];
   validateOperationId(input.operationId, violations);
   if (!hasOnlyKeys(input, ['operationId', 'manifest']))
@@ -1232,12 +1342,12 @@ export const createManifestIngestionCommand = (input: {
   if (!parsed.success) violations.push('invalid_manifest');
   if (violations.length > 0 || !parsed.success)
     return invalidCommand(violations);
-  const manifest = parsed.data;
+  const manifest = deepFreeze(parsed.data);
   return {
     status: 'ready',
     command: markServerOwned({
       operation: createOperationAttempt(
-        createManifestIngestOperationKey(input.operationId),
+        createManifestIngestOperationKey(input.operationId as string),
         hashManifestIngestionOperation(manifest),
       ),
       manifest,

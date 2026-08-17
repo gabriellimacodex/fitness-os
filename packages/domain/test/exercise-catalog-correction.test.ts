@@ -23,7 +23,9 @@ import {
   type ExerciseLifecycleRepositoryCommand,
   type ExerciseLifecycleResult,
   type ManifestIngestionResult,
+  type PublicationInvariantResult,
   type PublicationSemanticInput,
+  type PublishExerciseResult,
 } from '../src/exercise-catalog/index.js';
 
 const operationId = '30000000-0000-4000-8000-000000000001';
@@ -402,5 +404,127 @@ describe('curation port command and result safety', () => {
     expect(forged).toEqual({});
     expect(contradictory.status).toBe('exercise_archived');
     expect(manifestResult.status).toBe('manifest_ingested');
+  });
+
+  it('deep-copies and deep-freezes publication and manifest snapshots', () => {
+    const mutablePublication = {
+      ...publication,
+      target: { ...publication.target },
+      content: {
+        ...publication.content,
+        aliases: [...publication.content.aliases],
+        taxonomy: {
+          ...publication.content.taxonomy,
+          equipmentTermIds: [...publication.content.taxonomy.equipmentTermIds],
+        },
+        provenance: { ...publication.content.provenance },
+        references: publication.content.references.map((reference) => ({
+          ...reference,
+        })),
+      },
+    } satisfies PublicationSemanticInput;
+    const mutableManifest = catalogManifestSchema.parse(manifest);
+    const publishCommand = expectReady(
+      createPublishExerciseCommand({
+        operationId,
+        semanticInput: mutablePublication,
+      }),
+    );
+    const manifestCommand = expectReady(
+      createManifestIngestionCommand({
+        operationId,
+        manifest: mutableManifest,
+      }),
+    );
+    const publishDigest = publishCommand.operation.digest;
+    const manifestDigest = manifestCommand.operation.digest;
+
+    mutablePublication.content.aliases.push('Caller mutation');
+    mutablePublication.content.references[0]!.locator =
+      'https://example.com/caller-mutation';
+    mutableManifest.exercises[0]!.aliases[0] = 'Caller mutation';
+    mutableManifest.taxonomy.equipment[0]!.label = 'Caller mutation';
+
+    expect(publishCommand.semanticInput.content.aliases).not.toContain(
+      'Caller mutation',
+    );
+    expect(publishCommand.semanticInput.content.references[0]!.locator).toBe(
+      'https://example.com/fixture-b',
+    );
+    expect(manifestCommand.manifest.exercises[0]!.aliases[0]).toBe(
+      'Fixture Squat',
+    );
+    expect(manifestCommand.manifest.taxonomy.equipment[0]!.label).toBe(
+      'Fixture equipment B',
+    );
+    expect(publishCommand.operation.digest).toBe(publishDigest);
+    expect(manifestCommand.operation.digest).toBe(manifestDigest);
+    expect(
+      Object.isFrozen(publishCommand.semanticInput.content.references[0]),
+    ).toBe(true);
+    expect(
+      Object.isFrozen(manifestCommand.manifest.exercises[0]!.aliases),
+    ).toBe(true);
+    expect(() => {
+      (publishCommand.semanticInput.content.aliases as string[]).push(
+        'Persisted mutation',
+      );
+    }).toThrow(TypeError);
+  });
+
+  it.each([
+    ['publish null', createPublishExerciseCommand, null],
+    [
+      'publish malformed nested input',
+      createPublishExerciseCommand,
+      { operationId, semanticInput: { target: null } },
+    ],
+    ['exercise lifecycle array', createExerciseLifecycleCommand, []],
+    ['taxonomy create missing fields', createTaxonomyTermCommand, {}],
+    [
+      'taxonomy lifecycle wrong fields',
+      createTaxonomyTermLifecycleCommand,
+      { operationId: 42, termId: null },
+    ],
+    ['taxonomy replacement null', createTaxonomyReplacementCommand, null],
+    [
+      'manifest null payload',
+      createManifestIngestionCommand,
+      { operationId, manifest: null },
+    ],
+  ] as const)(
+    'returns invalid_command without throwing for %s',
+    (_, factory, value) => {
+      const runtimeFactory = factory as unknown as (input: unknown) => {
+        readonly status: string;
+        readonly violations?: readonly string[];
+      };
+
+      expect(() => runtimeFactory(value)).not.toThrow();
+      const result = runtimeFactory(value);
+      expect(result.status).toBe('invalid_command');
+      expect(result.violations?.length).toBeGreaterThan(0);
+    },
+  );
+
+  it('requires at least one violation in invalid publication result types', () => {
+    const validResult: PublicationInvariantResult = {
+      status: 'invalid_publication',
+      violations: ['modality_term_not_active'],
+    };
+    const emptyPublishResult: PublishExerciseResult = {
+      status: 'invalid_publication',
+      // @ts-expect-error Invalid publication results cannot have no violations.
+      violations: [],
+    };
+    const emptyInvariantResult: PublicationInvariantResult = {
+      status: 'invalid_publication',
+      // @ts-expect-error Invalid invariant results cannot have no violations.
+      violations: [],
+    };
+
+    expect(validResult.violations.length).toBe(1);
+    expect(emptyPublishResult.status).toBe('invalid_publication');
+    expect(emptyInvariantResult.status).toBe('invalid_publication');
   });
 });
