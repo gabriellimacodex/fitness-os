@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-- Status: Draft for Agent 90 pre-flight
+- Status: Approved after independent Agent 90 pre-flight
 - PRD: [PRD 02 — Student & Coach Domain](../prds/002-student-coach-domain.md)
 - Approval basis: Detailed design for an `APPROVED` registry PRD under Autonomous Pilot V1
 - Architecture: existing modular monolith, explicit contracts, and PostgreSQL/Drizzle persistence boundary
