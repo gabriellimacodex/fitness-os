@@ -86,7 +86,11 @@ importers:
         specifier: 0.31.10
         version: 0.31.10
 
-  packages/domain: {}
+  packages/domain:
+    dependencies:
+      '@fitness-os/schemas':
+        specifier: workspace:*
+        version: link:../schemas
 
   packages/schemas:
     dependencies:
