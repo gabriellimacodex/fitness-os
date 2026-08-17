@@ -443,19 +443,31 @@ const manifestExerciseSchema = z
         path: ['references'],
       });
     }
+    const provenanceReferences = exercise.references.filter(
+      (reference) => reference.purpose === 'provenance',
+    );
     if (exercise.provenance.originKind === 'derived_from_public_locator') {
       const primary = exercise.references.find(
         (reference) =>
           reference.key === exercise.provenance.primaryProvenanceReferenceKey,
       );
-      if (primary?.purpose !== 'provenance') {
+      if (
+        primary?.purpose !== 'provenance' ||
+        provenanceReferences.length !== 1
+      ) {
         context.addIssue({
           code: 'custom',
           message:
-            'Derived provenance must link an associated provenance reference',
+            'Derived provenance must link exactly one associated provenance reference',
           path: ['provenance', 'primaryProvenanceReferenceKey'],
         });
       }
+    } else if (provenanceReferences.length !== 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Internally curated content cannot carry provenance links',
+        path: ['references'],
+      });
     }
   });
 

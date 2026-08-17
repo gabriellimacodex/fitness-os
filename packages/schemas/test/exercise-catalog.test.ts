@@ -298,6 +298,27 @@ const manifest = {
 describe('catalog-manifest.v1', () => {
   it('accepts a non-empty manifest with resolvable taxonomy and exact provenance', () => {
     expect(catalogManifestSchema.parse(manifest)).toEqual(manifest);
+    expect(
+      catalogManifestSchema.safeParse({
+        ...manifest,
+        exercises: [
+          {
+            ...manifest.exercises[0],
+            provenance: {
+              originKind: 'internally_curated',
+              changeReason: 'Internally curated fixture',
+              primaryProvenanceReferenceKey: null,
+            },
+            references: [
+              {
+                ...manifest.exercises[0].references[0],
+                purpose: 'evidence_candidate',
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects empty, unresolved, caller-owned, unknown, and invalid provenance input', () => {
@@ -343,6 +364,38 @@ describe('catalog-manifest.v1', () => {
                 purpose: 'evidence_candidate',
               },
             ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      catalogManifestSchema.safeParse({
+        ...manifest,
+        exercises: [
+          {
+            ...manifest.exercises[0],
+            references: [
+              ...manifest.exercises[0].references,
+              {
+                ...manifest.exercises[0].references[0],
+                key: 'second-public-source',
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      catalogManifestSchema.safeParse({
+        ...manifest,
+        exercises: [
+          {
+            ...manifest.exercises[0],
+            provenance: {
+              originKind: 'internally_curated',
+              changeReason: 'Internally curated fixture',
+              primaryProvenanceReferenceKey: null,
+            },
           },
         ],
       }).success,
