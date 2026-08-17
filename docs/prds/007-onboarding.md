@@ -78,7 +78,7 @@ workflow that:
 - uses opaque, single-use, revocable invitations with bounded lifetime and no
   direct contact identifier in the onboarding store;
 - completes each claim atomically and idempotently, including the initial
-  student–coach link when a student invitation is claimed;
+  student–coach link when an eligible student invitation is claimed;
 - resumes safely after refresh, provider interruption, or ambiguous response;
 - delegates required policy, notice, or authorization evidence to a strict,
   deny-by-default handoff instead of deciding legal policy;
@@ -97,9 +97,11 @@ workflow that:
   identity adapter after provider credential/session verification.
 - Define an immutable external-principal binding from an approved issuer and a
   stable provider-supplied opaque subject reference to one internal principal.
-- Define explicit principal-to-student and principal-to-coach mappings. A
-  principal may hold both roles only by successfully claiming a separate valid
-  invitation for each role; one role is never inferred from the other.
+- Define explicit principal-to-student and principal-to-coach mappings. The
+  persistence and contract model may represent both mappings without inferring
+  one role from the other, but real-user acquisition of a second role and any
+  claim that would link a principal's student record to that same principal's
+  coach record are hard-disabled as described under `Dual-role boundary`.
 - Preserve mapping and binding history. Supported application operations do not
   silently reassign a domain record to another principal.
 - Keep external identity details behind the adapter. Web code receives neither
@@ -135,6 +137,11 @@ workflow that:
   claim body.
 - Persist a resumable, server-owned onboarding attempt after authentication
   and invitation verification.
+- Key an attempt by a server-owned attempt ID and immutable principal,
+  invitation, purpose, and proposed-role scope. Permit at most one nonterminal
+  attempt for that exact scope while allowing bounded concurrent attempts for
+  distinct invitations; deterministic selection and terminal handling follow
+  `Attempt identity and cardinality`.
 - Represent the minimum states `policy_pending`, `ready_to_claim`,
   `completed`, and `terminal`. Provider authentication is a prerequisite, not a
   caller-set state. Terminal reason is a closed internal code.
@@ -151,14 +158,24 @@ workflow that:
 ### Policy and notice handoff
 
 - Define a provider-neutral `OnboardingPolicyGateway` input containing only the
-  authenticated internal principal, proposed role, invitation purpose,
-  approved policy/package reference when available, and correlation metadata.
-- Define a strict result: `ready` with immutable approved requirement/evidence
-  references, or `blocked` with a closed safe reason. It is not a generic
-  boolean and contains no raw legal copy.
-- Define a separate approved-content adapter for notice presentation. The
-  onboarding domain stores only version/digest references required by the
-  approved policy; it does not author, translate, or persist legal prose.
+  authenticated internal principal, server-owned attempt and operation
+  references, proposed role, invitation purpose, approved policy/package
+  reference when available, and bounded correlation metadata.
+- Define a strict result: `interaction_pending` with a protected opaque
+  interaction reference, `ready` with immutable approved requirement and
+  evidence references, or `blocked` with a closed safe reason. It is not a
+  generic boolean and contains no raw legal copy or participant response.
+- Bound the handoff to an interaction owned by a separately authorized PRD 21
+  or equivalent governance provider. That interaction owns approved content,
+  response capture, and immutable evidence creation; onboarding may initiate,
+  resume, poll, validate, and consume only its protected status/reference.
+- Do not add an onboarding legal-copy, consent-response, or evidence-submission
+  route. The PWA never submits a policy response to PRD 07, and PRD 07 stores no
+  raw response or evidence payload.
+- The separately authorized governance interaction may compose its own
+  approved-content adapter for notice presentation. PRD 07 neither owns nor
+  proxies that adapter; the onboarding domain stores only approved immutable
+  references and does not author, translate, serve, or persist legal prose.
 - Treat consent as one possible evidence mechanism only when an attributable
   approved policy requires it. The software does not assume consent is the
   universal lawful basis.
@@ -172,8 +189,9 @@ workflow that:
 - Add a student mobile-first onboarding flow in the existing Next.js PWA.
 - Add a narrow coach desktop/tablet onboarding and student-invitation surface.
 - Add Fastify endpoints for current onboarding state, invitation inspection
-  after authentication, claim, coach-owned student-invitation issuance, and
-  revocation.
+  after authentication, attempt selection/resume/abandonment and policy-status
+  refresh, claim, coach-owned student-invitation issuance, and revocation. None
+  accepts legal content, a participant response, or evidence payload.
 - Add a non-public coach-bootstrap issuance command. It is not registered as a
   public Fastify route and is not available to the browser bundle.
 - Compose backend identity and policy ports through the API. The web application
@@ -219,6 +237,12 @@ workflow that:
   synthetic/manual test adapter.
 - PRD 21 policy administration, consent ledger, withdrawal, retention,
   deletion, privacy audit, data-subject requests, or legal decision content.
+- A PRD 07 legal-copy, consent/authorization-response, or evidence-submission
+  API, and implementation of the separately governed interaction that owns
+  those concerns.
+- Real-user dual-role acquisition or self-coach linking before the exact
+  attributable founder and legal/privacy decisions clear their independent
+  stops. Policy-neutral storage representation is not activation.
 - Body capture, measurements, health/fitness intake, photos, Digital Twin,
   training prescription, movement guidance, analytics, or AI-generated content.
 - Native iOS, Apple Watch, broad offline support, service-worker credential
@@ -239,10 +263,12 @@ workflow that:
    another-principal, or unauthorized invitations.
 4. If the policy handoff is blocked, the student sees a safe unavailable state
    and recovery option; synthetic or invented legal copy is never substituted.
-5. When approved content and evidence requirements are available, the student
-   reviews each required item without preselected optional choices or bundled
-   unrelated purposes. The final exact presentation remains subject to the
-   required legal/privacy determination.
+5. When a separately authorized governance interaction is required, the PWA
+   transfers control using its protected opaque interaction reference. That
+   interaction, not an onboarding route, presents approved content and captures
+   any required response. Returning to onboarding resumes the existing attempt
+   and polls for an immutable evidence reference; it never forwards the raw
+   response or legal content through PRD 07.
 6. Claim completion shows a single clear success state. Refreshing or retrying
    reads the same server result and never creates another student or link.
 
@@ -307,9 +333,11 @@ most once at issuance and never appears again in lists or API reads.
 - One internal principal has at most one active student mapping and at most one
   active coach mapping. A student or coach record has at most one active
   principal mapping. Mappings across roles are never inferred.
-- A person may claim both roles only through distinct valid invitations and
-  explicit completed mappings. This permits the PRD 02 model without making a
-  global role or authorization claim.
+- The data model remains capable of distinct student and coach mappings for one
+  principal, but real-user acquisition of the second role is denied before
+  claim mutation. A claim that would make the same principal both endpoints of
+  the initial student–coach link is also denied. Representation capability is
+  not product-policy authorization.
 - External subject references are protected identifiers. They are not returned
   by product APIs, included in routine logs, or used as domain record IDs.
 - A provider account change does not rewrite a principal-domain mapping. Any
@@ -351,8 +379,9 @@ most once at issuance and never appears again in lists or API reads.
 - Student completion creates exactly one student record, mapping, and active
   link to the invitation's coach. Missing or no-longer-valid coach context
   rejects the whole claim.
-- Domain IDs, link IDs, timestamps, operation keys, token material, and content
-  digests are server-owned. The browser supplies none of them.
+- Domain IDs, link IDs, timestamps, server operation IDs, operation namespaces,
+  token material, and content digests are server-owned. The browser supplies
+  none of them; its bounded retry token is correlation only.
 - No completed domain record, mapping, link, transition, or operation-ledger row
   survives a failed claim transaction.
 - Historical invitation, attempt, binding, mapping, and transition facts are
@@ -360,13 +389,112 @@ most once at issuance and never appears again in lists or API reads.
   lifecycle work may apply separately approved deletion or transformation
   rules; PRD 07 does not choose them.
 
+### Dual-role boundary
+
+- Schema, repositories, and synthetic fixtures may represent one principal
+  with separate student and coach mappings so mechanics remain policy-neutral
+  and do not corrupt imported or future authorized state.
+- Real-user readiness and claim composition hard-disable: (a) any claim that
+  would add a second role to a principal, and (b) any student claim whose
+  invitation coach maps to that same principal, even if the second mapping
+  already exists. Neither path may be enabled by configuration, adapter output,
+  retry, operator action, or a merely successful synthetic test.
+- Enabling dual-role acquisition is a material product-role decision and stops
+  under `FOUNDER_DECISION_REQUIRED` until an attributable founder decision
+  defines the allowed cases and user experience. If the path affects
+  student–coach sharing, privacy expectations, authority, notices, or evidence,
+  `LEGAL_PRIVACY_DECISION_REQUIRED` independently remains active until an
+  attributable legal/privacy decision clears those exact consequences.
+- The two stops are independent. Clearing identity architecture, credentials,
+  or one of these decisions does not clear the other; silence and a generic
+  approval of PRD 07 do not enable the path.
+- Current-state and claim failures remain safe and disclose neither the other
+  role mapping nor whether the invitation coach is the same principal.
+
+### Attempt identity and cardinality
+
+- `AttemptId` is a server-generated branded identifier and never authority. An
+  attempt has an immutable scope of authenticated `PrincipalId`, verified
+  `InvitationId`, invitation purpose, and proposed role, plus a server-owned
+  creation ordinal and timestamps.
+- The database permits at most one nonterminal attempt for the exact scope.
+  Concurrent creation for that scope returns the same authoritative attempt;
+  it does not create siblings. Different verified invitations may produce
+  simultaneous active attempts for the same principal and role, and separate
+  role attempts may coexist in the synthetic lane subject to the dual-role
+  hard-disable at real-user readiness and claim.
+- A principal-scoped current-state read returns stable bounded pages of
+  nonterminal attempts ordered by `(created_at, AttemptId)`, with an opaque
+  continuation cursor and no total count, and never silently chooses “latest.”
+  Each summary contains only `AttemptId`, proposed role, closed safe state, and
+  trusted creation/expiry times—never invitation, coach, issuer, principal,
+  evidence, or competing-attempt details. A locator may read a retained
+  terminal/completed attempt in the same authenticated scope.
+- Resume or claim supplies an opaque `AttemptId` only as a locator; the
+  authenticated principal and stored scope authorize resume, while claim
+  additionally re-verifies the protected invitation proof and current
+  claimability. If more than one active attempt exists and no locator is
+  supplied, the API returns `selection_required`; if exactly one exists it
+  returns that attempt, and if none exists it returns `no_active_attempt` plus
+  only the principal's already-authorized role-mapping state.
+- Attempt absolute expiry and inactivity abandonment are server-configured,
+  trusted-time transitions. A browser may request abandonment using the normal
+  mutation protocol but cannot choose its reason or timestamp. Expiry or
+  abandonment never revokes or extends the underlying invitation.
+- `completed` is immutable and resumes to its stored completion. Other terminal
+  attempts are never reopened. A successor attempt receives a new ID and
+  ordinal only when the same invitation remains claimable for the same
+  principal/scope; the terminal predecessor remains linked as history.
+- When multiple invitations target the same role, the first valid completion
+  wins the unique mapping. Other active attempts become or read as a generic
+  terminal mapping conflict without revealing which invitation, coach,
+  principal, or role state won. Claims by different principals and claims for
+  different roles obey the same isolation and database uniqueness rules.
+
 ### Idempotency and concurrency
 
-- Every mutating command uses a namespaced operation key and a digest over the
-  complete server-canonicalized semantic input.
-- Replaying the same key and digest returns the committed typed result without
-  another row or transition. Reusing the key with different input returns a
-  typed conflict and makes no mutation.
+- Every mutation—operator coach-bootstrap issuance, coach student-invitation
+  issuance, revocation, attempt create/abandon/resume transition, governance
+  interaction initiation/consumption, and invitation claim—uses one common
+  operation protocol. No mutation relies on HTTP retry behavior alone.
+- The invoking boundary must supply a strictly formatted, length-bounded,
+  opaque `RetryToken` for every externally initiated mutation to correlate
+  retries of one intended submission. It is neither authority nor the
+  persisted operation identity, and cannot select a principal, owner,
+  invitation, role, policy result, timestamp, or namespace. Authentication and
+  command-specific ownership are checked on every request, including a replay.
+  A server-scheduled expiry/reconciliation transition instead uses a
+  deterministic server-owned trigger reference in the same operation protocol;
+  it never fabricates a browser or operator token.
+- On first authorized acceptance, the server allocates a branded
+  `OperationId`, selects the closed command namespace and canonicalization
+  version, and persists the authority-scope, command-namespace, and
+  `RetryToken` tuple as the binding to that operation. The authority scope is
+  the authenticated principal for product commands and the attributable
+  restricted operator identity plus environment for bootstrap issuance.
+- The server computes a digest over the complete canonical semantic input and
+  immutable resolved scope: authority scope, command kind, owned target or
+  verified invitation identity, attempt/policy version where applicable, and
+  all behavior-affecting bounded fields. It excludes plaintext secrets, raw
+  policy responses, transport metadata, and server-generated output; a stable
+  verifier/reference is used where secret proof affects semantics.
+- A repeat of the same scoped token, namespace, canonicalization version, and
+  digest returns the stored pending or committed typed result and never
+  repeats a side effect. The same scoped token with a different digest or
+  command returns `operation_input_mismatch` with zero mutation. A token used
+  by a different authority scope neither reveals nor replays the first result.
+- An intentionally identical later operation uses a new `RetryToken`, receives
+  a new server `OperationId`, and is evaluated normally against current
+  authorization and invariants. It is not mistaken for a replay: issuance may
+  create another invitation, while duplicate revoke/claim/step commands return
+  their command-specific already-terminal or current-state outcome without a
+  duplicate transition.
+- Pending operations have a bounded server lease and explicit reconciliation
+  state. After a lost response, retry or resume first resolves the operation
+  ledger against command effects; it never guesses success or executes a
+  second operation. Ledger retention is at least the maximum invitation,
+  attempt, client retry, and recovery window and is a reviewed lifecycle value,
+  not caller input.
 - Two principals racing to claim one invitation produce at most one completed
   mapping. The loser receives the safe generic unavailable result.
 - The same principal racing identical claims receives one committed result and
@@ -386,10 +514,38 @@ most once at issuance and never appears again in lists or API reads.
   evidence references. A later version does not rewrite completed history.
 - The onboarding service never interprets legal text, decides whether an item
   is legally required or optional, or infers withdrawal consequences.
-- Notice rendering is plain content from an approved versioned source. No
-  arbitrary HTML, script, remote embed, or provider response is rendered.
+- Within the separately authorized governance interaction, notice rendering is
+  plain content from an approved versioned source. No arbitrary HTML, script,
+  remote embed, or provider response is rendered by PRD 07.
 - Policy evidence and notice content remain minimized. Routine onboarding logs
   contain neither raw content nor evidence payload.
+- An evidence interaction is created only through the internal
+  `OnboardingPolicyGateway` after a separately authorized governance
+  implementation has approved the package and interaction. The request is
+  bounded to principal, attempt, proposed role/purpose, immutable requirement
+  package reference, and server operation/correlation references.
+- The gateway returns a protected opaque interaction reference and closed
+  status. The governance implementation exclusively owns content presentation,
+  participant-response submission, evidence construction, and its evidence
+  API. PRD 07 adds no proxy or public callback accepting those values.
+- Onboarding resume may poll the gateway by protected interaction reference.
+  Consumption accepts only a signed/integrity-checked immutable evidence
+  reference bound to the same principal, attempt, role/purpose, requirement
+  package/version, and validity window. A mismatch, expiry, replacement, or
+  unknown reference leaves the attempt `policy_pending` or terminal by a
+  closed rule and reveals no governance detail.
+- At most one current interaction exists per attempt and requirement-package
+  version. Refresh and concurrent polling converge on the same interaction;
+  a changed package invalidates readiness and requires a new server operation,
+  never an in-place rewrite. PRD 07 stores only the protected interaction
+  locator, immutable evidence/package references, integrity/version metadata,
+  closed status, and trusted timestamps—never legal copy, answers, selections,
+  signatures, or a raw provider response.
+- This port allows later composition without adding PRD 21 to the registry DAG.
+  Until the PRD 21 or equivalent interaction is separately authorized and its
+  applicable legal/privacy decisions are attributable, real-user interaction
+  stays blocked under `LEGAL_PRIVACY_DECISION_REQUIRED`; the safe synthetic
+  adapter exercises mechanics only.
 
 ## Data
 
@@ -417,17 +573,23 @@ and all mappings are protected personal data even when opaque.
   target coach for student invitations, verifier version and digest, lifecycle,
   server expiry, operation provenance, and trusted timestamps.
 - Attempt: opaque attempt ID, invitation ID, principal ID, current state,
-  pinned policy/requirements reference, safe terminal reason when applicable,
-  and trusted timestamps.
+  immutable purpose/proposed role, creation ordinal, predecessor when
+  applicable, pinned policy/requirements and protected governance-interaction
+  references, immutable evidence reference when ready, safe terminal reason,
+  server expiry/inactivity bounds, and trusted timestamps.
 - Completion: role mapping ID, created PRD 02 record ID, optional created link
-  ID, invitation ID, attempt ID, operation key, and completion timestamp.
+  ID, invitation ID, attempt ID, server operation ID, and completion timestamp.
 - Transition evidence: opaque event ID, aggregate ID, closed event kind,
-  previous/next state, operation key, safe reason code, and trusted timestamp.
-- Operation result: namespaced key, canonicalization version, input digest,
-  status, typed result kind/result, and trusted timestamps.
+  previous/next state, server operation ID, safe reason code, and trusted
+  timestamp.
+- Operation result: server operation ID, closed command namespace, authority-
+  scope digest/reference, bounded caller retry-token binding, canonicalization
+  version, canonical semantic-input digest, pending lease/reconciliation state,
+  typed result kind/result, retention bound, and trusted timestamps.
 
 Plain claim secrets, raw identity assertions, legal copy, consent responses,
-database errors, and arbitrary metadata are prohibited fields.
+governance-provider response/evidence payloads, database errors, and arbitrary
+metadata are prohibited fields.
 
 ### Data minimization and lifecycle
 
@@ -454,10 +616,12 @@ coordinated contract freeze occur before Web, API/Domain, and Data work proceed.
 The freeze may add or coordinate:
 
 - branded principal, identity-binding, role-mapping, invitation, attempt,
-  transition, operation, and completion identifiers;
+  transition, server-operation, bounded retry-token, governance-interaction,
+  immutable-evidence, and completion identifiers;
 - strict lifecycle and typed-result schemas;
 - authenticated current-state, invitation-inspection, claim, coach issuance,
-  and revocation request/response schemas;
+  revocation, attempt selection/resume/abandonment, policy-status refresh, and
+  bounded pagination request/response schemas;
 - a safe onboarding readiness schema or closed readiness classifications;
 - `UNAUTHENTICATED`, `FORBIDDEN`, and `CONFLICT` variants in the shared API
   error-code contract if pre-flight confirms they are required; all existing
@@ -465,7 +629,8 @@ The freeze may add or coordinate:
 - compile-time tests proving PRD 02 and PRD 07 identifier brands are not
   cross-assignable.
 
-Unknown fields, hidden identity claims, caller IDs/timestamps, unbounded text,
+Unknown fields, hidden identity claims, caller operation IDs/namespaces/digests
+or timestamps, unbounded text/retry tokens, raw governance content/responses,
 and token-bearing URL fields are rejected.
 
 ### Domain ports
@@ -476,11 +641,13 @@ API/Domain owns narrow ports for:
 - binding and reading external principal relationships;
 - reading principal-to-student/coach mappings;
 - issuing, inspecting, revoking, and claiming onboarding invitations;
-- reading/resuming an onboarding attempt;
-- evaluating policy/notice readiness;
+- deterministically listing, selecting, reading, creating, abandoning, and
+  resuming onboarding attempts;
+- initiating, polling, validating, and consuming only the bounded governance
+  evidence handoff through `OnboardingPolicyGateway`;
 - creating the required PRD 02 student, coach, and link records through the
   existing domain repositories; and
-- resolving idempotent operation results.
+- creating and reconciling server-owned idempotent operation results.
 
 Ports return exhaustive typed outcomes: success/replay, invalid or unavailable
 invitation, unauthenticated, forbidden, policy blocked, mapping conflict,
@@ -496,7 +663,9 @@ authorized responsibilities are:
 
 - authenticated current onboarding state;
 - authenticated invitation inspection using a bounded body-held claim secret;
-- authenticated atomic invitation claim with an idempotency key;
+- authenticated attempt selection/resume and policy-status refresh without any
+  legal-copy, consent-response, or evidence-submission field;
+- authenticated atomic invitation claim with a bounded retry token;
 - authenticated mapped-coach issuance of a student invitation;
 - authenticated mapped-coach revocation of their own unclaimed invitation; and
 - identity-provider start/callback/session composition only after the provider
@@ -509,8 +678,16 @@ request correlation. Missing authentication is distinct from a malformed
 request, while resource and ownership distinctions are minimized to prevent
 enumeration.
 
+Every public mutation requires exactly one bounded opaque `RetryToken` as
+defined above; it never accepts `OperationId`, operation namespace, digest,
+authority scope, or canonicalization version from the browser. Attempt and
+interaction references are locators checked against authenticated stored
+scope, not bearer authority. No onboarding endpoint accepts governance answers,
+choices, signatures, legal content, or raw evidence.
+
 The non-public coach-bootstrap command uses a separate least-privileged
-operational entry point, strict environment binding, idempotency, and generic
+operational entry point, attributable operator identity, strict environment
+binding, the same bounded retry-token/server-operation protocol, and generic
 output. It is not registered in API routes or bundled into web assets.
 
 ## Persistence requirements
@@ -523,8 +700,11 @@ output. It is not registered in API routes or bundled into web assets.
   frozen domain records.
 - Enforce unique issuer/subject binding, one active mapping per principal/role,
   one active principal per domain record, unique invitation verifier, one
-  terminal invitation result, positive/bounded timestamps, valid state
-  transitions, and namespaced operation uniqueness at the database boundary.
+  terminal invitation result, at most one nonterminal attempt per immutable
+  principal/invitation/purpose/role scope, positive/bounded timestamps, valid
+  state transitions, one current governance interaction per attempt/package
+  version, and scoped retry-token plus server-operation uniqueness at the
+  database boundary.
 - Use deferred constraints or constraint triggers where a claim must atomically
   create cross-table mapping, completion, transition, and PRD 02 link evidence.
 - Keep history tables append-only to the ordinary application role. No
@@ -534,8 +714,10 @@ output. It is not registered in API routes or bundled into web assets.
 - Use parameterized queries and strict adapters. Persistence output is parsed
   through executable schemas before crossing the domain boundary.
 - Index only exact binding, current mapping, invitation verifier/status,
-  operation key, current attempt, and coach-owned invitation queries required
-  by the authorized flow. No generic people search is introduced.
+  scoped retry-token binding, server operation, exact active-attempt scope,
+  deterministic principal attempt selection, current governance interaction,
+  and coach-owned invitation queries required by the authorized flow. No
+  generic people search is introduced.
 - Migration validation must cover clean apply, exact schema/metadata, replay,
   deliberate interruption, forward correction, and recovery while preserving
   unrelated sentinel data.
@@ -596,6 +778,13 @@ on an unresolved determination about:
   and
 - residency, cross-border transfer, disclosure, or provider data handling.
 
+Real dual-role and self-coach activation additionally require the separately
+attributable product decision under `FOUNDER_DECISION_REQUIRED` and the
+applicable sharing, authority, notice, and evidence determinations under
+`LEGAL_PRIVACY_DECISION_REQUIRED`. Until both are cleared for the exact path,
+mechanical representation may be tested synthetically but readiness and claim
+remain hard-disabled.
+
 While this stop is active, implementation may use strict parameter shapes,
 closed deny reasons, synthetic adapters, synthetic notices visibly labeled as
 non-production, disposable data, and fail-closed readiness. It may not present
@@ -630,43 +819,67 @@ prose, a synthetic test, or a green build is not approval.
 - Before accepting an unapproved paid provider, plan, contract, message fee, or
   resource reservation, stop under `FINANCIAL_COMMITMENT_REQUIRED`.
 - Credential, architecture, or financial clearance does not clear the
-  independent legal/privacy stop.
+  independent founder or legal/privacy stop.
 
 ## Failure modes
 
-| Failure or race                                                                        | Required behavior                                                                                              |
-| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Missing or invalid authenticated context                                               | Reject before invitation/domain lookup; safe unauthenticated response                                          |
-| Unapproved issuer or invalid provider assertion                                        | Reject and emit redacted integrity classification; no binding mutation                                         |
-| Identity provider unavailable                                                          | Preserve authoritative state; safe temporary-unavailable response; no local authentication fallback            |
-| Unknown, malformed, expired, revoked, or inaccessible invitation                       | Generic unavailable/not-found result without state or role disclosure                                          |
-| Claim secret brute force or rate breach                                                | Throttle/deny generically; do not reveal partial matches or account existence                                  |
-| Invitation replay by completing principal                                              | Return the committed completed result with zero row changes                                                    |
-| Invitation replay by another principal                                                 | Generic unavailable result; no mapping or domain detail                                                        |
-| Operation key reused with different input                                              | Typed internal conflict and zero mutation                                                                      |
-| Concurrent claim/claim                                                                 | One terminal result; identical authorized retry replays; competitor makes no mutation                          |
-| Concurrent claim/revoke                                                                | One terminal result; loser observes safe terminal state; no partial rows                                       |
-| Principal already mapped for requested role                                            | Typed mapping conflict; preserve existing mapping and invitation unless policy explicitly permits another path |
-| Domain record already mapped to another principal                                      | Deny as conflict without disclosing the existing principal                                                     |
-| Student invitation coach/link context invalid                                          | Reject entire claim; create no student, mapping, event, or link                                                |
-| Policy/notice gateway missing, synthetic in production, blocked, stale, or unavailable | Claim remains incomplete; readiness/route fails closed; no guessed content/evidence                            |
-| Policy version changes during claim                                                    | Re-evaluate and pin one approved version before commit; stale result cannot complete                           |
-| Persistence unavailable                                                                | Safe service-unavailable response; no provider/database/host detail                                            |
-| Snapshot or stored-state contract mismatch                                             | Fail closed as internal error; do not repair history from browser input                                        |
-| Browser refresh or ambiguous response                                                  | Read authoritative state and replay idempotent command; never duplicate records                                |
-| Provider subject changes during recovery                                               | Do not rebind automatically; route to separately authorized verified recovery                                  |
-| Migration failure                                                                      | Stop deployment; preserve prior compatible schema and unrelated data; forward-fix only                         |
-| Mandatory onboarding event cannot commit                                               | Roll back the corresponding mutation; no best-effort success                                                   |
-| Close/shutdown during in-flight claim                                                  | Let the bounded transaction commit or roll back; reconcile operation ledger before retry                       |
-| Legal/privacy parameter unresolved                                                     | `LEGAL_PRIVACY_DECISION_REQUIRED`; keep real-user path disabled                                                |
-| Required production credential unavailable                                             | `EXTERNAL_CREDENTIAL_REQUIRED`; keep synthetic path distinct and disabled in production                        |
+| Failure or race                                                                         | Required behavior                                                                                               |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Missing or invalid authenticated context                                                | Reject before invitation/domain lookup; safe unauthenticated response                                           |
+| Unapproved issuer or invalid provider assertion                                         | Reject and emit redacted integrity classification; no binding mutation                                          |
+| Identity provider unavailable                                                           | Preserve authoritative state; safe temporary-unavailable response; no local authentication fallback             |
+| Unknown, malformed, expired, revoked, or inaccessible invitation                        | Generic unavailable/not-found result without state or role disclosure                                           |
+| Claim secret brute force or rate breach                                                 | Throttle/deny generically; do not reveal partial matches or account existence                                   |
+| Invitation replay by completing principal                                               | Return the committed completed result with zero row changes                                                     |
+| Invitation replay by another principal                                                  | Generic unavailable result; no mapping or domain detail                                                         |
+| Same scoped retry token reused with different canonical input or command                | `operation_input_mismatch`; zero mutation and no disclosure across authority scopes                             |
+| New retry token with intentionally identical semantic input                             | New server operation; evaluate current invariants rather than replaying the earlier operation                   |
+| Lost bootstrap/invitation issue, revoke, attempt-step, evidence-consume, or claim reply | Reconcile the server operation ledger and effect rows; return pending/committed result without duplicate effect |
+| Concurrent identical command before first response                                      | One server operation/effect; all authorized matching retries converge on its stored typed result                |
+| Concurrent creation of the same attempt scope                                           | One nonterminal attempt; all authorized creators receive the same attempt                                       |
+| Multiple active attempts for distinct invitations                                       | Return bounded deterministic selection; never silently choose latest or disclose another invitation's context   |
+| Attempt expires or is abandoned                                                         | Immutable terminal transition; invitation unchanged; successor allowed only if still claimable in exact scope   |
+| Competing invitations complete the same role                                            | One mapping wins; other attempt is generically terminal with no winner/coach/role disclosure                    |
+| Concurrent claim/claim                                                                  | One terminal result; identical authorized retry replays; competitor makes no mutation                           |
+| Concurrent claim/revoke                                                                 | One terminal result; loser observes safe terminal state; no partial rows                                        |
+| Principal already mapped for requested role                                             | Typed mapping conflict; preserve existing mapping and invitation unless policy explicitly permits another path  |
+| Domain record already mapped to another principal                                       | Deny as conflict without disclosing the existing principal                                                      |
+| Student invitation coach/link context invalid                                           | Reject entire claim; create no student, mapping, event, or link                                                 |
+| Policy/notice gateway missing, synthetic in production, blocked, stale, or unavailable  | Claim remains incomplete; readiness/route fails closed; no guessed content/evidence                             |
+| Policy version changes during claim                                                     | Re-evaluate and pin one approved version before commit; stale result cannot complete                            |
+| Governance interaction pending, expired, replaced, mismatched, or unavailable           | Keep policy pending or transition by closed rule; store no raw response and expose no provider detail           |
+| Dual-role or self-coach real-user claim attempted                                       | Deny before mutation; keep both applicable decision stops active and disclose no existing mapping               |
+| Dual-role/self-coach product decision unresolved                                        | `FOUNDER_DECISION_REQUIRED`; keep that real-user path hard-disabled                                             |
+| Persistence unavailable                                                                 | Safe service-unavailable response; no provider/database/host detail                                             |
+| Snapshot or stored-state contract mismatch                                              | Fail closed as internal error; do not repair history from browser input                                         |
+| Browser refresh or ambiguous response                                                   | Read authoritative state and replay idempotent command; never duplicate records                                 |
+| Provider subject changes during recovery                                                | Do not rebind automatically; route to separately authorized verified recovery                                   |
+| Migration failure                                                                       | Stop deployment; preserve prior compatible schema and unrelated data; forward-fix only                          |
+| Mandatory onboarding event cannot commit                                                | Roll back the corresponding mutation; no best-effort success                                                    |
+| Close/shutdown during in-flight claim                                                   | Let the bounded transaction commit or roll back; reconcile operation ledger before retry                        |
+| Legal/privacy parameter unresolved                                                      | `LEGAL_PRIVACY_DECISION_REQUIRED`; keep real-user path disabled                                                 |
+| Required production credential unavailable                                              | `EXTERNAL_CREDENTIAL_REQUIRED`; keep synthetic path distinct and disabled in production                         |
 
 ## Recovery and rollback
 
 - The idempotency ledger is the first recovery source after timeout or process
-  loss. A committed result is replayed; pending/ambiguous work is reconciled
-  against invitation, mapping, PRD 02 record/link, and transition state before
-  retry.
+  loss. Recovery resolves the caller's scoped retry-token binding to the
+  server-owned operation. A committed result is replayed; pending/ambiguous
+  work is reconciled against command-specific invitation, attempt, governance
+  reference, mapping, PRD 02 record/link, and transition state before retry.
+- Bootstrap issuance, student-invitation issuance, revoke, attempt transitions,
+  governance interaction initiation/consumption, and claim each have an
+  explicit reconciler. Recovery never substitutes request correlation for
+  operation identity and never creates a new retry token on the caller's behalf.
+- A principal with multiple active attempts receives the bounded deterministic
+  selection view. Resume requires the chosen locator and revalidates stored
+  scope; expired/abandoned attempts remain terminal, while a separately created
+  successor is allowed only under the exact rules above.
+- Returning from the separately authorized governance interaction resumes the
+  existing attempt. PRD 07 polls by protected reference and consumes only a
+  matching immutable evidence reference through an idempotent server operation;
+  missing or ambiguous evidence remains pending and raw responses are neither
+  requested nor reconstructed.
 - Operator procedures may revoke unclaimed invitations by ID through the
   restricted port. They cannot read secrets, force-claim, map a principal,
   rewrite completion, or bypass policy readiness.
@@ -700,6 +913,11 @@ Mechanism readiness requires:
 - strict identity and policy port composition;
 - exact expected issuer/session adapter configuration for the environment;
 - operation/event integrity checks and current recovery evidence; and
+- database enforcement for attempt cardinality, deterministic bounded
+  selection, scoped retry-token/server-operation uniqueness, and pending
+  operation reconciliation;
+- a policy gateway that exposes only bounded interaction status and immutable
+  evidence references, with no onboarding legal-copy/response/evidence route;
 - no synthetic adapter accidentally selected outside explicitly synthetic
   environments.
 
@@ -710,8 +928,10 @@ Production onboarding readiness additionally requires:
   credentials;
 - completed threat model and production-representative provider/session tests;
 - an attributable approved policy/notice package and non-synthetic policy
-  gateway;
+  gateway backed by a separately authorized governance evidence interaction;
 - all applicable legal/privacy decisions, including minors and jurisdiction;
+- attributable founder and legal/privacy decisions enabling the exact dual-role
+  or self-coach path, or hard-disable proof that those paths remain unreachable;
 - approved identity/onboarding data lifecycle and recovery behavior; and
 - no active applicable stop condition.
 
@@ -721,6 +941,9 @@ adapter missing/synthetic/integrity-invalid, policy missing/synthetic/blocked,
 credential unavailable, recovery unverified, configuration mismatch, or
 active stop condition. Public readiness remains only ready/not-ready and never
 returns issuer, tenant, host, policy text, subject IDs, secrets, or raw errors.
+Production readiness fails if dual-role/self-coach claim can be enabled without
+both required attributable decisions, if a governance interaction can submit
+through PRD 07, or if operation/attempt reconciliation is incomplete.
 
 ## Observability minimization
 
@@ -750,8 +973,9 @@ Refactor evidence.
 - Accept every intended identifier, invitation, state, result, readiness, and
   HTTP variant through strict executable schemas.
 - Reject malformed/cross-branded IDs, unknown fields, caller authority IDs,
-  caller timestamps, token-bearing URLs, unbounded input, hidden profile/contact
-  fields, and raw provider/policy payloads.
+  caller operation IDs/namespaces/digests/timestamps, unbounded retry tokens,
+  token-bearing URLs, hidden profile/contact fields, legal content, participant
+  responses, and raw provider/policy/evidence payloads.
 - Prove provider and Web consumers parse the same frozen success/error shapes.
 - Exhaustively type-check lifecycle and typed result unions.
 
@@ -760,9 +984,25 @@ Refactor evidence.
 - Principal binding uniqueness and role-specific mapping without role inference.
 - Coach and student claims, including exact PRD 02 record/link effects.
 - Forward-only attempt and invitation transitions.
-- Same-key replay, mismatched-key conflict, ambiguous retry, claim/claim,
-  claim/revoke, duplicate mapping, and invalid coach-context races.
+- For bootstrap issuance, student-invitation issuance, revoke, every attempt
+  transition, governance interaction initiation/consumption, and claim: scoped
+  retry-token replay, mismatched-digest conflict, identical input under a new
+  token, lost response, pending reconciliation, and concurrent first request.
+- Same-scope attempt creation convergence; bounded deterministic reads with two
+  simultaneous active attempts; explicit selection; expiry, abandonment,
+  completed resume, terminal non-reopen, and valid successor creation.
+- Races across multiple invitations for the same role, both proposed roles,
+  different principals, claim/claim, claim/revoke, duplicate mapping, and
+  invalid coach context, with no cross-attempt or winner disclosure.
+- Dual-role and self-coach mechanics can be represented in synthetic repository
+  fixtures, but real-user readiness and claim tests prove both remain
+  unreachable without separately attributable founder and legal/privacy
+  decision fixtures. One decision alone never enables either path.
 - Policy missing/blocked/stale/synthetic-in-production behavior.
+- Governance handoff initiation/resume/poll/consume tests prove one interaction
+  per attempt/package, immutable evidence binding, version replacement,
+  mismatch/expiry denial, concurrent polling convergence, and absence of raw
+  legal content, participant response, or evidence payload in PRD 07 state.
 - Trusted clock, UUID, cryptographic secret, canonical digest, and no caller-
   owned server-field behavior.
 - Source-boundary tests proving domain code imports no provider SDK, Fastify,
@@ -777,6 +1017,10 @@ Refactor evidence.
   are supplied.
 - Public routes never accept principal/domain IDs as authority and never expose
   identity-provider or policy internals.
+- Public routes accept only a bounded retry token and protected attempt/
+  interaction locators, never a server operation ID or governance response.
+  Route-registration and payload tests prove PRD 07 exposes no legal-copy,
+  consent-response, or evidence-submission endpoint.
 - Generic enumeration-resistant invitation failures, request correlation,
   CORS, CSRF, body limits, rate limiting, and error redaction.
 - Non-public bootstrap issuance is unreachable from API registration and Web
@@ -788,8 +1032,10 @@ Refactor evidence.
 - Clean PostgreSQL apply and exact tables, columns, indexes, constraints,
   triggers, seeds-if-any, migration journal, and metadata.
 - Database rejection of duplicate binding, mapping takeover, invalid state
-  transition, multiple terminal claim, eventless transition, and operation
-  mismatch when service validation is bypassed.
+  transition, multiple terminal claim, multiple nonterminal attempts for one
+  exact scope, multiple current interactions per attempt/package, eventless
+  transition, scoped retry-token collision, and operation mismatch when service
+  validation is bypassed.
 - Atomic rollback at each material coach/student claim failure point, including
   zero surviving PRD 02/domain mapping/link rows.
 - Real PostgreSQL concurrency tests for claim/claim, claim/revoke, mapping, and
@@ -805,7 +1051,13 @@ Refactor evidence.
 - Coach desktop/tablet issuance, one-time secret display, list redaction, and
   revocation behavior.
 - Refresh/resume, ambiguous retry, provider/policy outage, expiry, revocation,
-  and generic terminal states.
+  multiple-attempt selection, governance interaction return/poll, attempt
+  expiry/abandonment, revocation, and generic terminal states.
+- Dual-role/self-coach attempts render only the generic unavailable state and
+  do not reveal the existing role or same-principal coach relationship.
+- Browser-network assertions prove governance answers and evidence payloads go
+  only to the separately authorized governance interaction and never traverse
+  a PRD 07 request or persisted browser state.
 - No invitation secret in URL path/query, local storage, service-worker cache,
   analytics, logs, screenshots, or rendered history after terminal completion.
 - Browser tests prove all product calls go through Fastify and no Web code
@@ -819,6 +1071,11 @@ Refactor evidence.
 - Secret and fixture scanning across commits, build output, logs, test
   snapshots, and browser artifacts.
 - Synthetic-only policy/provider hard-disable in production configuration.
+- Real dual-role/self-coach hard-disable under missing founder or legal/privacy
+  decisions, including configuration bypass, adapter spoof, retry, race, and
+  readiness tests.
+- Operation-ledger reconciliation after lost responses for every mutation and
+  disclosure-isolated recovery with multiple attempts/invitations/roles.
 - Close/shutdown and ambiguous transaction reconciliation.
 - Forward recovery and last-resort restore rehearsal with unrelated writes
   preserved.
@@ -840,12 +1097,21 @@ readiness or PRD completion.
 - Produce a Technical Design before executable contract freeze.
 - Record unresolved provider, legal/privacy, credential, and architecture
   decisions without selecting defaults.
+- Record dual-role/self-coach product and privacy decisions as independently
+  unresolved under their exact stops; do not turn data-model capability into a
+  default product policy.
 
 ### Phase 1 — synthetic mechanism
 
 - Freeze strict shared contracts.
 - Implement provider-neutral identity/policy ports, local synthetic adapters,
   domain state machines, and disposable PostgreSQL persistence.
+- Prove server-owned operation identity/reconciliation and attempt cardinality,
+  selection, expiry, abandonment, terminal, and race mechanics with synthetic
+  identities. Keep real dual-role/self-coach composition hard-disabled.
+- Exercise a synthetic governance-interaction adapter that returns only opaque
+  interaction and immutable evidence references; do not add legal content,
+  participant-response, or evidence-submission behavior to onboarding.
 - Build student and coach UI against synthetic states only, clearly unavailable
   in production composition.
 - Pass component Gate A for each reviewed PR without claiming production
@@ -856,8 +1122,17 @@ readiness or PRD completion.
 - Obtain attributable legal/privacy decisions for jurisdiction, eligibility and
   minors, purposes/authority, notice/evidence, lifecycle, sharing, provider
   processing, and recovery.
+- Obtain the attributable founder decision for any proposed real dual-role or
+  self-coach path and separate legal/privacy approval for its exact sharing,
+  authority, notice, and evidence consequences; otherwise preserve the hard
+  disable.
+- Separately authorize the PRD 21 or equivalent governance evidence interaction
+  before composing its production adapter. This authorization does not change
+  the PRD 02-only registry dependency or transfer its evidence responsibilities
+  into PRD 07.
 - Select and review the identity/session architecture and provider behind the
-  adapter. Clear any `ARCHITECTURE_DECISION_REQUIRED`,
+  adapter. Clear any `FOUNDER_DECISION_REQUIRED`,
+  `ARCHITECTURE_DECISION_REQUIRED`,
   `EXTERNAL_CREDENTIAL_REQUIRED`, `FINANCIAL_COMMITMENT_REQUIRED`, and
   `LEGAL_PRIVACY_DECISION_REQUIRED` conditions independently.
 - Freeze any coordinated contract changes caused by approved decisions.
@@ -865,7 +1140,9 @@ readiness or PRD completion.
 ### Phase 3 — production-representative validation
 
 - Compose the non-synthetic provider and approved policy gateway in a protected
-  environment with synthetic or explicitly authorized controlled accounts.
+  environment with synthetic or explicitly authorized controlled accounts,
+  using only the bounded interaction/reference protocol to the separately
+  authorized governance implementation.
 - Validate redirect/session security, recovery, concurrency, migrations,
   readiness, safe observability, accessibility, and disable/rollback procedures.
 - No uncontrolled real-user invitation or data collection occurs during this
@@ -885,6 +1162,7 @@ readiness or PRD completion.
 
 1. An independently reviewed Technical Design resolves the provider-neutral
    authenticated-principal, browser/API session, invitation, policy handoff,
+   governance interaction, attempt identity/cardinality, server-owned
    idempotency, migration, recovery, and threat-model boundaries before
    executable contract freeze.
 2. Strict Zod schemas and inferred types are frozen for all authorized shared
@@ -895,9 +1173,11 @@ readiness or PRD completion.
    principal, student, coach, link, issuer, or provider-subject data. Missing or
    invalid trusted context denies before protected lookup.
 4. External bindings and principal-to-domain mappings are unique, role-specific,
-   history-preserving, and concurrency-safe. A principal may hold both roles
-   only through separate successful invitations; no role or permission is
-   inferred.
+   history-preserving, and concurrency-safe. Mechanics can represent two
+   independent roles without inference, but real dual-role acquisition and
+   self-coach linking are unreachable unless exact attributable founder and
+   applicable legal/privacy decisions separately clear them; readiness and
+   races prove fail-closed behavior when either is absent.
 5. Coach-bootstrap and student invitations are opaque, high entropy,
    single-use, expiring, revocable, verifier-only at rest, enumeration-
    resistant, and absent from URL paths/queries, logs, telemetry, snapshots,
@@ -905,18 +1185,28 @@ readiness or PRD completion.
 6. A coach claim atomically creates one PRD 02 coach record and mapping. A
    student claim atomically creates one student record, mapping, and initial
    link to the invitation coach. Injected failures leave zero partial rows.
-7. Mutations use server-canonicalized namespaced idempotency. Identical retry
-   returns the original typed result with zero row changes; mismatched reuse and
-   concurrent claim/revoke/mapping races preserve one authoritative outcome.
-8. Refresh, provider interruption, ambiguous response, expiry, revocation, and
-   safe retry recover from backend state without duplicate records or account-
-   existence disclosure. Subject-changing recovery cannot bypass a separately
-   approved verified rebinding workflow.
-9. Policy/notice readiness is a deny-by-default typed handoff. Missing, stale,
-   blocked, or synthetic-in-production policy prevents completion. The
-   onboarding code contains no invented legal copy, lawful-basis assumption,
-   minors decision, jurisdiction, withdrawal consequence, retention period, or
-   raw consent payload.
+7. Every mutation uses a bounded caller retry token only as correlation and a
+   server-owned namespaced operation ID as persisted identity. Authority scope,
+   canonicalization version/digest, same-token replay/conflict, new-token
+   intentional repetition, pending reconciliation, lost response, and
+   concurrency tests pass for bootstrap issuance, student-invitation issuance,
+   revoke, attempt steps, governance interaction initiation/consumption, and
+   claim with one authoritative outcome and no duplicate effect.
+8. Attempt IDs/scopes, one-active-attempt-per-exact-scope cardinality, allowed
+   simultaneous attempts for distinct invitations, bounded deterministic
+   selection, explicit resume, expiry, abandonment, completion, terminal
+   non-reopen, and successor rules are database-enforced and tested. Multiple
+   invitation/principal/role races recover without duplicate records or cross-
+   attempt, account, coach, role, or relationship disclosure. Subject-changing
+   recovery cannot bypass a separately approved verified rebinding workflow.
+9. Policy/notice readiness is a deny-by-default typed handoff to a separately
+   authorized PRD 21 or equivalent governance evidence interaction. PRD 07 may
+   initiate/resume/poll and consume only a correctly bound immutable evidence
+   reference; it exposes no legal-copy, response, consent, or evidence-
+   submission route and stores no raw response/evidence payload. Missing,
+   stale, mismatched, expired, blocked, unauthorized, or synthetic-in-
+   production composition prevents completion without inventing lawful basis,
+   minors, jurisdiction, withdrawal, retention, or content policy.
 10. The student experience passes mobile accessibility and interruption tests;
     the coach experience passes desktop/tablet accessibility and one-time-
     secret redaction tests. Offline claim and service-worker credential caching
@@ -929,9 +1219,10 @@ readiness or PRD completion.
     database-bypass constraints, transaction rollback, concurrency, replay,
     drift, forward correction, and recovery without harming unrelated data.
 13. Readiness fails closed on missing/synthetic/integrity-invalid identity or
-    policy composition, migration mismatch, credential absence, recovery gaps,
-    or active stops and discloses only safe classifications internally and
-    ready/not-ready publicly.
+    governance/policy composition, incomplete operation reconciliation,
+    attempt-cardinality failure, dual-role/self-coach bypass, migration
+    mismatch, credential absence, recovery gaps, or active stops and discloses
+    only safe classifications internally and ready/not-ready publicly.
 14. Operational logs, metrics, traces, errors, screenshots, and review evidence
     contain no secret, token, provider subject, profile/contact data, legal
     content, raw evidence, SQL, credential, or full domain record. Security and
@@ -944,7 +1235,9 @@ readiness or PRD completion.
     evidence, lifecycle, sharing, provider-processing, and recovery decision is
     attributable and approved. If any is required but unresolved,
     `LEGAL_PRIVACY_DECISION_REQUIRED` remains active and real-user activation
-    and PRD completion do not pass.
+    and PRD completion do not pass. Dual-role/self-coach activation also remains
+    blocked under `FOUNDER_DECISION_REQUIRED` until the exact material product-
+    role decision is attributable; clearing either stop alone is insufficient.
 17. Exact-head lint, formatting, strict typecheck, unit, Web, API, domain,
     PostgreSQL integration, migration, production build, repository check,
     dependency/secret scan, accessibility/E2E, and recovery evidence pass.
@@ -965,7 +1258,9 @@ readiness or PRD completion.
   principal, one role mapping, one PRD 02 domain record, and—only for
   students—one initial link.
 - 0 duplicate domain records, mappings, links, terminal invitation transitions,
-  or operation results across tested identical retries and concurrency races.
+  attempts for one exact active scope, governance interactions for one current
+  package, or operation results/effects across tested retries, intentional
+  repetitions, lost responses, reconciliation, and concurrency races.
 - 0 known paths accept a browser-supplied domain or provider identifier as
   authenticated authority.
 - 0 plaintext invitation secrets, provider credentials/tokens, profile/contact
@@ -973,6 +1268,12 @@ readiness or PRD completion.
   snapshots, build artifacts, or review evidence.
 - 100% of required production identity, policy, legal/privacy, migration, and
   recovery readiness checks fail closed when missing or synthetic.
+- 100% of tested real-user dual-role and self-coach paths fail closed until both
+  their attributable founder and applicable legal/privacy decisions are present;
+  synthetic representability alone enables 0 production paths.
+- 0 PRD 07 routes or stored records contain legal copy, governance answers,
+  signatures, or raw evidence payloads; 100% of accepted readiness references
+  are integrity-checked and bound to the exact principal/attempt/role/package.
 - 100% of critical student onboarding screens pass the approved automated
   accessibility suite; any required subjective trust/usability assessment is
   reported honestly and, if material, handled under `HUMAN_PERCEPTION_REQUIRED`.
@@ -1063,8 +1364,8 @@ PRD 07 may move to `COMPLETED` only when:
 
 - all acceptance criteria are evidenced on the exact reviewed head;
 - all required provider, credential, architecture, financial, and
-  legal/privacy conditions are cleared or the affected scope is explicitly
-  re-authorized without misrepresenting a stop as passed;
+  founder/legal/privacy conditions are cleared or the affected scope is
+  explicitly re-authorized without misrepresenting a stop as passed;
 - contracts and documentation are current and consistent;
 - migration and recovery evidence passes;
 - CI, unit, integration, E2E, accessibility, security, privacy, architecture,
@@ -1088,8 +1389,14 @@ conditions are satisfied.
 - Synthetic provider and policy adapters prove deterministic mechanics only.
   They do not prove provider security, real identity assurance, availability,
   recovery, residency, or legal sufficiency.
-- The permitted principal-both-roles model does not grant cross-role access and
-  may require later product policy before a real user can activate both roles.
+- The principal-both-roles representation grants no cross-role access. Real
+  second-role acquisition and self-coach linking are hard-disabled pending an
+  attributable founder product decision and applicable legal/privacy decision;
+  this PRD intentionally does not predict their outcome.
+- PRD 07 does not implement the PRD 21/governance evidence interaction. Its
+  synthetic port proves only start/resume/poll/consume mechanics; production
+  evidence sufficiency and raw response handling remain with the separately
+  authorized governance capability.
 - Invitation-only onboarding is the bounded Pilot V1 mechanism defined here;
   public self-sign-up, social discovery, profile setup, and account merging are
   not included.
