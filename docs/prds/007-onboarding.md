@@ -1,12 +1,12 @@
 # PRD 07 — Onboarding
 
-- Status: `APPROVED`
+- Status: `IN_PROGRESS`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Student and coach onboarding within approved identity and consent scope
 - Dependencies: PRD 02 — `COMPLETED`
 - Release gate: Gate A
 - External milestone gate: none
-- Pre-flight: Independent product, architecture, security, and privacy review required before executable contract freeze
+- Pre-flight: `PASS` — see [independent review](../execution/reviews/PRD_07_DESIGN_PREFLIGHT.md); executable contract freeze still requires an independently reviewed Technical Design
 - Stop boundary: Provider- and policy-neutral work with synthetic identities and synthetic policy decisions may proceed; real-user activation remains subject to the explicit stop conditions in this PRD
 
 ## Context
