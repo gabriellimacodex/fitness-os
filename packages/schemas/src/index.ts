@@ -4,6 +4,7 @@ export {
   type ApiErrorCode,
   type ApiErrorResponse,
 } from './error.js';
+export * from './exercise-catalog.js';
 export { healthResponseSchema, type HealthResponse } from './health.js';
 export {
   notReadyResponseSchema,

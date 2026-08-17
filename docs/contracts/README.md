@@ -46,3 +46,20 @@ cross-assignable. Record objects are strict. Timestamps use canonical UTC with
 millisecond precision, and an ended link must end strictly after it starts.
 These data contracts authorize no public route, identity mapping, profile field,
 authentication behavior, or deletion policy.
+
+### PRD 03 — Exercise Knowledge Base
+
+| Contract group                   | Executable schemas                                                                       | Provider                          | Consumers                                             | Status |
+| -------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------- | ------ |
+| Catalog identities and lifecycle | Branded ID and lifecycle schemas in `exercise-catalog.ts`                                | Catalog domain/database           | Catalog services, routes, and future frozen consumers | Frozen |
+| Taxonomy and provenance          | Taxonomy, provenance, and unassessed-reference schemas in `exercise-catalog.ts`          | Catalog domain/database           | Catalog publication and read providers                | Frozen |
+| Exercise reads                   | Summary, detail, immutable revision, and bounded page schemas in `exercise-catalog.ts`   | `apps/api` catalog routes         | API clients and tests                                 | Frozen |
+| Catalog route inputs             | Strict list, taxonomy, ID, and revision query/parameter schemas in `exercise-catalog.ts` | `apps/api` catalog routes         | API handlers and clients                              | Frozen |
+| Production manifest              | `catalogManifestSchema` / `CatalogManifest`                                              | Deployment-only ingestion command | Catalog ingestion service and Gate A evidence         | Frozen |
+
+All catalog objects are strict and bounded. Public collections use opaque
+cursors and never expose an unbounded taxonomy dump. Reference candidates remain
+literally `unassessed`; the contracts contain no evidence grade, movement
+instruction, training behavior, user data, or public mutation command. The
+production manifest is non-empty and contains no generated IDs, caller
+timestamps, or hashes; provider logic supplies those values after validation.
