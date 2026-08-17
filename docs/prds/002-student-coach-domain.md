@@ -80,8 +80,9 @@ separately frozen HTTP contracts.
 
 ## Business rules
 
-- Student, coach, and link identifiers are random opaque UUIDv4 values. They encode no
-  email, provider, role claim, sequence, or other personal meaning.
+- Student, coach, and link identifiers are separately branded random opaque
+  UUIDv4 values. They are not type-compatible and encode no email, provider,
+  role claim, sequence, or other personal meaning.
 - Student and coach records are distinct domain resources. This PRD makes no
   claim about whether one future authenticated person may map to either or both.
 - Creation and relationship timestamps are supplied by a trusted backend clock,
@@ -92,7 +93,10 @@ separately frozen HTTP contracts.
   not delete or rewrite the historical interval.
 - An end time must be strictly later than the start time.
 - The same student and coach pair may have only one active link at a time.
-  A later link may start after the prior link has ended.
+  Historical intervals for that pair may not overlap; a later link must start
+  strictly after the prior link has ended.
+- Link creation accepts no end timestamp and always creates an active interval.
+  Historical state can be produced only through the governed one-way end operation.
 - No broader coach/student cardinality is promised or enforced.
 - No delete operation is provided. Retention and deletion behavior remains
   explicitly deferred to PRD 21 rather than silently chosen here.
@@ -169,9 +173,12 @@ public API error code is authorized by this PRD.
 - A timestamp that is not in the frozen canonical UTC representation is rejected;
   it is never stored ambiguously.
 - Duplicate resource or link IDs produce a typed conflict outcome.
-- A link referencing a missing student or coach fails atomically.
+- A link referencing one or both missing parents fails atomically with a
+  deterministic, student-then-coach missing-reference set.
 - Concurrent attempts to create the same active student/coach pair result in
   one success and one typed conflict.
+- Concurrent or backdated attempts to create overlapping historical intervals
+  for the same pair return a typed conflict and create no row.
 - Ending a missing link returns not found; ending an ended link returns
   already ended; neither mutates history.
 - An end time at or before the start time is rejected by domain validation and
@@ -206,7 +213,8 @@ be proven against PostgreSQL, not replaced by an in-memory database or mocked SQ
 1. The executable contracts listed in Data are frozen before dependent domain
    and database work proceeds in parallel, and the human registry references them accurately.
 2. Contract tests reject malformed IDs, non-canonical or invalid timestamps,
-   unknown fields, and invalid link intervals.
+   unknown fields, and invalid link intervals; compile-time tests reject
+   cross-assignment among student, coach, and link ID brands.
 3. Domain code exposes explicit persistence ports and outcomes without importing
    Drizzle, PostgreSQL drivers, Fastify, React, Next.js, or `@fitness-os/database`.
 4. A versioned additive migration creates only the three authorized tables,
@@ -215,8 +223,9 @@ be proven against PostgreSQL, not replaced by an in-memory database or mocked SQ
 5. Migration validation passes from an empty disposable PostgreSQL database,
    generated schema and committed migration show no drift, and recovery steps are exercised or dry-run with evidence.
 6. Repository integration tests prove deterministic create/read behavior,
-   referential integrity, typed conflicts, concurrent active-link protection,
-   one-way link ending, and internal SQL-error containment.
+   deterministic one-or-both missing-reference results, referential integrity,
+   typed conflicts, serialized non-overlapping pair history, concurrent
+   active-link protection, one-way link ending, and internal SQL-error containment.
 7. No public product route, UI, authentication mechanism, identity mapping,
    production connection, real data, or seed account is introduced.
 8. No direct identifier or unnecessary PII is stored; logs and public errors do

@@ -49,8 +49,10 @@ depend on `packages/database`, Drizzle, or a PostgreSQL driver.
 | `coachRecordSchema`, `CoachRecord`               | Exact `{ id, createdAt }` coach record               |
 | `studentCoachLinkSchema`, `StudentCoachLink`     | Exact temporal association record                    |
 
-All record schemas reject unknown keys. UUIDs use Zod UUIDv4 validation rather
-than custom parsing. Timestamps accept only canonical RFC
+All record schemas reject unknown keys. Each identifier uses UUIDv4 validation
+plus its own Zod nominal brand (`StudentId`, `CoachId`, or
+`StudentCoachLinkId`), so valid identifiers for different resource kinds remain
+compile-time incompatible. Timestamps accept only canonical RFC
 3339 strings normalized to UTC with millisecond precision, for example
 `2026-08-16T12:34:56.789Z`. `endedAt` is nullable and, when present, must be
 strictly later than `startedAt`.
@@ -85,6 +87,11 @@ Required invariants:
 - no domain operation deletes a record; and
 - no function treats a link or identifier as authorization.
 
+The domain also defines a distinct `CreateStudentCoachLink` input containing
+only `id`, `studentId`, `coachId`, and `startedAt`. It has no `endedAt` field.
+The repository produces a `StudentCoachLink` with `endedAt: null`; an ended
+record can only result from the separate `end` transition.
+
 The domain owns explicit result unions rather than leaking driver exceptions:
 
 ```ts
@@ -93,8 +100,10 @@ type CreateResult<T> = { status: 'created'; value: T } | { status: 'conflict' };
 type CreateLinkResult =
   | { status: 'created'; value: StudentCoachLink }
   | { status: 'conflict' }
-  | { status: 'missing_student' }
-  | { status: 'missing_coach' };
+  | {
+      status: 'missing_references';
+      missing: readonly ('student' | 'coach')[];
+    };
 
 type EndLinkResult =
   | { status: 'ended'; value: StudentCoachLink }
@@ -117,7 +126,7 @@ interface CoachRepository {
 }
 
 interface StudentCoachLinkRepository {
-  create(link: StudentCoachLink): Promise<CreateLinkResult>;
+  create(input: CreateStudentCoachLink): Promise<CreateLinkResult>;
   findById(id: StudentCoachLinkId): Promise<StudentCoachLink | null>;
   findActive(
     studentId: StudentId,
@@ -167,8 +176,10 @@ Both foreign keys use `ON DELETE RESTRICT`. The migration adds:
 - an index on `(coach_id, started_at)`.
 
 The partial unique index prevents duplicate active links for the same exact
-pair under concurrency without imposing unapproved global cardinality.
-Historical rows remain queryable after a link ends.
+pair under concurrency without imposing unapproved global cardinality. The
+adapter additionally serializes writes for the exact pair and rejects a new
+`startedAt` unless it is strictly later than the latest prior `endedAt`; this
+prevents overlapping history while historical rows remain queryable.
 
 No `updated_at`, soft-delete flag, profile column, external identity, JSON
 metadata, audit payload, or speculative tenant identifier is added. A future
@@ -196,11 +207,22 @@ constraint failures to typed domain results. Unexpected driver errors remain
 unexpected internal failures and preserve their cause for internal diagnosis;
 they are not flattened into false conflict/not-found outcomes.
 
-The link-ending operation is one conditional statement inside a transaction:
-update the row only where the ID matches and `ended_at IS NULL`, then return the
-updated row. If no row updates, a read distinguishes missing from already ended.
-The adapter validates the interval before the write, while the database check
-constraint protects against races or adapter defects.
+Link creation starts a transaction and locks the referenced student row and
+coach row in that fixed order. Those parent-row locks serialize all link
+creation for the same exact pair without an extension or provider-specific
+advisory-lock contract. The adapter deterministically reports missing parents
+as a non-empty set ordered `student`, then `coach`. Once both parents exist, it
+reads the pair's latest interval under the same transaction and returns
+`conflict` when a row is active or when the proposed `startedAt` is not strictly
+later than the latest `endedAt`. It then inserts with `ended_at = NULL`; the
+partial unique index remains defense in depth for active-link races.
+
+The link-ending operation locks the link row in a transaction. It returns
+`not_found` when absent, `already_ended` when the locked row has an end, and
+`invalid_interval` when the requested value is not strictly later than the
+locked `started_at`. Only then does it update the still-active row and return
+the result. The database check constraint remains defense in depth, but expected
+classification never depends on which constraint PostgreSQL evaluates first.
 
 Automatic write retries are not added. A retry policy without a public command
 or idempotency contract would be speculative and could duplicate future work.
@@ -222,7 +244,8 @@ Validation uses a clean disposable PostgreSQL database:
 
 1. apply all committed migrations from zero;
 2. verify the expected tables, columns, types, constraints, and indexes;
-3. run repository integration and concurrency tests;
+3. run repository integration tests for missing-parent precedence,
+   non-overlapping pair history, ending classification, and concurrency;
 4. run Drizzle schema/migration drift detection; and
 5. apply the migration runner again to prove already-applied migrations are not replayed.
 
@@ -294,8 +317,9 @@ not inferred here; PRD 21 must define them before dependent behavior requires th
 | --------------------------------------------- | ------------------------------------------------------------------------- |
 | Invalid boundary record                       | Reject before repository access                                           |
 | Duplicate student, coach, or link ID          | Typed `conflict`; no existing row mutation                                |
-| Missing student or coach for a new link       | Atomic failure; no orphan link                                            |
-| Two concurrent active links for the same pair | One success, one typed conflict via the partial unique index              |
+| One or both missing parents for a new link    | Ordered `missing_references`; atomic failure; no orphan link              |
+| Two concurrent active links for the same pair | Parent-row serialization; one success and one typed conflict              |
+| Backdated or overlapping pair interval        | Typed conflict under the same serialized pair transaction                 |
 | End time not later than start                 | `invalid_interval`; database check remains defense in depth               |
 | End missing link                              | `not_found`; no mutation                                                  |
 | End already-ended link                        | `already_ended`; original interval preserved                              |
@@ -314,6 +338,7 @@ failure is idempotent.
 ### Contract tests
 
 - accept canonical opaque IDs and UTC timestamps;
+- prove the three nominal ID brands are not cross-assignable at compile time;
 - reject malformed/non-UUID IDs, invalid timestamps, unknown keys, and hidden profile fields;
 - accept active and correctly ended links;
 - reject equal/reversed intervals and malformed nullability.
@@ -329,8 +354,10 @@ failure is idempotent.
 - apply migrations from zero and inspect the schema;
 - create and read each record with exact normalized output;
 - reject missing foreign keys without orphan rows;
+- return the fixed student-then-coach missing-reference set when both are absent;
 - map duplicate primary keys and duplicate active pairs to conflict;
 - create competing active links concurrently and prove exactly one succeeds;
+- reject backdated or overlapping history after a prior interval ends;
 - end a link once, distinguish second end from missing ID, and preserve timestamps;
 - surface database unavailability and unexpected SQL errors as internal failures;
 - rerun the migration runner without replay; and
