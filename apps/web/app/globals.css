@@ -56,3 +56,58 @@ body {
     padding: 4rem;
   }
 }
+
+.catalog {
+  display: grid;
+  gap: 1rem;
+  margin: 0 auto;
+  max-width: 40rem;
+  min-height: 100svh;
+  padding: 1.25rem;
+}
+
+.catalog h1,
+.catalog h2,
+.catalog p,
+.catalog ul,
+.catalog ol {
+  margin: 0;
+}
+
+.catalog h1 {
+  font-size: clamp(1.75rem, 8vw, 2.75rem);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.catalog h2 {
+  font-size: 1.05rem;
+}
+
+.catalog p,
+.catalog li {
+  color: #526158;
+  line-height: 1.5;
+}
+
+.catalog ul,
+.catalog ol {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.2rem;
+}
+
+.catalog a {
+  color: #18231d;
+}
+
+.catalog a:focus-visible {
+  outline: 2px solid #18231d;
+  outline-offset: 3px;
+}
+
+@media (min-width: 48rem) {
+  .catalog {
+    padding: 3rem 1.5rem;
+  }
+}

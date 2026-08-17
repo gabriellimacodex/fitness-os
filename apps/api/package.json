@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
+    "@fitness-os/domain": "workspace:*",
     "@fitness-os/schemas": "workspace:*",
     "fastify": "5.12.0"
   },

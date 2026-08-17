@@ -184,4 +184,91 @@ describe('createApiClient', () => {
 
     await expect(client.readiness()).rejects.toBeInstanceOf(ApiProtocolError);
   });
+
+  it('fetches and validates a movement list with no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ items: [] }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.movements()).resolves.toEqual({ items: [] });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/movements'),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('encodes a movement identifier as one URL segment', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        movementId: 'bodyweight-squat',
+        contentVersion: 1,
+        name: 'Bodyweight Squat',
+        summary: 'A controlled squat using body weight and a stable stance.',
+        setup: ['Stand with feet about hip-width apart.'],
+        steps: ['Lower with control.', 'Return to standing.'],
+        cues: ['Keep the movement slow and even.'],
+        commonMistakes: ['Dropping quickly without control.'],
+        safetyNotes: [
+          'Stop if you feel pain, dizziness, or loss of control and seek qualified help as appropriate.',
+        ],
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.movement('bodyweight-squat');
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/movements/bodyweight-squat'),
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+  });
+
+  it('does not echo raw content from a malformed movement payload', async () => {
+    const rawContent = 'private-catalog-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ items: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client.movements().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  it('aborts a movement read after 3,000 ms and does not return a prior result', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const pending = client.movements();
+    const expectation =
+      expect(pending).rejects.toBeInstanceOf(ApiProtocolError);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expectation;
+    vi.useRealTimers();
+  });
 });

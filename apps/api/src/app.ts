@@ -12,10 +12,16 @@ import Fastify, {
 } from 'fastify';
 import { randomUUID } from 'node:crypto';
 
+import {
+  registerMovementRoutes,
+  type MovementRouteCatalog,
+} from './movement-routes.js';
+
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
 export interface PlatformOptions {
   corsAllowedOrigins?: readonly string[];
+  movementCatalog?: MovementRouteCatalog;
   readinessCheck?: ReadinessCheck;
 }
 
@@ -146,6 +152,8 @@ export function buildApp(
 
     return readyResponseSchema.parse({ status: 'ready' });
   });
+
+  registerMovementRoutes(app, platform.movementCatalog);
 
   return app;
 }
