@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   catalogReferenceCandidateSchema,
+  exerciseIdSchema,
   exerciseTaxonomyAssignmentsSchema,
   provenanceSchema,
   taxonomyTermSchema,
@@ -9,8 +10,8 @@ import {
 
 import {
   canonicalizePublicationInput,
-  createExerciseLifecycleOperationKey,
-  createPublishOperationKey,
+  createExerciseLifecycleCommand,
+  createPublishExerciseCommand,
   hashPublicationContent,
   hashPublicationOperation,
   resolveCatalogOperation,
@@ -107,44 +108,62 @@ describe('catalog canonicalization', () => {
 
   it('isolates namespaces and rejects a same-key retry with different semantic input', () => {
     const operationId = '30000000-0000-4000-8000-000000000001';
-    const publishKey = createPublishOperationKey(operationId);
-    const lifecycleKey = createExerciseLifecycleOperationKey(operationId);
-    const digest = hashPublicationOperation(publication);
+    const publish = createPublishExerciseCommand({
+      operationId,
+      semanticInput: publication,
+    });
+    const changed = createPublishExerciseCommand({
+      operationId,
+      semanticInput: {
+        ...publication,
+        content: {
+          ...publication.content,
+          description: 'A changed neutral fixture catalog entry.',
+        },
+      },
+    });
+    const lifecycle = createExerciseLifecycleCommand({
+      operationId,
+      exerciseId: exerciseIdSchema.parse(
+        '30000000-0000-4000-8000-000000000002',
+      ),
+      targetLifecycle: 'archived',
+      reason: 'Archive fixture exercise',
+    });
+    if (
+      publish.status !== 'ready' ||
+      changed.status !== 'ready' ||
+      lifecycle.status !== 'ready'
+    ) {
+      throw new Error('Expected ready fixture commands');
+    }
+    const attempt = publish.command.operation;
     const prior = {
-      key: publishKey,
-      canonicalizationVersion: 'exercise-catalog.v1' as const,
-      digest,
+      key: attempt.key,
+      canonicalizationVersion: attempt.canonicalizationVersion,
+      digest: attempt.digest,
       result: { exerciseId: 'fixture-id', revision: 1 },
     };
 
-    expect(lifecycleKey).not.toBe(publishKey);
-    const attempt = {
-      key: publishKey,
-      canonicalizationVersion: 'exercise-catalog.v1' as const,
-      digest,
-    };
+    expect(lifecycle.command.operation.key).not.toBe(attempt.key);
     expect(resolveCatalogOperation(prior, attempt)).toEqual({
       status: 'replayed',
       result: prior.result,
     });
-    expect(
-      resolveCatalogOperation(prior, {
-        ...attempt,
-        digest: hashPublicationOperation({
-          ...publication,
-          expectedCurrentRevision: 1,
-        }),
-      }),
-    ).toEqual({
+    expect(resolveCatalogOperation(prior, changed.command.operation)).toEqual({
       status: 'operation_input_mismatch',
-      key: publishKey,
+      key: attempt.key,
     });
-    expect(
-      resolveCatalogOperation(prior, { ...attempt, key: lifecycleKey }),
-    ).toEqual({
-      status: 'new_operation',
-      operation: { ...attempt, key: lifecycleKey },
-    });
+    const crossNamespace = resolveCatalogOperation(
+      prior,
+      lifecycle.command.operation,
+    );
+    expect(crossNamespace.status).toBe('new_operation');
+    if (crossNamespace.status === 'new_operation') {
+      expect(crossNamespace.operation.key).toBe(
+        lifecycle.command.operation.key,
+      );
+    }
   });
 });
 
@@ -376,6 +395,9 @@ describe('catalog ports', () => {
         throw new Error('fixture');
       },
       replaceTaxonomyTerm: async () => {
+        throw new Error('fixture');
+      },
+      ingestManifest: async () => {
         throw new Error('fixture');
       },
     } satisfies ExerciseCatalogCurationRepository;
