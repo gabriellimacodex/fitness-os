@@ -18,16 +18,31 @@ const publishedRecord = {
 };
 
 describe('committed movement ledger', () => {
-  it('starts as an empty version-controlled catalog and manifest', () => {
-    expect(COMMITTED_PUBLISHED_MOVEMENTS).toEqual([]);
-    expect(COMMITTED_MOVEMENT_MANIFEST).toEqual([]);
+  it('starts as a frozen preview catalog with an append-only manifest', () => {
+    expect(
+      COMMITTED_PUBLISHED_MOVEMENTS.map((item) => item.movementId),
+    ).toEqual(['bodyweight-squat', 'hip-hinge']);
+    expect(COMMITTED_MOVEMENT_MANIFEST).toHaveLength(2);
     expect(Object.isFrozen(COMMITTED_PUBLISHED_MOVEMENTS)).toBe(true);
     expect(Object.isFrozen(COMMITTED_MOVEMENT_MANIFEST)).toBe(true);
   });
 
   it('accepts append-only growth from the merge-base ledger', () => {
+    const next = [
+      ...COMMITTED_MOVEMENT_MANIFEST,
+      {
+        action: 'publish' as const,
+        contentVersion: 1,
+        digest: 'c'.repeat(64),
+        movementId: 'wall-sit',
+        reviewRecordPath:
+          'docs/execution/content-reviews/movements/wall-sit-v1.md',
+        sequence: 1,
+      },
+    ];
+
     expect(() =>
-      assertManifestHistory(COMMITTED_MOVEMENT_MANIFEST, [publishedRecord]),
+      assertManifestHistory(COMMITTED_MOVEMENT_MANIFEST, next),
     ).not.toThrow();
   });
 

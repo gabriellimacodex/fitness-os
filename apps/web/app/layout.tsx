@@ -1,11 +1,24 @@
 import type { Metadata, Viewport } from 'next';
+import { Barlow_Condensed, IBM_Plex_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import './globals.css';
 
+const display = Barlow_Condensed({
+  subsets: ['latin'],
+  weight: ['500', '700'],
+  variable: '--font-display',
+});
+
+const body = IBM_Plex_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-body',
+});
+
 export const metadata: Metadata = {
   title: 'Fitness OS',
-  description: 'Engineering foundation ready.',
+  description: 'Student training and coach guidance.',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/icon.svg',
@@ -13,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#f4f1eb',
+  themeColor: '#12140f',
 };
 
 interface RootLayoutProps {
@@ -23,7 +36,7 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={`${display.variable} ${body.variable}`}>{children}</body>
     </html>
   );
 }

@@ -29,7 +29,7 @@ describe('MovementDetailView', () => {
     expect(markup).toContain('<ol');
     expect(markup).toContain('Lower with control.');
     expect(markup).toContain('href="/movements"');
-    expect(markup).toContain('Content version 1');
+    expect(markup).toContain('Version 1');
     expect(markup).toContain('<h2>Safety</h2>');
   });
 

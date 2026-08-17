@@ -3,15 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import HomePage from './page';
 
-describe('foundation page', () => {
-  it('renders only the foundation message', () => {
+describe('home page', () => {
+  it('opens the student and join doors', () => {
     const markup = renderToStaticMarkup(<HomePage />);
-    const visibleText = markup
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
 
-    expect(visibleText).toContain('Fitness OS Engineering foundation ready.');
+    expect(markup).toContain('Fitness OS');
     expect(markup).toContain('href="/movements"');
+    expect(markup).toContain('href="/onboarding"');
   });
 });

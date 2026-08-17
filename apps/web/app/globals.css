@@ -1,15 +1,17 @@
 :root {
-  color-scheme: light;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  color: #18231d;
-  background: #f4f1eb;
+  color-scheme: dark;
+  --iron: #12140f;
+  --plate: #1b1e16;
+  --chalk: #e8e2d2;
+  --mute: #9a9484;
+  --sodium: #e3a008;
+  --rust: #c45a32;
+  --line: #2c3126;
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  font-family: var(--font-body);
+  color: var(--chalk);
+  background: var(--iron);
 }
 
 * {
@@ -23,91 +25,213 @@ body {
 
 body {
   margin: 0;
+  background:
+    radial-gradient(circle at 12% -10%, #2a2614 0%, transparent 36%),
+    var(--iron);
 }
 
-.foundation {
-  display: grid;
-  min-height: 100svh;
-  align-content: center;
-  gap: 0.75rem;
-  padding: 1.5rem;
+a {
+  color: inherit;
 }
 
-.foundation h1,
-.foundation p {
-  margin: 0;
-}
-
-.foundation h1 {
-  font-size: clamp(2.5rem, 12vw, 5.5rem);
-  line-height: 0.95;
-  letter-spacing: -0.055em;
-}
-
-.foundation p {
-  max-width: 32rem;
-  color: #526158;
-  font-size: clamp(1rem, 3vw, 1.25rem);
-  line-height: 1.5;
-}
-
-@media (min-width: 48rem) {
-  .foundation {
-    padding: 4rem;
-  }
-}
-
-.catalog {
-  display: grid;
-  gap: 1rem;
-  margin: 0 auto;
-  max-width: 40rem;
-  min-height: 100svh;
-  padding: 1.25rem;
-}
-
-.catalog h1,
-.catalog h2,
-.catalog p,
-.catalog ul,
-.catalog ol {
-  margin: 0;
-}
-
-.catalog h1 {
-  font-size: clamp(1.75rem, 8vw, 2.75rem);
-  letter-spacing: -0.04em;
-  line-height: 1.05;
-}
-
-.catalog h2 {
-  font-size: 1.05rem;
-}
-
-.catalog p,
-.catalog li {
-  color: #526158;
-  line-height: 1.5;
-}
-
-.catalog ul,
-.catalog ol {
-  display: grid;
-  gap: 0.65rem;
-  padding-left: 1.2rem;
-}
-
-.catalog a {
-  color: #18231d;
-}
-
-.catalog a:focus-visible {
-  outline: 2px solid #18231d;
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--sodium);
   outline-offset: 3px;
 }
 
+.shell {
+  display: grid;
+  gap: 1.5rem;
+  margin: 0 auto;
+  max-width: 42rem;
+  min-height: 100svh;
+  padding: 1.25rem 1.15rem 2.5rem;
+}
+
+.kicker {
+  color: var(--sodium);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 16vw, 6.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.84;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.lede,
+.note,
+.catalog p,
+.catalog li {
+  color: var(--mute);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.lede {
+  max-width: 28rem;
+}
+
+.bar {
+  background: var(--sodium);
+  height: 0.35rem;
+  width: 4.5rem;
+}
+
+.doors {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.door {
+  background: var(--plate);
+  border: 1px solid var(--line);
+  color: var(--chalk);
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  text-decoration: none;
+}
+
+.door strong {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.door span {
+  color: var(--mute);
+  font-size: 0.95rem;
+}
+
+.catalog,
+.onboard {
+  display: grid;
+  gap: 1rem;
+  margin: 0 auto;
+  max-width: 42rem;
+  min-height: 100svh;
+  padding: 1.25rem 1.15rem 2.5rem;
+}
+
+.catalog h1,
+.onboard h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 12vw, 4.4rem);
+  letter-spacing: -0.03em;
+  line-height: 0.9;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.catalog h2,
+.onboard h2 {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.catalog ul,
+.catalog ol {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.plates {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.plate {
+  background: var(--plate);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-decoration: none;
+}
+
+.plate strong {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  text-transform: uppercase;
+}
+
+.banner {
+  background: #2a1b12;
+  border-left: 4px solid var(--rust);
+  color: var(--chalk);
+  padding: 0.75rem 0.9rem;
+}
+
+.back {
+  color: var(--sodium);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field input,
+.field button {
+  border: 1px solid var(--line);
+  font: inherit;
+  padding: 0.8rem 0.85rem;
+}
+
+.field input {
+  background: var(--plate);
+  color: var(--chalk);
+}
+
+.field button {
+  background: var(--sodium);
+  border-color: var(--sodium);
+  color: #1a1404;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 @media (min-width: 48rem) {
-  .catalog {
+  .shell,
+  .catalog,
+  .onboard {
     padding: 3rem 1.5rem;
+  }
+
+  .doors {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto;
+    transition: none !important;
   }
 }

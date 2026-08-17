@@ -20,12 +20,21 @@ import {
 } from './movement-fixtures.js';
 
 describe('default movement catalog', () => {
-  it('lists no published movements', () => {
-    expect(listMovements()).toEqual([]);
+  it('lists the committed preview movements', () => {
+    expect(listMovements().map((item) => item.movementId)).toEqual([
+      'bodyweight-squat',
+      'hip-hinge',
+    ]);
+  });
+
+  it('returns a committed preview detail', () => {
+    expect(getMovementById('bodyweight-squat').status).toBe('found');
   });
 
   it('treats unknown valid identifiers as not found', () => {
-    expect(getMovementById(SQUAT.movementId)).toEqual({ status: 'not_found' });
+    expect(getMovementById('missing-movement')).toEqual({
+      status: 'not_found',
+    });
   });
 
   it('treats malformed identifiers as invalid', () => {

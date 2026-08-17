@@ -10,9 +10,18 @@ export type MovementLoadState =
   | { status: 'not_found' }
   | { status: 'unavailable' };
 
+function PreviewBanner() {
+  return (
+    <p className="banner">
+      Preview guidance. Not independently reviewed. Stop if anything hurts.
+    </p>
+  );
+}
+
 export function CatalogUnavailable() {
   return (
     <main className="catalog">
+      <p className="kicker">Library</p>
       <h1>Movements</h1>
       <p>Movement guidance is temporarily unavailable. Try again.</p>
     </main>
@@ -27,6 +36,7 @@ export function MovementsListView({ state }: { state: CatalogLoadState }) {
   if (state.status === 'empty') {
     return (
       <main className="catalog">
+        <p className="kicker">Library</p>
         <h1>Movements</h1>
         <p>No published movements are available yet.</p>
       </main>
@@ -35,12 +45,19 @@ export function MovementsListView({ state }: { state: CatalogLoadState }) {
 
   return (
     <main className="catalog">
+      <a className="back" href="/">
+        Home
+      </a>
+      <p className="kicker">Library</p>
       <h1>Movements</h1>
-      <ul>
+      <PreviewBanner />
+      <ul className="plates">
         {state.items.map((item) => (
           <li key={item.movementId}>
-            <a href={`/movements/${item.movementId}`}>{item.name}</a>
-            <p>{item.summary}</p>
+            <a className="plate" href={`/movements/${item.movementId}`}>
+              <strong>{item.name}</strong>
+              <span>{item.summary}</span>
+            </a>
           </li>
         ))}
       </ul>
@@ -54,7 +71,9 @@ export function MovementDetailView({ state }: { state: MovementLoadState }) {
       <main className="catalog">
         <h1>Movement</h1>
         <p>Movement guidance is temporarily unavailable. Try again.</p>
-        <a href="/movements">Back to movements</a>
+        <a className="back" href="/movements">
+          Back to movements
+        </a>
       </main>
     );
   }
@@ -64,7 +83,9 @@ export function MovementDetailView({ state }: { state: MovementLoadState }) {
       <main className="catalog">
         <h1>Movement not found</h1>
         <p>That movement is not available.</p>
-        <a href="/movements">Back to movements</a>
+        <a className="back" href="/movements">
+          Back to movements
+        </a>
       </main>
     );
   }
@@ -73,12 +94,13 @@ export function MovementDetailView({ state }: { state: MovementLoadState }) {
 
   return (
     <main className="catalog">
-      <p>
-        <a href="/movements">Back to movements</a>
-      </p>
+      <a className="back" href="/movements">
+        Back to movements
+      </a>
+      <p className="kicker">Version {movement.contentVersion}</p>
       <h1>{movement.name}</h1>
       <p>{movement.summary}</p>
-      <p>Content version {movement.contentVersion}</p>
+      <PreviewBanner />
       <section>
         <h2>Setup</h2>
         <ul>
