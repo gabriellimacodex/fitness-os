@@ -1,10 +1,11 @@
 # PRD 03 — Exercise Knowledge Base
 
-- Status: `APPROVED`
+- Status: `BLOCKED`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Governed exercise knowledge and evidence-ready taxonomy
 - Dependencies: PRD 01 — `COMPLETED`
 - Release gate: Gate A
+- Active stop: [`ARCHITECTURE_DECISION_REQUIRED`](../execution/blocks/PRD_03_ARCHITECTURE_DECISION_REQUIRED.md)
 
 ## Context
 
