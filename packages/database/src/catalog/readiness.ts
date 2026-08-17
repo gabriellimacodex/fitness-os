@@ -8,11 +8,16 @@ import { sql } from 'drizzle-orm';
 import type { PostgresConnection } from '../connection.js';
 import {
   activeLedgerKey,
+  ledgerKeyRingEpoch,
   type LedgerKeyRing,
   type LedgerKeyRingFailure,
 } from './ledger-keyring.js';
 import { journalContainsRequiredHashes } from './migration-readiness.js';
-import { SEEDED_TAXONOMY_DIMENSIONS, taxonomyDimensions } from './tables.js';
+import {
+  SEEDED_TAXONOMY_DIMENSIONS,
+  catalogOperations,
+  taxonomyDimensions,
+} from './tables.js';
 
 const drizzleRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -43,6 +48,8 @@ export type CatalogReadinessResult =
         | 'missing_required_migration'
         | 'missing_taxonomy_seed'
         | 'ledger_key_ring'
+        | 'missing_ledger_key'
+        | 'replica_epoch_mismatch'
         | 'database_error';
       detail?: string | LedgerKeyRingFailure;
     };
@@ -62,12 +69,32 @@ export async function readJournalHashes(
 export async function checkCatalogDatabaseReadiness(
   connection: PostgresConnection,
   ring: LedgerKeyRing,
-  requiredHashes: readonly string[] = requiredCatalogMigrationHashes(),
+  options: {
+    requiredHashes?: readonly string[];
+    /**
+     * When provided, every digest must equal this process's ledger epoch.
+     * Omit for single-replica compositions.
+     */
+    replicaEpochs?: readonly string[];
+  } = {},
 ): Promise<CatalogReadinessResult> {
+  const requiredHashes =
+    options.requiredHashes ?? requiredCatalogMigrationHashes();
+
   try {
     const active = activeLedgerKey(ring);
     if (typeof active === 'string') {
       return { ready: false, reason: 'ledger_key_ring', detail: active };
+    }
+
+    if (options.replicaEpochs !== undefined) {
+      const localEpoch = ledgerKeyRingEpoch(ring);
+      if (
+        options.replicaEpochs.length === 0 ||
+        options.replicaEpochs.some((epoch) => epoch !== localEpoch)
+      ) {
+        return { ready: false, reason: 'replica_epoch_mismatch' };
+      }
     }
 
     const journalHashes = await readJournalHashes(connection);
@@ -95,6 +122,21 @@ export async function checkCatalogDatabaseReadiness(
       !ids.has(SEEDED_TAXONOMY_DIMENSIONS.equipment.id)
     ) {
       return { ready: false, reason: 'missing_taxonomy_seed' };
+    }
+
+    const citedKeys = await connection.db
+      .selectDistinct({ keyId: catalogOperations.resultIntegrityKeyId })
+      .from(catalogOperations);
+    const ringKeyIds = new Set(ring.keys.map((key) => key.keyId));
+
+    for (const cited of citedKeys) {
+      if (!ringKeyIds.has(cited.keyId)) {
+        return {
+          ready: false,
+          reason: 'missing_ledger_key',
+          detail: cited.keyId,
+        };
+      }
     }
 
     return { ready: true };

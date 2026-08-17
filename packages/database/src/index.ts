@@ -10,10 +10,12 @@ export {
 export {
   SEEDED_TAXONOMY_DIMENSIONS,
   activeLedgerKey,
+  canonicalizeLedgerJson,
   catalogOperationKey,
   catalogOperations,
   checkCatalogDatabaseReadiness,
   commitCatalogOperation,
+  digestLedgerJson,
   exerciseLifecycleEvents,
   exerciseReferenceCandidates,
   exerciseRevisionReferences,

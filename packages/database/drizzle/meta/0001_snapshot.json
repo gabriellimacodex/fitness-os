@@ -235,12 +235,8 @@
           "name": "exercise_lifecycle_event_operation_id_catalog_operation_id_fk",
           "tableFrom": "exercise_lifecycle_event",
           "tableTo": "catalog_operation",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -248,12 +244,8 @@
           "name": "exercise_lifecycle_event_exercise_id_exercise_id_fk",
           "tableFrom": "exercise_lifecycle_event",
           "tableTo": "exercise",
-          "columnsFrom": [
-            "exercise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["exercise_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -428,12 +420,8 @@
           "name": "exercise_revision_reference_revision_id_exercise_revision_id_fk",
           "tableFrom": "exercise_revision_reference",
           "tableTo": "exercise_revision",
-          "columnsFrom": [
-            "revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["revision_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -441,12 +429,8 @@
           "name": "exercise_revision_reference_reference_id_exercise_reference_candidate_id_fk",
           "tableFrom": "exercise_revision_reference",
           "tableTo": "exercise_reference_candidate",
-          "columnsFrom": [
-            "reference_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reference_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -522,12 +506,8 @@
           "name": "exercise_revision_taxonomy_term_revision_id_exercise_revision_id_fk",
           "tableFrom": "exercise_revision_taxonomy_term",
           "tableTo": "exercise_revision",
-          "columnsFrom": [
-            "revision_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["revision_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -535,12 +515,8 @@
           "name": "exercise_revision_taxonomy_term_term_id_taxonomy_term_id_fk",
           "tableFrom": "exercise_revision_taxonomy_term",
           "tableTo": "taxonomy_term",
-          "columnsFrom": [
-            "term_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["term_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -677,12 +653,8 @@
           "name": "exercise_revision_exercise_id_exercise_id_fk",
           "tableFrom": "exercise_revision",
           "tableTo": "exercise",
-          "columnsFrom": [
-            "exercise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["exercise_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -690,12 +662,8 @@
           "name": "exercise_revision_operation_id_catalog_operation_id_fk",
           "tableFrom": "exercise_revision",
           "tableTo": "catalog_operation",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -703,12 +671,8 @@
           "name": "exercise_revision_primary_provenance_reference_id_fk",
           "tableFrom": "exercise_revision",
           "tableTo": "exercise_reference_candidate",
-          "columnsFrom": [
-            "primary_provenance_reference_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["primary_provenance_reference_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -959,12 +923,8 @@
           "name": "student_coach_links_student_id_students_id_fk",
           "tableFrom": "student_coach_links",
           "tableTo": "students",
-          "columnsFrom": [
-            "student_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["student_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -972,12 +932,8 @@
           "name": "student_coach_links_coach_id_coaches_id_fk",
           "tableFrom": "student_coach_links",
           "tableTo": "coaches",
-          "columnsFrom": [
-            "coach_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["coach_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1155,12 +1111,8 @@
           "name": "taxonomy_lifecycle_event_operation_id_catalog_operation_id_fk",
           "tableFrom": "taxonomy_lifecycle_event",
           "tableTo": "catalog_operation",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1168,12 +1120,8 @@
           "name": "taxonomy_lifecycle_event_term_id_taxonomy_term_id_fk",
           "tableFrom": "taxonomy_lifecycle_event",
           "tableTo": "taxonomy_term",
-          "columnsFrom": [
-            "term_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["term_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }
@@ -1327,12 +1275,8 @@
           "name": "taxonomy_term_dimension_id_taxonomy_dimension_id_fk",
           "tableFrom": "taxonomy_term",
           "tableTo": "taxonomy_dimension",
-          "columnsFrom": [
-            "dimension_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["dimension_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1340,12 +1284,8 @@
           "name": "taxonomy_term_operation_id_catalog_operation_id_fk",
           "tableFrom": "taxonomy_term",
           "tableTo": "catalog_operation",
-          "columnsFrom": [
-            "operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["operation_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
@@ -1353,12 +1293,8 @@
           "name": "taxonomy_term_replaced_by_term_id_taxonomy_term_id_fk",
           "tableFrom": "taxonomy_term",
           "tableTo": "taxonomy_term",
-          "columnsFrom": [
-            "replaced_by_term_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["replaced_by_term_id"],
+          "columnsTo": ["id"],
           "onDelete": "restrict",
           "onUpdate": "no action"
         }

@@ -43,10 +43,12 @@ Invariants:
 ## Replica parity
 
 Replicas of one environment share one ring epoch. The epoch is the ordered
-list of `(keyId, status)` pairs, not the secret bytes. Readiness compares a
-digest of that epoch across configured replicas. A replica with a different
-active key, a missing historical `keyId`, or extra unapproved keys is
-`not_ready`. Secret bytes are never exchanged in the parity payload.
+list of `(keyId, status)` pairs, not the secret bytes. When a composition
+supplies peer epoch digests, readiness compares them to the local epoch. A
+replica with a different active key, a missing historical `keyId`, or extra
+unapproved keys is `not_ready`. Secret bytes are never exchanged in the
+parity payload. Single-replica compositions omit peer epochs and still
+enforce active-key and cited-`keyId` checks.
 
 ## Rotation
 

@@ -1,14 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
-import { catalogOperations } from './tables.js';
+import type { PostgresConnection } from '../connection.js';
+import { canonicalizeLedgerJson } from './canonical-json.js';
 import {
   signLedgerResult,
   verifyLedgerResult,
   type LedgerKeyRing,
   type LedgerKeyRingFailure,
 } from './ledger-keyring.js';
-import type { PostgresConnection } from '../connection.js';
+import { catalogOperations } from './tables.js';
 
 export type CatalogOperationNamespace =
   | 'exercise.publish'
@@ -44,8 +45,15 @@ export function catalogOperationKey(
   return `${namespace}:${operationId.toLowerCase()}`;
 }
 
-function serializeResultPayload(resultPayload: unknown): string {
-  return JSON.stringify(resultPayload);
+function isOperationKeyConflict(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '23505' &&
+    'constraint_name' in error &&
+    error.constraint_name === 'catalog_operation_operation_key_unique'
+  );
 }
 
 export async function resolveCatalogOperation(
@@ -73,7 +81,7 @@ export async function resolveCatalogOperation(
     return { status: 'new_operation' };
   }
 
-  const canonicalResult = serializeResultPayload(existing.resultPayload);
+  const canonicalResult = canonicalizeLedgerJson(existing.resultPayload);
   const verification = verifyLedgerResult(ring, canonicalResult, {
     digest: existing.resultIntegrityDigest,
     keyId: existing.resultIntegrityKeyId,
@@ -118,7 +126,7 @@ export async function commitCatalogOperation(
     return resolved;
   }
 
-  const canonicalResult = serializeResultPayload(input.resultPayload);
+  const canonicalResult = canonicalizeLedgerJson(input.resultPayload);
   const signed = signLedgerResult(ring, canonicalResult);
 
   if (typeof signed === 'string') {
@@ -126,28 +134,47 @@ export async function commitCatalogOperation(
   }
 
   const createdAt = input.createdAt ?? new Date().toISOString();
-  const [inserted] = await connection.db
-    .insert(catalogOperations)
-    .values({
-      id: randomUUID(),
-      operationKey: input.operationKey,
-      namespace: input.namespace,
-      canonicalizationVersion: input.canonicalizationVersion,
-      inputDigest: input.inputDigest,
+
+  try {
+    const [inserted] = await connection.db
+      .insert(catalogOperations)
+      .values({
+        id: randomUUID(),
+        operationKey: input.operationKey,
+        namespace: input.namespace,
+        canonicalizationVersion: input.canonicalizationVersion,
+        inputDigest: input.inputDigest,
+        status: 'committed',
+        // Store the already-canonical object so jsonb round-trips match.
+        resultPayload: JSON.parse(canonicalResult) as unknown,
+        resultIntegrityKeyId: signed.keyId,
+        resultIntegrityDigest: signed.digest,
+        createdAt,
+      })
+      .returning();
+
+    if (inserted === undefined) {
+      throw new Error('Catalog operation insert returned no row');
+    }
+
+    return {
       status: 'committed',
-      resultPayload: input.resultPayload,
-      resultIntegrityKeyId: signed.keyId,
-      resultIntegrityDigest: signed.digest,
-      createdAt,
-    })
-    .returning();
+      operation: inserted as CatalogOperationRow,
+    };
+  } catch (error) {
+    if (!isOperationKeyConflict(error)) {
+      throw error;
+    }
 
-  if (inserted === undefined) {
-    throw new Error('Catalog operation insert returned no row');
+    const afterConflict = await resolveCatalogOperation(
+      connection,
+      ring,
+      input,
+    );
+    if (afterConflict.status === 'new_operation') {
+      throw new Error('Catalog operation key conflict without a visible row');
+    }
+
+    return afterConflict;
   }
-
-  return {
-    status: 'committed',
-    operation: inserted as CatalogOperationRow,
-  };
 }

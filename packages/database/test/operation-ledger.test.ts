@@ -3,8 +3,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
+  canonicalizeLedgerJson,
   catalogOperationKey,
   signLedgerResult,
+  verifyLedgerResult,
   type LedgerKeyRing,
 } from '../src/catalog/index.js';
 
@@ -25,7 +27,10 @@ describe('catalog operation key and Option A signing', () => {
     const ring: LedgerKeyRing = {
       keys: [{ keyId: 'ledger.v1', secret: ledgerSecret, status: 'active' }],
     };
-    const payload = JSON.stringify({ exerciseId: randomUUID(), revision: 1 });
+    const payload = canonicalizeLedgerJson({
+      revision: 1,
+      exerciseId: randomUUID(),
+    });
     const signed = signLedgerResult(ring, payload);
 
     expect(typeof signed).not.toBe('string');
@@ -48,5 +53,24 @@ describe('catalog operation key and Option A signing', () => {
     }
 
     expect(withCursor.digest).not.toBe(signed.digest);
+  });
+
+  it('verifies equivalent payloads regardless of object key insertion order', () => {
+    const ring: LedgerKeyRing = {
+      keys: [{ keyId: 'ledger.v1', secret: randomBytes(32), status: 'active' }],
+    };
+    const left = { revision: 1, nested: { b: 2, a: 1 }, exerciseId: 'x' };
+    const right = { exerciseId: 'x', nested: { a: 1, b: 2 }, revision: 1 };
+    const signed = signLedgerResult(ring, canonicalizeLedgerJson(left));
+
+    expect(typeof signed).not.toBe('string');
+    if (typeof signed === 'string') {
+      throw new Error(signed);
+    }
+
+    expect(
+      verifyLedgerResult(ring, canonicalizeLedgerJson(right), signed),
+    ).toBe(true);
+    expect(canonicalizeLedgerJson(left)).toBe(canonicalizeLedgerJson(right));
   });
 });

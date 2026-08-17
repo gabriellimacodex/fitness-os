@@ -1,3 +1,4 @@
+export { canonicalizeLedgerJson, digestLedgerJson } from './canonical-json.js';
 export {
   activeLedgerKey,
   ledgerKeyRingEpoch,

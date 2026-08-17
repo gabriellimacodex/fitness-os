@@ -131,7 +131,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       const inputDigest = createHash('sha256')
         .update('publish-input')
         .digest('hex');
-      const resultPayload = { exerciseId: randomUUID(), revision: 1 };
+      const resultPayload = {
+        revision: 1,
+        nested: { b: 2, a: 1 },
+        exerciseId: randomUUID(),
+      };
 
       const first = await commitCatalogOperation(connection, ring, {
         operationKey,
@@ -196,6 +200,24 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         reason: 'ledger_key_ring',
         detail: 'missing_active_key',
       });
+    });
+
+    it('fails readiness when a retained result cites a missing ledger key', async () => {
+      const readiness = await checkCatalogDatabaseReadiness(connection, {
+        keys: [
+          {
+            keyId: 'ledger.other',
+            secret: randomBytes(32),
+            status: 'active',
+          },
+        ],
+      });
+      expect(readiness.ready).toBe(false);
+      if (readiness.ready) {
+        throw new Error('expected missing ledger key');
+      }
+      expect(readiness.reason).toBe('missing_ledger_key');
+      expect(readiness.detail).toBe('ledger.test.v1');
     });
   },
 );
