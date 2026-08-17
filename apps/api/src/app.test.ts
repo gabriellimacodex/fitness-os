@@ -212,6 +212,35 @@ describe('public errors', () => {
     await app.close();
   });
 
+  it('preserves validation provenance when a route requests its own formatter', async () => {
+    const app = buildApp({ logger: false });
+    app.get(
+      '/route-formatted-validation',
+      {
+        schema: {
+          querystring: {
+            type: 'object',
+            required: ['value'],
+            properties: { value: { type: 'string' } },
+          },
+        },
+        schemaErrorFormatter: () => new Error('route validation detail'),
+      },
+      async () => ({ ok: true }),
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/route-formatted-validation',
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(response.body).not.toContain('route validation detail');
+    await app.close();
+  });
+
   it('maps malformed URLs to the bad-request envelope with correlation', async () => {
     const app = buildApp({ logger: false });
 

@@ -87,9 +87,10 @@ failure
 
 Parser/body errors are recognized by Fastify error-class identity. Standard
 schema-validation errors are marked in a private per-app `WeakSet` by the
-configured schema formatter and recognized by object identity. Error-controlled
-fields such as `code`, `statusCode`, or `validationContext` do not establish
-client-input provenance.
+configured schema formatter and recognized by object identity. The app's
+`onRoute` policy reapplies that formatter to every route, so route-local options
+cannot replace the provenance boundary. Error-controlled fields such as `code`,
+`statusCode`, or `validationContext` do not establish client-input provenance.
 
 ## Configuration
 

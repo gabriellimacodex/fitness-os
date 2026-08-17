@@ -41,6 +41,11 @@ export function buildApp(
   platform: PlatformOptions = {},
 ): FastifyInstance {
   const validationErrors = new WeakSet<Error>();
+  const formatSchemaError = (): Error => {
+    const error = new Error('Request validation failed');
+    validationErrors.add(error);
+    return error;
+  };
   const app = Fastify({
     ...options,
     genReqId: () => randomUUID(),
@@ -65,16 +70,16 @@ export function buildApp(
       },
     },
     requestIdHeader: false,
-    schemaErrorFormatter: () => {
-      const error = new Error('Request validation failed');
-      validationErrors.add(error);
-      return error;
-    },
+    schemaErrorFormatter: formatSchemaError,
   });
   const corsAllowedOrigins = new Set(
     platform.corsAllowedOrigins ?? ['http://localhost:3000'],
   );
   const readinessCheck = platform.readinessCheck ?? (() => true);
+
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.schemaErrorFormatter = formatSchemaError;
+  });
 
   void app.register(cors, {
     credentials: false,
