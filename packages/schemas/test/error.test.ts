@@ -6,7 +6,10 @@ describe('apiErrorCodeSchema', () => {
   it('accepts the stable public error codes', () => {
     const codes = [
       'BAD_REQUEST',
+      'UNAUTHENTICATED',
+      'FORBIDDEN',
       'NOT_FOUND',
+      'CONFLICT',
       'INTERNAL_ERROR',
       'SERVICE_UNAVAILABLE',
     ] as const;
