@@ -2,15 +2,15 @@ import { generateKeyPairSync } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
+import { digestMovementDetail } from '../src/movement-library/index.js';
 import {
   createSignedReviewRecord,
   createTestReviewAuthority,
-  digestMovementDetail,
   fingerprintPublicKey,
   productionReviewAuthorityFromConfig,
   ReviewVerificationError,
   verifyReviewRecord,
-} from '../src/movement-library/index.js';
+} from '../src/movement-library/review-record.js';
 import { readerReceipt, safetyReceipt, SQUAT } from './movement-fixtures.js';
 
 const SOURCE_COMMIT = 'cccccccccccccccccccccccccccccccccccccccc';

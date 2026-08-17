@@ -248,6 +248,49 @@ describe('createApiClient', () => {
     expect(String(error)).not.toContain(rawContent);
   });
 
+  it('does not reuse a prior successful movement after a later 404', async () => {
+    const detail = {
+      movementId: 'bodyweight-squat',
+      contentVersion: 1,
+      name: 'Bodyweight Squat',
+      summary: 'A controlled squat using body weight and a stable stance.',
+      setup: ['Stand with feet about hip-width apart.'],
+      steps: ['Lower with control.', 'Return to standing.'],
+      cues: ['Keep the movement slow and even.'],
+      commonMistakes: ['Dropping quickly without control.'],
+      safetyNotes: [
+        'Stop if you feel pain, dizziness, or loss of control and seek qualified help as appropriate.',
+      ],
+    };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json(detail))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Resource not found',
+              requestId: 'req-withdraw',
+            },
+          },
+          { status: 404 },
+        ),
+      );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.movement('bodyweight-squat')).resolves.toMatchObject({
+      movementId: 'bodyweight-squat',
+    });
+    await expect(client.movement('bodyweight-squat')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('aborts a movement read after 3,000 ms and does not return a prior result', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn<typeof globalThis.fetch>(

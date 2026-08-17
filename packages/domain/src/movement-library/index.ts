@@ -13,6 +13,8 @@ export {
   cloneMovementDetail,
   digestMovementDetail,
 } from './canonical.js';
+export { COMMITTED_MOVEMENT_MANIFEST, assertManifestHistory } from './manifest-records.js';
+export { COMMITTED_PUBLISHED_MOVEMENTS } from './published.js';
 export {
   assertValidManifestRecord,
   deriveManifestState,
@@ -21,13 +23,8 @@ export {
   type MovementManifestRecord,
 } from './manifest.js';
 export {
-  assertUniqueNonces,
-  createSignedReviewRecord,
-  createTestReviewAuthority,
-  fingerprintPublicKey,
   INTENDED_READER_RUBRIC,
   MOVEMENT_SAFETY_RUBRIC,
-  productionReviewAuthorityFromConfig,
   ReviewVerificationError,
   verifyReviewRecord,
   type MovementReviewRecord,

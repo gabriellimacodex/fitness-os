@@ -5,11 +5,12 @@ import { MovementsListView, type CatalogLoadState } from './movement-views';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export async function loadMovements(
-  client = createApiClient({ baseUrl: getApiBaseUrl() }),
-): Promise<CatalogLoadState> {
+export async function loadMovements(client?: {
+  movements: () => Promise<{ items: readonly import('@fitness-os/schemas').MovementSummary[] }>;
+}): Promise<CatalogLoadState> {
   try {
-    const { items } = await client.movements();
+    const api = client ?? createApiClient({ baseUrl: getApiBaseUrl() });
+    const { items } = await api.movements();
 
     return items.length === 0
       ? { status: 'empty' }

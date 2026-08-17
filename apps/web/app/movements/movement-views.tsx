@@ -82,40 +82,40 @@ export function MovementDetailView({ state }: { state: MovementLoadState }) {
       <section>
         <h2>Setup</h2>
         <ul>
-          {movement.setup.map((item) => (
-            <li key={item}>{item}</li>
+          {movement.setup.map((item, index) => (
+            <li key={`setup-${String(index)}`}>{item}</li>
           ))}
         </ul>
       </section>
       <section>
         <h2>Steps</h2>
         <ol>
-          {movement.steps.map((item) => (
-            <li key={item}>{item}</li>
+          {movement.steps.map((item, index) => (
+            <li key={`step-${String(index)}`}>{item}</li>
           ))}
         </ol>
       </section>
       <section>
         <h2>Cues</h2>
         <ul>
-          {movement.cues.map((item) => (
-            <li key={item}>{item}</li>
+          {movement.cues.map((item, index) => (
+            <li key={`cue-${String(index)}`}>{item}</li>
           ))}
         </ul>
       </section>
       <section>
         <h2>Common mistakes</h2>
         <ul>
-          {movement.commonMistakes.map((item) => (
-            <li key={item}>{item}</li>
+          {movement.commonMistakes.map((item, index) => (
+            <li key={`mistake-${String(index)}`}>{item}</li>
           ))}
         </ul>
       </section>
       <section>
         <h2>Safety</h2>
         <ul>
-          {movement.safetyNotes.map((item) => (
-            <li key={item}>{item}</li>
+          {movement.safetyNotes.map((item, index) => (
+            <li key={`safety-${String(index)}`}>{item}</li>
           ))}
         </ul>
       </section>

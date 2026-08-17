@@ -4,13 +4,13 @@ import { movementDetailSchema } from '@fitness-os/schemas';
 
 import {
   createMovementCatalog,
-  createSignedReviewRecord,
   digestMovementDetail,
   getMovementById,
   listMovements,
   MovementCatalogError,
   type MovementManifestRecord,
 } from '../src/movement-library/index.js';
+import { createSignedReviewRecord } from '../src/movement-library/review-record.js';
 import {
   HINGE,
   readerReceipt,

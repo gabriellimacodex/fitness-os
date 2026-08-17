@@ -1,8 +1,4 @@
-import {
-  getMovementById,
-  listMovements,
-  type MovementLookupResult,
-} from '@fitness-os/domain';
+import { getMovementById, listMovements } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
   movementDetailParamsSchema,
@@ -11,16 +7,6 @@ import {
   movementListResponseSchema,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-
-export interface MovementRouteCatalog {
-  getMovementById(movementId: string): MovementLookupResult;
-  listMovements(): ReturnType<typeof listMovements>;
-}
-
-const defaultCatalog: MovementRouteCatalog = {
-  getMovementById,
-  listMovements,
-};
 
 function sendPlatformError(
   request: FastifyRequest,
@@ -42,11 +28,17 @@ function sendPlatformError(
   );
 }
 
-export function registerMovementRoutes(
-  app: FastifyInstance,
-  catalog: MovementRouteCatalog = defaultCatalog,
-): void {
-  const movements = catalog ?? defaultCatalog;
+export function registerMovementRoutes(app: FastifyInstance): void {
+  app.addHook('onSend', async (request, reply, payload) => {
+    const path = request.url.split('?')[0] ?? '';
+
+    if (path === '/movements' || path.startsWith('/movements/')) {
+      reply.header('cache-control', 'no-store');
+    }
+
+    return payload;
+  });
+
   app.get('/movements', async (request, reply) => {
     const query = movementEmptyQuerySchema.safeParse(request.query);
 
@@ -63,7 +55,7 @@ export function registerMovementRoutes(
     reply.header('cache-control', 'no-store');
 
     return movementListResponseSchema.parse({
-      items: movements.listMovements(),
+      items: listMovements(),
     });
   });
 
@@ -92,7 +84,7 @@ export function registerMovementRoutes(
       );
     }
 
-    const result = movements.getMovementById(params.data.movementId);
+    const result = getMovementById(params.data.movementId);
 
     if (result.status === 'invalid') {
       return sendPlatformError(

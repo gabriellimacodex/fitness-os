@@ -13,11 +13,12 @@ interface MovementDetailPageProps {
 
 export async function loadMovement(
   movementId: string,
-  client = createApiClient({ baseUrl: getApiBaseUrl() }),
+  client?: { movement: (id: string) => Promise<import('@fitness-os/schemas').MovementDetail> },
 ): Promise<MovementLoadState> {
   try {
+    const api = client ?? createApiClient({ baseUrl: getApiBaseUrl() });
     return {
-      movement: await client.movement(movementId),
+      movement: await api.movement(movementId),
       status: 'ready',
     };
   } catch (error) {

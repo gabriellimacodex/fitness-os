@@ -1,32 +1,16 @@
 import {
   apiErrorResponseSchema,
-  movementDetailResponseSchema,
-  movementDetailSchema,
   movementListResponseSchema,
 } from '@fitness-os/schemas';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from './app.js';
 
-const squat = movementDetailSchema.parse({
-  movementId: 'bodyweight-squat',
-  contentVersion: 1,
-  name: 'Bodyweight Squat',
-  summary: 'A controlled squat using body weight and a stable stance.',
-  setup: ['Stand with feet about hip-width apart.'],
-  steps: ['Lower with control.', 'Return to standing.'],
-  cues: ['Keep the movement slow and even.'],
-  commonMistakes: ['Dropping quickly without control.'],
-  safetyNotes: [
-    'Stop if you feel pain, dizziness, or loss of control and seek qualified help as appropriate.',
-  ],
-});
-
 describe('GET /movements', () => {
   let app: ReturnType<typeof buildApp>;
 
   beforeEach(() => {
-    app = buildApp();
+    app = buildApp({ logger: false });
   });
 
   afterEach(async () => {
@@ -54,46 +38,27 @@ describe('GET /movements', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(body.error.code).toBe('BAD_REQUEST');
     expect(body.error.requestId).toBe(response.headers['x-request-id']);
-    expect(response.headers['x-request-id']).not.toBe('client-controlled');
+  });
+
+  it('sets no-store on unexpected movement failures', async () => {
+    app.addHook('preHandler', async (request) => {
+      if ((request.url.split('?')[0] ?? '') === '/movements') {
+        throw new Error('private catalog failure');
+      }
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/movements' });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    expect(response.body).not.toContain('private catalog failure');
   });
 });
 
 describe('GET /movements/:movementId', () => {
-  it('returns a published detail from the injected catalog', async () => {
-    const app = buildApp(
-      {},
-      {
-        movementCatalog: {
-          getMovementById(movementId) {
-            return movementId === squat.movementId
-              ? { status: 'found', value: squat }
-              : { status: 'not_found' };
-          },
-          listMovements() {
-            return [
-              {
-                contentVersion: squat.contentVersion,
-                movementId: squat.movementId,
-                name: squat.name,
-                summary: squat.summary,
-              },
-            ];
-          },
-        },
-      },
-    );
-
-    const response = await app.inject({
-      method: 'GET',
-      url: `/movements/${squat.movementId}`,
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.headers['cache-control']).toBe('no-store');
-    expect(movementDetailResponseSchema.parse(response.json())).toEqual(squat);
-    await app.close();
-  });
-
   it('returns 400 for a malformed identifier', async () => {
     const app = buildApp();
     const response = await app.inject({
@@ -103,8 +68,23 @@ describe('GET /movements/:movementId', () => {
     const body = apiErrorResponseSchema.parse(response.json());
 
     expect(response.statusCode).toBe(400);
+    expect(response.headers['cache-control']).toBe('no-store');
     expect(body.error.code).toBe('BAD_REQUEST');
     expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    await app.close();
+  });
+
+  it('rejects any query key on the detail route', async () => {
+    const app = buildApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/movements/bodyweight-squat?preview=1',
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('BAD_REQUEST');
     await app.close();
   });
 

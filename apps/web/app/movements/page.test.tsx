@@ -53,6 +53,19 @@ describe('loadMovements', () => {
     ).resolves.toEqual({ status: 'empty' });
   });
 
+  it('maps an invalid API origin to the unavailable state', async () => {
+    const previous = process.env.API_BASE_URL;
+    process.env.API_BASE_URL = 'ftp://example.com';
+
+    await expect(loadMovements()).resolves.toEqual({ status: 'unavailable' });
+
+    if (previous === undefined) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = previous;
+    }
+  });
+
   it('maps protocol failure to unavailable without exposing the error', async () => {
     const state = await loadMovements({
       movements: async () => {

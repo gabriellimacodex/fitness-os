@@ -1,12 +1,12 @@
 import { movementDetailSchema, type MovementDetail } from '@fitness-os/schemas';
 
+import { digestMovementDetail } from '../src/movement-library/index.js';
+import type { MovementManifestRecord } from '../src/movement-library/manifest.js';
 import {
   createSignedReviewRecord,
   createTestReviewAuthority,
-  digestMovementDetail,
-  type MovementManifestRecord,
   type RoleApprovalReceipt,
-} from '../src/movement-library/index.js';
+} from '../src/movement-library/review-record.js';
 
 export const SQUAT = movementDetailSchema.parse({
   movementId: 'bodyweight-squat',

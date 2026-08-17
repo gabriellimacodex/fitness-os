@@ -8,10 +8,12 @@ import {
 } from '@fitness-os/schemas';
 
 import { cloneMovementDetail, digestMovementDetail } from './canonical.js';
+import { COMMITTED_MOVEMENT_MANIFEST } from './manifest-records.js';
 import {
   deriveManifestState,
   type MovementManifestRecord,
 } from './manifest.js';
+import { COMMITTED_PUBLISHED_MOVEMENTS } from './published.js';
 import {
   assertUniqueNonces,
   verifyReviewRecord,
@@ -53,8 +55,8 @@ function toSummary(detail: MovementDetail): MovementSummary {
 export function createMovementCatalog(
   source: MovementCatalogSource = {},
 ): MovementCatalog {
-  const published = source.published ?? [];
-  const manifest = source.manifest ?? [];
+  const published = source.published ?? COMMITTED_PUBLISHED_MOVEMENTS;
+  const manifest = source.manifest ?? COMMITTED_MOVEMENT_MANIFEST;
   const reviewRecords = source.reviewRecords ?? [];
 
   if (published.length > 100) {
