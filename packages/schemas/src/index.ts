@@ -7,6 +7,7 @@ export {
 export * from './exercise-catalog.js';
 export { healthResponseSchema, type HealthResponse } from './health.js';
 export * from './movement.js';
+export * from './onboarding.js';
 export {
   notReadyResponseSchema,
   readinessResponseSchema,
