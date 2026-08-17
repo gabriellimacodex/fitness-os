@@ -185,11 +185,14 @@ role approval receipts. Each records only `movement_safety` or
 perspective (`student` or `coach`), verified-humanness and verified-independence
 booleans, every rubric result, an issuance instant, and a fresh random
 single-use nonce. It binds the decision to `(movementId, contentVersion)`, the
-canonical content digest, and exact catalog-source commit SHA. CI verifies the
-receipt against a dedicated Human Review Authority public key and rejects a
-reused nonce, invalid signature, failed boolean/rubric, or mismatched artifact.
-An author or agent cannot mint a valid receipt without the separately controlled
-human-held signing key.
+canonical content digest, and exact catalog-source commit SHA. The protected
+Gate A job verifies the receipt against a Human Review Authority public key whose
+founder-approved fingerprint is pinned in protected release configuration,
+outside the repository and inaccessible to content PRs or autonomous agents. It
+fails closed when the key/fingerprint is absent, changed, unknown, or a test key,
+and rejects a reused nonce, invalid signature, failed boolean/rubric, or
+mismatched artifact. An author or agent cannot mint a valid receipt or replace
+its trust anchor with a newly generated synthetic key.
 
 Names, handles, contact details, employers, credential/license titles or
 numbers, issuers, reviewer signatures, linkable reviewer identifiers, and
@@ -206,8 +209,16 @@ not exposed in the public API. If verified identities, credential evidence, or
 linkable reviewer records must be processed even transiently by the verification
 process, collection stops under `LEGAL_PRIVACY_DECISION_REQUIRED` until storage,
 access, retention, deletion, and handling are explicitly decided. Provisioning
-or accessing the real signing key triggers `CREDENTIALS_REQUIRED`; tests use an
+or accessing the real signing key triggers `EXTERNAL_CREDENTIAL_REQUIRED`; tests use an
 obviously synthetic key and cannot satisfy the human completion gate.
+
+Key rotation is a controlled release operation, not a content change. It
+requires founder approval and `EXTERNAL_CREDENTIAL_REQUIRED`, adds the new
+fingerprint/key to the protected authority keyring, verifies all retained
+receipts under their recorded key fingerprints, switches issuance to the new
+key, and retains the prior verification key while any accepted receipt depends
+on it. A repository change cannot rotate, add, or revoke a production trust
+anchor.
 
 No persistence layer or migration is authorized. `packages/database` remains
 unchanged. Moving the catalog to persistent storage requires a later approved
@@ -412,11 +423,15 @@ or fabricate professional authority.
 - Product Principles and accepted ADRs 001–006.
 - Frozen PRD 01 public error, request-correlation, CORS, and web-client behavior.
 
-PRD 02 and PRD 03 are not dependencies. This PRD introduces no external
-credential, financial commitment, persistence prerequisite, legal/privacy
-decision, or media-provider selection. Human clarity review and conservative
-safety review are explicit completion evidence; they become stop conditions
-only if unavailable, failed, or unable to resolve a potentially harmful entry.
+PRD 02 and PRD 03 are not dependencies. This PRD introduces no financial
+commitment, persistence prerequisite, or media-provider selection. Design,
+contracts, code, and synthetic verification require no external credential.
+Before production review receipts can satisfy completion, provisioning/accessing
+the Human Review Authority key and protected fingerprint invokes
+`EXTERNAL_CREDENTIAL_REQUIRED`; any linkable reviewer-data processing invokes
+`LEGAL_PRIVACY_DECISION_REQUIRED`. Human clarity/safety review invokes
+`HUMAN_PERCEPTION_REQUIRED` when unavailable, failed, or unable to resolve a
+potentially harmful entry.
 
 ## Release gate
 
@@ -426,3 +441,6 @@ frozen contracts, recorded independent Movement content review, architecture,
 QA, security, and scope passes, updated operational/contract documentation,
 merged relevant PRs, explicit migration `NOT_APPLICABLE` rationale, documented
 limitations and deferrals, and zero open `BLOCKER` or `HIGH` findings.
+The protected Gate A job must validate the production receipt signatures against
+the founder-approved external fingerprint/keyring; repository or synthetic trust
+anchors are not completion evidence.

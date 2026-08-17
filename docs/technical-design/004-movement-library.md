@@ -231,9 +231,13 @@ perspective when applicable, verified-humanness and verified-independence
 booleans, issuance instant, and a fresh random single-use nonce. A
 founder-designated Human Review Authority verifies the human reviewer's
 independence and applicable qualification before signing the exact payload with
-a dedicated offline/private key. Repository validation uses only its public key,
-rejects nonce reuse, and binds the signature to the exact content commit/digest;
-neither an author nor an agent can mint a valid production receipt.
+a dedicated offline/private key. The protected Gate A environment supplies the
+corresponding public key and founder-approved fingerprint from configuration
+that repository changes, content PRs, and autonomous agents cannot read or
+modify. Validation fails closed if either value is absent, inconsistent,
+unknown, changed, or matches any test key; it rejects nonce reuse and binds the
+signature to the exact content commit/digest. Neither an author nor an agent can
+mint a valid production receipt or substitute a new trust anchor.
 
 The record schema rejects names, handles, contact details, employers,
 credential/license titles or numbers, issuers, reviewer signatures, reusable or
@@ -243,7 +247,14 @@ The source/manifest commit is created first; reviewers inspect that immutable
 commit; the authority performs the approved private verification and adds the
 privacy-minimized signed receipt later. Gate A proves the reviewed commit is an
 ancestor of the exact head, recalculates the same digest, validates both
-signatures, and proves every nonce is unique.
+signatures against the protected fingerprint/keyring, and proves every nonce is
+unique. Receipts record the authority-key fingerprint used for verification.
+
+Key rotation requires founder approval and `EXTERNAL_CREDENTIAL_REQUIRED`. A
+protected release operation adds the new key/fingerprint, revalidates every
+retained receipt with its recorded fingerprint, switches issuance, and retains
+old verification keys while accepted receipts depend on them. Rotation, trust
+anchor addition, and revocation cannot be performed by a repository commit.
 
 The qualified Movement/safety reviewer must be independent of the author and
 hold a current recognized exercise-professional, movement-coaching,
@@ -345,13 +356,17 @@ approved migration and compatibility plan.
   details, employers, credential/license details, issuers, reusable reviewer
   identifiers, and free text; per-review references have no retained mapping.
 - Confirm signed receipts verify against the Human Review Authority public key,
-  cannot be minted with test keys, bind the exact artifact, and reject nonce
-  reuse, failed qualification/scope/independence, or failed rubric fields.
+  whose fingerprint comes from protected founder-approved configuration; fail
+  closed for missing/changed/unknown/test keys, bind the exact artifact, and
+  reject nonce reuse or failed qualification/scope/independence/rubric fields.
+- Confirm key-rotation rehearsal revalidates existing receipts, preserves old
+  verification keys while referenced, and cannot be initiated through a repo
+  diff. Real provisioning/rotation remains an external-credential stop.
 - Before the authority processes linkable identity or credential information,
   even transiently, stop with `LEGAL_PRIVACY_DECISION_REQUIRED` unless an
   explicit handling/storage/access/retention/deletion policy exists. Obtaining
-  the real signing key requires `CREDENTIALS_REQUIRED`; synthetic keys prove
-  mechanics only and never satisfy Gate A.
+  the real signing key requires `EXTERNAL_CREDENTIAL_REQUIRED`; synthetic keys
+  prove mechanics only and never satisfy Gate A.
 - Confirm invalid, unknown, withdrawn, malformed-provider, and internal failures
   retain safe envelopes and correlated server-generated IDs.
 - Confirm route IDs are bounded and cannot inject a path, query, URL, HTML, or
@@ -396,8 +411,9 @@ implementation, then is refactored without changing assertions.
   exact-version review records fail CI.
 - Receipt tests use an explicitly synthetic test key to prove signature and
   exact-payload verification, single-use nonces, required passing fields, and
-  rejection of identifying fields. The test key is denylisted for Gate A and
-  can never make content publishable.
+  rejection of identifying fields. Tests also prove a newly generated unpinned
+  keypair, missing/changed protected fingerprint, and repository-supplied key all
+  fail Gate A. Test keys can never make content publishable.
 - Publish, revision, withdrawal, and reviewed republish fixtures prove current
   catalog state is derived from the latest append-only lifecycle record.
 - Returned data cannot mutate the source catalog.
