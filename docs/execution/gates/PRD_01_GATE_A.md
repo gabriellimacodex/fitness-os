@@ -8,6 +8,8 @@
 - Merge commit: `5e7bbb9a814b7b6875cbdab613750159e042e5fe`
 - Final independent reviewer: Agent 90, Round 5
 - Final verdict: `PASS`
+- Record timestamp: `2026-08-16T21:43:08-03:00`
+- Deferrals: none
 
 ## Disposition
 
@@ -27,6 +29,7 @@
 | Open `HIGH`            | `0`              |
 | Open `MEDIUM`          | `0`              |
 | Open `LOW`             | `0`              |
+| Deferred findings      | `0`              |
 
 ## Verification evidence
 
