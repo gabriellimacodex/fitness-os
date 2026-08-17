@@ -10,6 +10,10 @@ import {
   taxonomyDiscoveryPageSchema,
   taxonomyDiscoveryQuerySchema,
   type ApiErrorCode,
+  type ExerciseDetail,
+  type ExerciseRevision,
+  type ExerciseTaxonomyAssignments,
+  type TaxonomyTerm,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -70,6 +74,118 @@ type ReadOutcome =
   | 'storage_unavailable'
   | 'corrupt_response'
   | 'unexpected_error';
+
+interface CatalogProjection {
+  readonly taxonomyTerms?: readonly TaxonomyTerm[];
+  readonly assignments?: readonly ExerciseTaxonomyAssignments[];
+  readonly revisions?: readonly ExerciseRevision[];
+  readonly detail?: ExerciseDetail;
+}
+
+const isCatalogProjectionConsistent = ({
+  taxonomyTerms = [],
+  assignments = [],
+  revisions = [],
+  detail,
+}: CatalogProjection): boolean => {
+  const termProjectionById = new Map<string, string>();
+  const dimensionIdByKey = new Map<string, string>();
+  const dimensionKeyById = new Map<string, string>();
+  const termIdByDimensionAndKey = new Map<string, string>();
+  const validateTerm = (term: TaxonomyTerm): boolean => {
+    const projection = JSON.stringify([
+      term.dimensionId,
+      term.dimension,
+      term.key,
+      term.label,
+      term.meaning,
+      term.lifecycle,
+      term.replacedByTermId,
+    ]);
+    const existing = termProjectionById.get(term.id);
+    if (existing !== undefined && existing !== projection) {
+      return false;
+    }
+    const dimensionId = dimensionIdByKey.get(term.dimension);
+    const dimensionKey = dimensionKeyById.get(term.dimensionId);
+    const dimensionAndTermKey = JSON.stringify([term.dimensionId, term.key]);
+    const termId = termIdByDimensionAndKey.get(dimensionAndTermKey);
+    if (
+      (dimensionId !== undefined && dimensionId !== term.dimensionId) ||
+      (dimensionKey !== undefined && dimensionKey !== term.dimension) ||
+      (termId !== undefined && termId !== term.id)
+    ) {
+      return false;
+    }
+    termProjectionById.set(term.id, projection);
+    dimensionIdByKey.set(term.dimension, term.dimensionId);
+    dimensionKeyById.set(term.dimensionId, term.dimension);
+    termIdByDimensionAndKey.set(dimensionAndTermKey, term.id);
+    return true;
+  };
+
+  const allRevisions = [
+    ...revisions,
+    ...(detail === undefined ? [] : [detail.currentRevision]),
+  ];
+  const allAssignments = [
+    ...assignments,
+    ...allRevisions.map((revision) => revision.taxonomy),
+    ...(detail === undefined ? [] : [detail.taxonomy]),
+  ];
+  const assignmentsAreConsistent = allAssignments.every((assignment) => {
+    const terms = [assignment.modality, ...assignment.equipment];
+    return (
+      new Set(terms.map((term) => term.id)).size === terms.length &&
+      terms.every(validateTerm)
+    );
+  });
+  const revisionsAreConsistent = allRevisions.every((revision) => {
+    const referenceIds = new Set<string>();
+    const referenceIdentities = new Set<string>();
+    for (const reference of revision.references) {
+      const identity = JSON.stringify([
+        reference.kind,
+        reference.locator,
+        reference.purpose,
+      ]);
+      if (referenceIds.has(reference.id) || referenceIdentities.has(identity)) {
+        return false;
+      }
+      referenceIds.add(reference.id);
+      referenceIdentities.add(identity);
+    }
+
+    const provenanceReferences = revision.references.filter(
+      (reference) => reference.purpose === 'provenance',
+    );
+    if (revision.provenance.originKind === 'internally_curated') {
+      return (
+        revision.provenance.primaryProvenanceReferenceId === null &&
+        provenanceReferences.length === 0
+      );
+    }
+    return (
+      revision.provenance.primaryProvenanceReferenceId !== null &&
+      provenanceReferences.length === 1 &&
+      provenanceReferences[0]?.id ===
+        revision.provenance.primaryProvenanceReferenceId
+    );
+  });
+  const detailIsConsistent =
+    detail === undefined ||
+    (detail.currentRevision.exerciseId === detail.id &&
+      detail.currentRevision.displayName === detail.currentName &&
+      JSON.stringify(detail.taxonomy) ===
+        JSON.stringify(detail.currentRevision.taxonomy));
+
+  return (
+    taxonomyTerms.every(validateTerm) &&
+    assignmentsAreConsistent &&
+    revisionsAreConsistent &&
+    detailIsConsistent
+  );
+};
 
 const toErrorClass = (error: unknown): string =>
   error instanceof Error && SAFE_ERROR_CLASS.test(error.name)
@@ -159,9 +275,16 @@ export function registerExerciseCatalogRoutes(
         page.data.items.length > query.data.limit ||
         (page.data.nextCursor !== null &&
           page.data.items.length !== query.data.limit) ||
+        (query.data.cursor !== undefined &&
+          page.data.nextCursor === query.data.cursor) ||
         page.data.items.some(
           (item, index, items) => index > 0 && item.id <= items[index - 1]!.id,
         ) ||
+        new Set(page.data.items.map((item) => item.canonicalKey)).size !==
+          page.data.items.length ||
+        !isCatalogProjectionConsistent({
+          assignments: page.data.items.map((item) => item.taxonomy),
+        }) ||
         page.data.items.some((item) => {
           if (item.lifecycle !== 'active') {
             return true;
@@ -236,7 +359,13 @@ export function registerExerciseCatalogRoutes(
         );
       }
       const detail = exerciseDetailSchema.safeParse(result);
-      if (!detail.success || detail.data.id !== params.data.exerciseId) {
+      if (
+        !detail.success ||
+        detail.data.id !== params.data.exerciseId ||
+        !isCatalogProjectionConsistent({
+          detail: detail.data,
+        })
+      ) {
         logReadOutcome(
           request,
           'get_current_exercise',
@@ -306,7 +435,10 @@ export function registerExerciseCatalogRoutes(
         if (
           !revision.success ||
           revision.data.exerciseId !== params.data.exerciseId ||
-          revision.data.revision !== params.data.revision
+          revision.data.revision !== params.data.revision ||
+          !isCatalogProjectionConsistent({
+            revisions: [revision.data],
+          })
         ) {
           logReadOutcome(
             request,
@@ -361,7 +493,10 @@ export function registerExerciseCatalogRoutes(
         page.data.items.length > query.data.limit ||
         (page.data.nextCursor !== null &&
           page.data.items.length !== query.data.limit) ||
+        (query.data.cursor !== undefined &&
+          page.data.nextCursor === query.data.cursor) ||
         new Set(page.data.items.map((item) => item.dimensionId)).size > 1 ||
+        !isCatalogProjectionConsistent({ taxonomyTerms: page.data.items }) ||
         page.data.items.some((item, index, items) => {
           if (index === 0) {
             return false;

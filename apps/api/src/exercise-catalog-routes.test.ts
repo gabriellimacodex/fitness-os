@@ -258,6 +258,55 @@ describe('exercise catalog read routes', () => {
     );
   });
 
+  it('fails closed on a direct-detail taxonomy assignment ID collision', async () => {
+    const modality = archivedDetail.taxonomy.modality;
+    const collidingTaxonomy = {
+      modality,
+      equipment: [
+        {
+          ...modality,
+          dimensionId: '11111111-1111-4111-8111-111111111111',
+          dimension: 'equipment' as const,
+          key: 'colliding-equipment',
+          label: 'Colliding equipment',
+        },
+      ],
+    };
+    const reader = createReader();
+    vi.mocked(reader.getCurrentExercise).mockResolvedValue(
+      exerciseDetailSchema.parse({
+        ...archivedDetail,
+        taxonomy: collidingTaxonomy,
+        currentRevision: {
+          ...archivedDetail.currentRevision,
+          taxonomy: collidingTaxonomy,
+        },
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_current_exercise',
+        outcome: 'corrupt_response',
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
   it('returns an immutable historical revision', async () => {
     const reader = createReader();
     vi.mocked(reader.getExerciseRevision).mockResolvedValue(
@@ -363,6 +412,107 @@ describe('exercise catalog read routes', () => {
         operation: 'get_exercise_revision',
         outcome: 'corrupt_response',
         requestId: response.headers['x-request-id'],
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
+  it('fails closed on a historical revision taxonomy key collision', async () => {
+    const equipmentDimensionId = '11111111-1111-4111-8111-111111111111';
+    const equipmentBase = {
+      dimensionId: equipmentDimensionId,
+      dimension: 'equipment' as const,
+      key: 'repeated-equipment-key',
+      label: 'Repeated equipment',
+      meaning: 'Synthetic equipment used by tests.',
+      lifecycle: 'active' as const,
+      replacedByTermId: null,
+    };
+    const reader = createReader();
+    vi.mocked(reader.getExerciseRevision).mockResolvedValue(
+      exerciseRevisionSchema.parse({
+        ...archivedDetail.currentRevision,
+        taxonomy: {
+          modality: archivedDetail.taxonomy.modality,
+          equipment: [
+            {
+              ...equipmentBase,
+              id: '22222222-2222-4222-8222-222222222222',
+            },
+            {
+              ...equipmentBase,
+              id: '33333333-3333-4333-8333-333333333333',
+            },
+          ],
+        },
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}/revisions/1`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'corrupt_response',
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
+  it('fails closed on repeated reference identity within a revision', async () => {
+    const reference = {
+      purpose: 'evidence_candidate' as const,
+      assessment: 'unassessed' as const,
+      kind: 'doi' as const,
+      locator: '10.1234/fixture-reference',
+    };
+    const reader = createReader();
+    vi.mocked(reader.getExerciseRevision).mockResolvedValue(
+      exerciseRevisionSchema.parse({
+        ...archivedDetail.currentRevision,
+        references: [
+          {
+            ...reference,
+            id: '11111111-1111-4111-8111-111111111111',
+          },
+          {
+            ...reference,
+            id: '22222222-2222-4222-8222-222222222222',
+          },
+        ],
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}/revisions/1`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'corrupt_response',
       }),
       'Exercise catalog read completed',
     );
@@ -498,6 +648,46 @@ describe('exercise catalog read routes', () => {
     expect(taxonomyResponse.json()).toMatchObject({
       nextCursor: 'next_taxonomy_cursor',
     });
+  });
+
+  it('fails closed when a collection cursor makes no progress', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [
+          createActiveSummary(
+            '11111111-1111-4111-8111-111111111111',
+            'fixture-one',
+          ),
+        ],
+        nextCursor: 'same_cursor',
+      }),
+    );
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [archivedDetail.taxonomy.modality],
+        nextCursor: 'same_cursor',
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const exerciseResponse = await app.inject({
+      method: 'GET',
+      url: '/exercises?limit=1&cursor=same_cursor',
+    });
+    const taxonomyResponse = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&limit=1&cursor=same_cursor',
+    });
+
+    expect(exerciseResponse.statusCode).toBe(500);
+    expect(taxonomyResponse.statusCode).toBe(500);
   });
 
   it.each([
@@ -867,6 +1057,194 @@ describe('exercise catalog read routes', () => {
     );
   });
 
+  it('fails closed when exercise canonical keys repeat', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [
+          createActiveSummary(
+            '11111111-1111-4111-8111-111111111111',
+            'repeated-key',
+          ),
+          createActiveSummary(
+            '22222222-2222-4222-8222-222222222222',
+            'repeated-key',
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('fails closed when one taxonomy term ID has conflicting projections', async () => {
+    const reader = createReader();
+    const first = createActiveSummary(
+      '11111111-1111-4111-8111-111111111111',
+      'fixture-one',
+    );
+    const second = {
+      ...createActiveSummary(
+        '22222222-2222-4222-8222-222222222222',
+        'fixture-two',
+      ),
+      taxonomy: {
+        ...archivedDetail.taxonomy,
+        modality: {
+          ...archivedDetail.taxonomy.modality,
+          label: 'Conflicting label',
+        },
+      },
+    };
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [first, second],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+  });
+
+  it('accepts the same taxonomy projection across separate summaries', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [
+          createActiveSummary(
+            '11111111-1111-4111-8111-111111111111',
+            'fixture-one',
+          ),
+          createActiveSummary(
+            '22222222-2222-4222-8222-222222222222',
+            'fixture-two',
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('does not retain taxonomy projections across requests', async () => {
+    const reader = createReader();
+    const summary = createActiveSummary(
+      '11111111-1111-4111-8111-111111111111',
+      'fixture-one',
+    );
+    vi.mocked(reader.listExercises)
+      .mockResolvedValueOnce(
+        exerciseListPageSchema.parse({ items: [summary], nextCursor: null }),
+      )
+      .mockResolvedValueOnce(
+        exerciseListPageSchema.parse({
+          items: [
+            {
+              ...summary,
+              taxonomy: {
+                ...summary.taxonomy,
+                modality: {
+                  ...summary.taxonomy.modality,
+                  label: 'A later request projection',
+                },
+              },
+            },
+          ],
+          nextCursor: null,
+        }),
+      );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const firstResponse = await app.inject({
+      method: 'GET',
+      url: '/exercises',
+    });
+    const secondResponse = await app.inject({
+      method: 'GET',
+      url: '/exercises',
+    });
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(secondResponse.statusCode).toBe(200);
+  });
+
+  it('fails closed when one dimension key maps to multiple dimension IDs', async () => {
+    const reader = createReader();
+    const first = createActiveSummary(
+      '11111111-1111-4111-8111-111111111111',
+      'fixture-one',
+    );
+    const second = {
+      ...createActiveSummary(
+        '22222222-2222-4222-8222-222222222222',
+        'fixture-two',
+      ),
+      taxonomy: {
+        modality: createModalityTerm(
+          '33333333-3333-4333-8333-333333333333',
+          'other-modality',
+          '44444444-4444-4444-8444-444444444444',
+        ),
+        equipment: [],
+      },
+    };
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [first, second],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(500);
+  });
+
   it('fails closed when an empty exercise page carries a cursor', async () => {
     const reader = createReader();
     vi.mocked(reader.listExercises).mockResolvedValue(
@@ -1037,6 +1415,39 @@ describe('exercise catalog read routes', () => {
       }),
       'Exercise catalog read completed',
     );
+  });
+
+  it('fails closed when taxonomy term keys repeat within a dimension', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createModalityTerm(
+            '11111111-1111-4111-8111-111111111111',
+            'repeated-key',
+          ),
+          createModalityTerm(
+            '22222222-2222-4222-8222-222222222222',
+            'repeated-key',
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality',
+    });
+
+    expect(response.statusCode).toBe(500);
   });
 
   it('fails closed when one taxonomy dimension uses mixed dimension IDs', async () => {
