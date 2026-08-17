@@ -19,9 +19,9 @@ one of those opaque domain records so a student or coach can enter the PWA
 without treating a browser-supplied identifier, an email address, or a
 student–coach link as proof of identity or permission.
 
-PRD 21 is separately building policy-neutral privacy-governance mechanics. Its
-detailed design is informative integration context, not a new PRD 07 registry
-dependency and not authority for PRD 07 to invent legal policy. PRD 07 owns the
+PRD 21 is currently blocked by its recorded architecture stop; its reviewed
+policy-neutral design remains informative integration context, not a new PRD 07
+registry dependency and not authority for PRD 07 to invent legal policy. PRD 07 owns the
 authenticated-principal and onboarding boundary that later privacy, body,
 notification, and coach-workspace capabilities may consume. It exposes a
 narrow policy/notice handoff but does not absorb PRD 21's policy engine,
@@ -1482,8 +1482,8 @@ beyond the tested environments.
 - PRD 02 — Student & Coach Domain: `COMPLETED`, Gate A passed.
 
 PRD 02 is the only registry dependency. This document does not add PRD 21 or
-any other PRD to the DAG. PRD 21's in-progress design is informative context
-for a future policy/notice handoff and deny-by-default production composition;
+any other PRD to the DAG. PRD 21's reviewed but currently blocked design is
+informative context for a future policy/notice handoff and deny-by-default production composition;
 it is not treated as completed or silently required for safe synthetic PRD 07
 mechanism work.
 
