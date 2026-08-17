@@ -42,21 +42,29 @@ the dependency graph, imports, data, and public contracts.
 
 `packages/schemas` owns the public movement contracts:
 
-- `movementIdSchema` accepts a bounded lowercase ASCII slug using
+- `movementIdSchema` accepts 3–64 lowercase ASCII characters using
   `^[a-z0-9]+(?:-[a-z0-9]+)*$`;
-- `movementContentVersionSchema` accepts positive integers;
+- `movementContentVersionSchema` accepts integers from 1 through 2,147,483,647;
+- normalized trimmed name strings contain 1–80 characters, summary strings
+  contain 1–240 characters, and each instructional string contains 1–300
+  characters;
 - `movementSummarySchema` carries stable identity, current version, name, and
   short description;
-- `movementDetailSchema` adds bounded arrays of setup items, ordered steps,
-  cues, common mistakes, and safety notes;
-- `movementListResponseSchema` carries the deterministic summary list;
-- `movementDetailParamsSchema` validates the route parameter; and
+- `movementDetailSchema` requires setup 1–8 items, ordered steps 1–12, cues
+  1–8, common mistakes 1–8, and safety notes 1–6;
+- `movementListResponseSchema` is a strict `{ items }` object whose array
+  contains 0–100 summaries;
+- `movementEmptyQuerySchema` is a strict empty object and rejects every query
+  key;
+- `movementDetailParamsSchema` is a strict object containing only the bounded
+  `movementId`; and
 - `movementDetailResponseSchema` carries one published detail.
 
-All public objects are strict. Public strings and arrays receive explicit,
-reviewed bounds during contract freeze so malformed or unexpectedly large
-values fail closed. Empty catalogs are valid list responses; published details
-require every instructional section to be non-empty.
+All public objects are strict. The limits above are freeze requirements, not
+placeholders. Catalog construction fails above 100 published entries until
+pagination receives later approved scope. Empty catalogs are valid list
+responses; published details require every instructional section to be
+non-empty.
 
 Zod code is the field-level Source of Truth. The PRD and this design describe
 semantics and constraints needed for freeze; `docs/contracts` later records the
@@ -70,7 +78,8 @@ movement-specific public error envelope or error code is created.
 `packages/domain` adds a movement-library module containing:
 
 - a reviewed constant collection of current published movement details;
-- a reserved-ID collection for withdrawn entries;
+- an append-only identity/version manifest from which withdrawn/reserved state
+  is derived;
 - a pure `listMovements()` function that returns summaries sorted by
   `movementId`; and
 - a pure `getMovementById(movementId)` function that returns the current
@@ -83,8 +92,9 @@ construction. Returned values do not expose mutable internal arrays or objects.
 
 The catalog uses no clock, random value, environment variable, network call,
 database, filesystem read at runtime, or provider. The source file contains only
-current reviewed content. Git history retains prior revisions; reserved IDs
-retain identity after withdrawal.
+current reviewed content. The manifest retains every publish, revise, withdraw,
+and reviewed-republish transition; Git history retains the exact source and
+review evidence for each version.
 
 The domain package does not gain Fastify, Next.js, React, Drizzle, or database
 imports. It may consume the framework-free schema package for validation and
@@ -99,14 +109,17 @@ until a later approved persistence need exists.
 | ------------------------------------ | ------------------------------------------------------------ |
 | `GET /movements`                     | 200 with the schema-validated, deterministically sorted list |
 | `GET /movements/:movementId`         | 200 with one schema-validated published detail               |
+| either route with any query key      | 400 `BAD_REQUEST` platform envelope                          |
 | malformed `movementId`               | 400 `BAD_REQUEST` platform envelope                          |
 | unknown or withdrawn `movementId`    | 404 `NOT_FOUND` platform envelope                            |
 | unexpected catalog/handler exception | 500 `INTERNAL_ERROR` platform envelope and internal log      |
 
-The routes accept no body and reject undeclared query behavior; search, filter,
-pagination, variants, and personalization are not implicit APIs. Route params
-are parsed by `movementDetailParamsSchema`. Responses are parsed by their
-frozen schemas immediately before sending.
+Both routes accept no body and parse the query through
+`movementEmptyQuerySchema`. The detail route also parses
+`movementDetailParamsSchema`. Search, filter, pagination, variants, and
+personalization are not implicit APIs. Success responses are parsed by the
+paired list/detail response schema immediately before sending. Success and
+error responses set `Cache-Control: no-store`.
 
 The root platform continues to own safe error provenance, request IDs, logging,
 and CORS. All responses carry the server-generated `x-request-id`; movement
@@ -132,10 +145,12 @@ failures. The detail path encodes the identifier as one URL segment. Neither
 method returns unchecked JSON or includes raw response content in an error.
 
 Movement reads use request-time fetching without a persistent or offline cache.
-This prevents a second bundled copy of guidance and makes withdrawal/correction
-behavior explicit. Cache policy is an implementation detail tested at the
-client boundary and may be revisited only without weakening current-version or
-withdrawal semantics.
+Every request passes `cache: 'no-store'` and uses a fresh `AbortController` with
+a fixed 3,000 ms timeout. A caller abort and the timeout both cancel the fetch,
+clear the timer, and surface only the existing safe unavailable behavior. The
+client holds no last-success value and performs no React, module, browser, or
+service-worker caching. This makes withdrawal/correction behavior explicit;
+these freshness guarantees may be revised only by later approved scope.
 
 ### Web routes and rendering
 
@@ -149,6 +164,11 @@ call Fastify through the typed API client. They never import the domain or
 database packages. Dynamic rendering prevents the production build from
 requiring a live API and prevents guidance from becoming an unreviewed static
 build artifact.
+
+Each movement page exports `dynamic = 'force-dynamic'` and `revalidate = 0` and
+uses only the client's `cache: 'no-store'` fetch. It does not use `unstable_cache`,
+React `cache`, pre-generation, or a client-side store. Therefore a withdrawal
+observed by Fastify cannot be replaced by a previously rendered catalog/detail.
 
 The server-only `API_BASE_URL` setting is an absolute HTTP(S) URL with a safe
 local default of `http://127.0.0.1:3001`. It is trusted operator configuration,
@@ -178,12 +198,20 @@ dependency is added.
   a title changes.
 - A user-visible text change increments `contentVersion` by one.
 - New movements begin at version `1`.
-- Withdrawn IDs move to the reserved collection and are excluded from list and
-  lookup results.
+- Publish, revise, withdraw, and reviewed republish each append one manifest
+  record containing a per-movement event sequence, movement ID, version,
+  lifecycle action, canonical-detail SHA-256, and the expected durable
+  review-record path for content-publication actions. Withdrawal retains the
+  preceding version and digest and requires no new content review.
+- Existing manifest records cannot be edited, reordered, or removed. Withdrawn
+  IDs are excluded from current list/lookup but remain reserved by the manifest.
 - A withdrawn ID cannot be reassigned or silently resurrected. Republishing the
   same movement requires explicit review and a higher version.
-- Source review verifies version increments against the preceding Git revision;
-  runtime code does not infer history from timestamps or hashes.
+- CI compares the manifest with the merge base and Git history. It rejects
+  record mutation/removal, ID reassignment, version gaps or non-increments,
+  content digest drift, a current catalog that disagrees with the latest
+  lifecycle action, and a published version without its durable review record.
+- Runtime code does not infer history from timestamps or mutable current files.
 
 The public version identifies the revision served; it is not a quality score,
 measurement, evidence grade, or statement of safety.
@@ -191,11 +219,24 @@ measurement, evidence grade, or statement of safety.
 ### Authoring and review workflow
 
 Each published entry contains plain text for name, summary, setup, steps, cues,
-common mistakes, and safety notes. The pull request records the author, the
-independent Movement reviewer, the ID/version decision, and the review rubric
-result. Personal reviewer metadata is not copied into runtime content.
+common mistakes, and safety notes. Canonical content is UTF-8 JSON of the
+strict-schema output in fixed field order after Unicode NFC normalization and
+trimming; array order is preserved because it is instructional meaning. A
+durable record at
+`docs/execution/content-reviews/movements/<movementId>-v<contentVersion>.md`
+binds the ID, version, canonical SHA-256, and exact catalog-source commit SHA to
+the author, both reviewer roles, Movement/safety credential title, issuer,
+current-as-of date, movement-scope rationale, intended-reader basis, and every
+rubric result. The source/manifest commit is created first; reviewers inspect
+that immutable commit; the review record is added in a later commit. Gate A
+proves the reviewed commit is an ancestor of the exact head and recalculates the
+same digest from the head, preventing post-review content drift. Personal
+contact details are not copied into runtime content.
 
-The Movement reviewer must pass every item:
+The qualified Movement/safety reviewer must be independent of the author and
+hold a current recognized exercise-professional, movement-coaching,
+physiotherapy, or equivalent qualification whose documented scope covers the
+movement. That reviewer must pass every item:
 
 1. the starting position can be identified from the text;
 2. steps are ordered and use plain, defined language;
@@ -205,12 +246,27 @@ The Movement reviewer must pass every item:
 5. the entry does not diagnose, rehabilitate, screen contraindications, decide
    suitability, personalize, prescribe training, or claim universal safety;
 6. no scientific claim or citation is invented; and
-7. the entry is understandable without a media asset.
+7. the safety instruction is actionable without claiming zero risk.
 
-Automated checks enforce structure, bounds, identifiers, versions, reserved-ID
-rules, and output order. They do not claim to establish understandability or
-safety. A failed/unavailable clarity review invokes `HUMAN_PERCEPTION_REQUIRED`.
-Potentially harmful unresolved instruction invokes
+An independent intended student or coach reader must separately pass every
+clarity item:
+
+1. the starting position is identifiable;
+2. each step can be followed in order without unstated movement knowledge;
+3. unfamiliar terms are removed or defined;
+4. section headings and the safety prompt are easy to find; and
+5. the entry is understandable without a media asset.
+
+One person may fill both roles only when the record explicitly documents both
+the professional qualification and why the person represents an intended
+reader. The person still must not be the author, must record each rubric
+separately, and must pass every item; a partial result is a failure.
+
+Automated checks enforce structure, bounds, manifest history, content digests,
+identifiers, versions, reserved-ID rules, review-record presence, and output
+order. They do not claim to establish understandability or safety. A failed or
+unavailable Movement/safety or intended-reader review invokes
+`HUMAN_PERCEPTION_REQUIRED`. Potentially harmful unresolved instruction invokes
 `SAFETY_CRITICAL_UNCERTAINTY`. The affected entry remains unpublished.
 
 ## Request and failure flow
@@ -236,6 +292,12 @@ invalid catalog source
 
 network/protocol/server failure
   → safe web unavailable state; raw response content withheld
+
+timeout/caller abort
+  → fetch cancelled by 3,000 ms bound; no prior response substituted
+
+withdrawal after a prior successful read
+  → no-store API/client/page path obtains current 404; stale detail is not shown
 ```
 
 ## Configuration
@@ -277,6 +339,8 @@ approved migration and compatibility plan.
   from request data.
 - Confirm no authentication assumption is introduced and public catalog access
   is not reused as policy for future personal data.
+- Confirm API and Next.js success/error paths retain `no-store`, no pre-rendered
+  movement payload exists, and timeout/abort cannot fall back to cached content.
 - Confirm authorization/proxy-authorization redaction, CORS credentials-off,
   no-Origin requests, and request-ID non-reflection remain unchanged.
 - Confirm no PRD 03, database, body/form, analytics, external provider, or
@@ -290,8 +354,12 @@ implementation, then is refactored without changing assertions.
 ### Wave 1 — contracts
 
 - Valid summaries, details, list responses, params, and detail responses parse.
-- Invalid ID forms, zero/fractional versions, missing/empty required sections,
-  unexpected fields, and out-of-bound values fail.
+- The strict empty query parses and every query key fails for both endpoints.
+- Exact-minimum and exact-maximum IDs, strings, section counts, and the 100-item
+  list parse; below-minimum, above-maximum, zero/fractional versions,
+  missing/empty required sections, and unexpected fields fail.
+- Provider tests pair each route/status with its exact executable success or
+  shared error schema.
 - Error-envelope compatibility remains unchanged.
 
 ### Wave 2 — domain catalog
@@ -299,14 +367,21 @@ implementation, then is refactored without changing assertions.
 - Published entries validate and list in deterministic ID order.
 - Lookup returns exactly the matching published entry.
 - Empty published catalogs produce an empty list.
-- Duplicate IDs, reserved-ID reuse, invalid versions, and malformed entries fail
-  catalog construction.
+- Duplicate IDs, a 101-item catalog, reserved-ID reuse, invalid versions, and
+  malformed entries fail catalog construction.
+- Merge-base/history fixtures prove manifest records cannot be changed, removed,
+  or reordered; versions cannot be reused or skipped; digest drift and missing
+  exact-version review records fail CI.
+- Publish, revision, withdrawal, and reviewed republish fixtures prove current
+  catalog state is derived from the latest append-only lifecycle record.
 - Returned data cannot mutate the source catalog.
 
 ### Wave 3 — API provider
 
 - List and detail successes parse through provider response schemas.
+- Empty queries succeed; every query key returns 400 through the shared schema.
 - Invalid IDs return 400; unknown and withdrawn IDs return 404.
+- Success and error variants set `Cache-Control: no-store`.
 - Every variant correlates header and safe error-body request IDs and never
   reflects a client-supplied ID.
 - Unexpected errors remain generic and are logged internally.
@@ -318,6 +393,12 @@ implementation, then is refactored without changing assertions.
 - Injected-fetch tests cover valid list/detail responses, schema-valid API
   failures, non-JSON and malformed successes/failures, URL-segment encoding, and
   raw-content suppression.
+- Fake-timer and abort-signal tests prove the 3,000 ms bound cancels the request,
+  clears its timer, renders unavailable, and never returns a prior response.
+- A sequential withdrawal test returns a valid detail first and 404 second and
+  proves API headers, client fetch options, and dynamic Next.js settings prevent
+  the first result from being reused. Build inspection proves no movement
+  payload was statically generated.
 - Rendering tests cover populated list, empty list, valid detail, unavailable,
   malformed-response, and not-found states using semantic HTML assertions.
 - Boundary checks prove web code imports neither domain nor database code and
@@ -337,18 +418,32 @@ checks do not replace the Movement content review, QA/security, or Agent 90.
 
 1. Pre-flight — Agent 90 challenges scope, safety wording, dependency
    independence, contracts, and verification feasibility.
-2. Contract freeze — Orchestrator coordinates `packages/schemas` and
-   `docs/contracts`; provider and consumers do not begin first.
-3. Catalog/API — API/Domain ownership implements schemas' backend consumer,
-   catalog, route provider, and colocated tests.
-4. Web — Web/PWA ownership extends the client and pages after contract freeze.
-   It may proceed in parallel with Catalog/API because it consumes only frozen
-   schemas.
-5. Integration — Orchestrator coordinates shared configuration/documentation,
-   integrates branches, and runs all gates.
-6. Review — independent Movement content review, QA/security, and Agent 90
-   inspect the exact integrated head; corrections receive affected reruns and
-   re-review.
+2. Contract freeze — the Schemas owner exclusively adds
+   `packages/schemas/src/movement.ts` and
+   `packages/schemas/test/movement.test.ts`. The Orchestrator alone updates
+   `packages/schemas/src/index.ts` and `docs/contracts/README.md`; provider and
+   consumers wait for that integration commit.
+3. Wave 2A domain — the Domain owner exclusively adds files below
+   `packages/domain/src/movement-library/`, including catalog, manifest,
+   manifest-history checks, review-record validation, and colocated tests. The
+   owner does not edit `packages/domain/src/index.ts`.
+4. Wave 2 bridge — after 2A passes, the Orchestrator alone updates
+   `packages/domain/src/index.ts`. Wave 2B API then exclusively adds
+   `apps/api/src/movement-routes.ts` and `apps/api/src/movement-routes.test.ts`.
+   The API owner does not edit `apps/api/src/app.ts`; after 2B passes, the
+   Orchestrator alone registers the route there and owns any necessary
+   `app.test.ts` integration edit. This sequencing prevents competing barrel or
+   route-registration changes.
+5. Web — after the contract-freeze commit, Web/PWA ownership exclusively edits
+   `apps/web/lib/api-client.ts`, its tests, and new files under
+   `apps/web/app/movements/`. It may run alongside Wave 2 because it consumes
+   only frozen schemas and does not edit shared barrels or API registration.
+6. Integration — the Orchestrator owns shared `.env.example`, configuration,
+   governance-record integration, and documentation changes, integrates in the
+   sequence above, and runs all gates.
+7. Review — qualified Movement/safety and intended-reader review, QA/security,
+   and Agent 90 inspect the exact integrated head; corrections receive affected
+   reruns and re-review.
 
 No implementation owner crosses paths from `MULTI_AGENT_PROTOCOL.md` without
 explicit reassignment. The Movement reviewer owns content judgment, not an

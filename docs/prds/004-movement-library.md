@@ -32,7 +32,9 @@ will drift.
 - A student reading concise movement guidance primarily on a smartphone.
 - A coach consulting the same guidance on desktop or tablet.
 - A future Fitness OS client consuming the same read-only Fastify API.
-- A Movement content reviewer governing what may be published.
+- A qualified Movement/safety reviewer governing instruction safety and scope.
+- An intended student or coach reader judging whether the text is understandable
+  without unstated movement knowledge.
 
 The PRD introduces no account context. The initial catalog is public and
 read-only; that narrow choice is not an authorization precedent for future
@@ -52,13 +54,15 @@ bypassing Fastify.
   summaries, details, route parameters, and list/detail responses.
 - Add a version-controlled, read-only catalog containing at least two published
   entries that have passed the content-review rubric in this PRD.
+- Add an append-only identity/version manifest and durable review records that
+  bind every published version to its exact content digest and source commit.
 - Add deterministic catalog list and lookup behavior in the framework-free
   domain package.
 - Expose `GET /movements` and `GET /movements/:movementId` through Fastify.
 - Extend the existing typed web API client to validate movement successes and
   failures through shared schemas.
 - Add accessible, mobile-first list and detail pages that fetch through the
-  Fastify API at request time.
+  Fastify API at request time with explicit no-stale and bounded-abort behavior.
 - Document authoring, review, version increment, withdrawal, rollback, and
   failure behavior.
 
@@ -101,14 +105,22 @@ and keep every navigation link keyboard reachable. Ordered instructions use an
 ordered list. Empty, unavailable, malformed-response, and not-found states use
 plain, non-technical messages and never expose raw provider or exception text.
 
-Understandability cannot be established honestly by schema tests alone. Before
-publication, every entry must pass an independent Movement content review. A
-reviewer who did not author the entry must confirm that the starting position is
-identifiable, steps are in executable order, unfamiliar terms are removed or
-defined, the safety prompt is visible, and the text does not decide suitability
-or substitute for a coach or clinician. Failure or unavailable human review
-activates `HUMAN_PERCEPTION_REQUIRED` at the completion gate; it is not replaced
-by an agent's opinion.
+Understandability and instruction safety cannot be established honestly by
+schema tests alone. Before publication, every exact content version must pass:
+
+1. an independent Movement/safety review by a person with a current recognized
+   exercise-professional, movement-coaching, physiotherapy, or equivalent
+   qualification whose documented scope covers the reviewed movement; and
+2. an independent intended-reader clarity review by a student or coach who did
+   not author the entry and can judge whether the text is understandable without
+   unstated movement knowledge.
+
+One person may fill both roles only when the durable record explicitly documents
+both the relevant professional qualification and why that person represents an
+intended reader. The reviewer must not be the content author. Every rubric item
+must be recorded as `PASS`; a partial pass is not publication approval. A failed
+or unavailable required review activates `HUMAN_PERCEPTION_REQUIRED` at the
+completion gate and cannot be replaced by an agent's opinion.
 
 ## Business rules
 
@@ -126,8 +138,12 @@ by an agent's opinion.
   locale, and runtime insertion order do not affect the response.
 - Withdrawing unsafe or obsolete guidance removes it from current list/detail
   results. Its identifier remains reserved and may not be reused.
-- Prior published text remains recoverable from Git history. This PRD serves
-  only the current published version and creates no historical-content API.
+- Every publish, revise, withdraw, or explicitly reviewed republish action
+  appends an identity/version-manifest record; existing records are never edited
+  or removed. Withdrawn identifiers remain reserved in that history.
+- Prior published text and its exact-version review record remain recoverable
+  from Git history. This PRD serves only the current published version and
+  creates no historical-content API.
 - A later consumer that needs historical fidelity must retain the
   `(movementId, contentVersion)` it used; PRD 04 does not create student history
   or silently promise retrieval of old versions.
@@ -148,11 +164,31 @@ Movement guidance is public, non-personal product content. The capability does
 not collect fitness activity, health data, body data, identifiers, preferences,
 ratings, or telemetry.
 
-The current published catalog and reserved withdrawn identifiers live in
-version-controlled source under `packages/domain`. Catalog construction is
-deterministic and has no network, clock, random, database, or provider input.
-Git and pull-request history hold authorship, review, and prior revisions; those
-workflow records are not exposed in the public API.
+The current published catalog and an append-only identity/version manifest live
+in version-controlled source under `packages/domain`. Each manifest record
+contains a per-movement event sequence, movement ID, content version, SHA-256
+digest of the canonical validated detail, lifecycle action, and the expected
+durable review-record path for publish/revise/republish actions. A withdrawal
+retains the last content version and digest and needs no new content review. CI
+compares the manifest with the merge base and Git history: existing records
+cannot change, move, or disappear; an ID cannot be reassigned; user-visible
+content changes require the next integer version and a new record; and
+withdrawal appends a record rather than deleting identity history. Catalog
+construction is deterministic and has no network, clock, random, database, or
+provider input.
+
+The durable review record names both required review roles, documents the
+Movement/safety credential title, issuer, current-as-of date, and movement-scope
+rationale plus the intended-reader basis; it records every rubric item as
+`PASS` and binds the decision to `(movementId, contentVersion)`, the canonical
+content digest, and exact catalog-source commit SHA. Personal contact details
+are excluded. The content and manifest are committed first so that SHA exists;
+reviewers assess that immutable commit and digest; then the record is committed
+under
+`docs/execution/content-reviews/movements/<movementId>-v<contentVersion>.md`.
+Gate A verifies the reviewed source commit is an ancestor of the exact head and
+that the head still produces the recorded digest. These governance records are
+not exposed in the public API.
 
 No persistence layer or migration is authorized. `packages/database` remains
 unchanged. Moving the catalog to persistent storage requires a later approved
@@ -161,26 +197,40 @@ contract and migration plan rather than an implicit PRD 04 follow-up.
 ## Contracts
 
 Wave 1 adds framework-free Zod schemas and inferred types in
-`packages/schemas` for:
+`packages/schemas` with these freeze requirements:
 
-- `movementIdSchema` and `movementContentVersionSchema`;
+- `movementIdSchema`: 3–64 lowercase ASCII characters matching
+  `^[a-z0-9]+(?:-[a-z0-9]+)*$`;
+- `movementContentVersionSchema`: an integer from 1 through 2,147,483,647;
+- normalized, trimmed plain text: name 1–80 characters, summary 1–240
+  characters, and each instructional string 1–300 characters;
 - `movementSummarySchema` and `movementDetailSchema`;
-- `movementListResponseSchema`;
-- `movementDetailParamsSchema` and `movementDetailResponseSchema`.
+- detail section bounds: setup 1–8 items, ordered steps 1–12, cues 1–8,
+  common mistakes 1–8, and safety notes 1–6;
+- `movementListResponseSchema`: a strict object containing `items`, an array of
+  0–100 summaries; catalog construction fails above 100 until a later PRD
+  authorizes pagination;
+- `movementEmptyQuerySchema`: exactly an empty strict object;
+- `movementDetailParamsSchema`: exactly one `movementId`; and
+- `movementDetailResponseSchema`: one strict published detail.
 
 The summary carries stable identity, current content version, display name, and
-a short plain-language description. The detail adds bounded setup items,
-ordered steps, cues, common mistakes, and safety notes. Exact field constraints
-live only in the executable Zod definitions after contract freeze; the contract
-registry references those symbols and does not independently redefine them.
+a short plain-language description. The detail adds the bounded setup items,
+ordered steps, cues, common mistakes, and safety notes above. All objects are
+strict and reject unknown fields. Executable Zod remains the runtime Source of
+Truth; these explicit maxima are freeze requirements and may not be silently
+weakened during implementation.
 
-`GET /movements` returns the list response. `GET
-/movements/:movementId` returns the detail response. These endpoints accept no
-request body, search, filter, pagination, or personalization parameters.
-Malformed identifiers use the frozen `BAD_REQUEST` platform error; unknown or
-withdrawn identifiers use `NOT_FOUND`; unexpected failures use
-`INTERNAL_ERROR`. Every response retains the PRD 01 server-generated request ID
-behavior. No new public error code is introduced.
+The HTTP/schema pairings are fixed: `GET /movements` parses
+`movementEmptyQuerySchema` and returns HTTP 200 with
+`movementListResponseSchema`; `GET /movements/:movementId` parses both
+`movementEmptyQuerySchema` and `movementDetailParamsSchema`, then returns HTTP
+200 with `movementDetailResponseSchema`. Any query key or malformed identifier
+returns the frozen HTTP 400 / `BAD_REQUEST` envelope; unknown or withdrawn IDs
+return HTTP 404 / `NOT_FOUND`; unexpected failures return HTTP 500 /
+`INTERNAL_ERROR`. The endpoints accept no body. Every response retains the PRD
+01 server-generated request ID and sets `Cache-Control: no-store`. No new public
+error code is introduced.
 
 Provider, domain, API, web-client, and rendering tests consume the executable
 schemas. PRD 03 contracts, identifiers, taxonomy, and data are neither imported
@@ -190,13 +240,17 @@ nor re-created here.
 
 Publishing or revising an entry requires:
 
-1. a focused source change identifying the stable ID and intended version;
-2. automated schema, duplicate-ID, reserved-ID, and deterministic-order checks;
-3. an independent Movement content reviewer applying the UX rubric;
-4. explicit confirmation that the text contains no diagnosis, rehabilitation,
+1. a focused source change appending the ID/version/lifecycle manifest record;
+2. automated schema, bounds, manifest-history, content-digest, duplicate-ID,
+   reserved-ID, version-increment, and deterministic-order checks;
+3. an independent, qualified Movement/safety reviewer applying every safety and
+   scope rubric item to the exact version and digest;
+4. an independent intended-reader applying every clarity rubric item to that
+   same version and digest, with dual-role qualification recorded if combined;
+5. explicit confirmation that the text contains no diagnosis, rehabilitation,
    suitability decision, personalized recommendation, training prescription,
    invented evidence, or claim of universal safety; and
-5. normal code review, QA/security, and Gate A evidence.
+6. normal code review, QA/security, and Gate A evidence.
 
 An entry that fails any item remains unpublished. If plausible execution could
 cause material harm and conservative wording does not resolve the uncertainty,
@@ -212,6 +266,13 @@ or fabricate professional authority.
   schemas and preserves safe platform errors and request correlation.
 - The web client treats malformed success or failure payloads as content-safe
   protocol errors and never renders arbitrary response bodies.
+- API successes and errors set `Cache-Control: no-store`; Next.js forces dynamic
+  rendering, uses `fetch` with `cache: 'no-store'`, and sets `revalidate = 0`.
+  No React memoization, service worker, route cache, or client persistence may
+  retain movement guidance.
+- Each web-client movement request aborts after 3,000 ms. Timeout and abort
+  failures render the same safe retryable unavailable state and contain no raw
+  origin or response data.
 - Movement strings render as escaped text. `dangerouslySetInnerHTML`, executable
   Markdown, user-controlled URLs, and remote embeds are prohibited.
 - The server-side API base URL is trusted operator configuration, not a request
@@ -238,6 +299,8 @@ or fabricate professional authority.
   safe unavailable state.
 - When the API is unreachable, the web path renders a retryable unavailable
   state. It does not fall back to duplicated, stale, or client-bundled guidance.
+- A timed-out or aborted API read renders the same unavailable state and never
+  substitutes the last successful response.
 - A missing or invalid server-side API base URL fails closed with a safe
   operational error and never becomes user-controlled fetch input.
 - Withdrawing content removes it from current reads. Recovery redeploys a known
@@ -248,12 +311,15 @@ or fabricate professional authority.
 
 ## Acceptance criteria
 
-1. The movement schemas are frozen in `packages/schemas`, referenced in the
-   human contract registry, and tested for valid, malformed, extra-field,
-   identifier, version, and bounded-content cases.
+1. The strict movement schemas are frozen with the exact ID, version, string,
+   section-count, 100-item list, and empty-query bounds specified above; the
+   contract registry and tests cover every HTTP/schema pairing, valid boundary,
+   malformed value, extra field, and one-over-limit case.
 2. The version-controlled catalog contains at least two published entries, has
    unique stable IDs and valid versions, reserves withdrawn IDs, sorts
-   deterministically, and has recorded independent content-review evidence.
+   deterministically, and has an append-only manifest plus durable exact-version
+   review records. CI/history tests reject record mutation/removal, ID reuse,
+   skipped/non-incremented versions, digest drift, or missing review evidence.
 3. `GET /movements` returns HTTP 200 and the schema-valid deterministic summary
    list, including a valid empty-list response.
 4. `GET /movements/:movementId` returns a schema-valid published detail; invalid
@@ -261,20 +327,25 @@ or fabricate professional authority.
    with the server-generated `x-request-id` and expose no internal detail.
 5. The web API client validates list/detail successes and shared failures with an
    injected-fetch test surface; malformed or non-JSON responses fail closed
-   without echoing raw content.
+   without echoing raw content. It sends `cache: 'no-store'`, aborts at 3,000 ms,
+   and never returns a previously successful response after timeout or 404.
 6. `/movements` and `/movements/[movementId]` render through Fastify-backed data,
    satisfy the stated semantic, keyboard, visible-focus, 320-pixel, and 200%-zoom
    checks, and provide safe empty, unavailable, malformed, and not-found states.
-7. Every published entry passes the independent clarity and safety wording
-   rubric. No published field contains HTML, remote media, diagnosis,
-   rehabilitation, suitability decisions, personalized advice, training
-   prescription, invented citation, or claim of universal safety.
+7. Every exact published version has a durable record showing every rubric item
+   passed by a qualified independent Movement/safety reviewer and an independent
+   intended reader. A combined reviewer has both qualifications recorded. If
+   either review is failed or unavailable, publication and Gate A stop with
+   `HUMAN_PERCEPTION_REQUIRED`. No published field contains HTML, remote media,
+   diagnosis, rehabilitation, suitability decisions, personalized advice,
+   training prescription, invented citation, or claim of universal safety.
 8. The implementation introduces no PRD 03 import or runtime dependency, no
    authentication or private-data behavior, no provider integration, and no
    database schema or migration.
 9. Red → Green evidence covers contracts, catalog invariants, API routes,
-   client protocol failures, rendering states, and the route-to-Fastify boundary;
-   all existing tests remain green.
+   append-only history, API/Next no-store behavior, timeout/abort, withdrawal
+   after a prior successful read, client protocol failures, rendering states,
+   and the route-to-Fastify boundary; all existing tests remain green.
 10. Lint, format, typecheck, unit/integration tests, production build,
     repository check, and `git diff --check` pass under pinned tools.
 11. Independent Agent 90 and QA/security review the exact integrated head and
@@ -285,7 +356,8 @@ or fabricate professional authority.
 - 100% of published movement entries validate against the frozen executable
   detail schema and have unique, non-reserved IDs and positive versions.
 - 100% of published entries have recorded independent content-review evidence
-  with every rubric item passing.
+  bound to the exact ID, version, digest, and source commit, with both reviewer
+  roles qualified and every rubric item passing.
 - 100% of movement provider and consumer response variants have executable
   schema tests.
 - 100% of movement pages have automated semantic-state coverage and documented
