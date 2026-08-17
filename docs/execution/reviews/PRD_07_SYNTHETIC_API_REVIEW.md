@@ -2,19 +2,19 @@
 
 ## Review identity
 
-| Field                | Value                                                                                         |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| Type                 | Independent Agent 90 implementation review                                                    |
-| Round                | 1                                                                                             |
-| Repository           | `gabriellimacodex/fitness-os`                                                                 |
-| Pull request         | https://github.com/gabriellimacodex/fitness-os/pull/20                                        |
-| Candidate branch     | `feat/prd-07-synthetic-api`                                                                   |
-| Base branch          | `main` (`b45bbf06e879069e5eeb5b2677f2ac4ff510e440`)                                           |
-| Exact head SHA       | `f0da3691a3d18214fd3e9e90e593b2e762078af7`                                                    |
-| Date                 | 2026-08-17                                                                                    |
+| Field                | Value                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Type                 | Independent Agent 90 implementation review                                                                                                 |
+| Round                | 1                                                                                                                                          |
+| Repository           | `gabriellimacodex/fitness-os`                                                                                                              |
+| Pull request         | https://github.com/gabriellimacodex/fitness-os/pull/20                                                                                     |
+| Candidate branch     | `feat/prd-07-synthetic-api`                                                                                                                |
+| Base branch          | `main` (`b45bbf06e879069e5eeb5b2677f2ac4ff510e440`)                                                                                        |
+| Exact head SHA       | `f0da3691a3d18214fd3e9e90e593b2e762078af7`                                                                                                 |
+| Date                 | 2026-08-17                                                                                                                                 |
 | Authority            | PRD 07 Onboarding (`IN_PROGRESS`), Technical Design 007 independently reviewed, contracts frozen in #17, domain invariants on main via #18 |
-| Disposition          | `FAIL`                                                                                        |
-| Final recommendation | `CORRECTION_REQUIRED`                                                                         |
+| Disposition          | `FAIL`                                                                                                                                     |
+| Final recommendation | `CORRECTION_REQUIRED`                                                                                                                      |
 
 The reviewer did not author PR #20 or its handoff. Builder claims were treated
 as hypotheses and checked against the exact-head tree, the complete
@@ -85,20 +85,20 @@ Builder-reported “api: 53 passed” was independently reproduced, not trusted.
 
 ## Required review-area outcomes table
 
-| Review area         | Outcome          | Rationale                                                                                                                                                                                                                                                                 |
-| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product / authority | `FAIL`           | PRD 07 is `APPROVED` / `IN_PROGRESS` and this synthetic Fastify slice is authorized. Shipped `GET /current` silently drops attempts, and the first mutation advertises the frozen operation protocol without enforcing it.                                                 |
-| DAG                 | `PASS`           | PRD 07 depends only on completed PRD 02. No PRD 03/21/25 implementation, catalog, or governance engine is opened.                                                                                                                                                         |
-| Product Principles  | `FAIL`           | PP-11 is broken by a `utf8-json-sha256.v1` digest that is ordinary `JSON.stringify`. PP-12 is strained by a production-visible injection port. PP-07 holds for this slice: no body/health data, no plaintext secret persistence.                                          |
-| Architecture        | `FAIL`           | Fastify remains the only data plane. TD 007 requires trusted context only from an API-side adapter and forbids a public synthetic login; those hold. The injectable `PlatformOptions.onboarding` seam is the only way to get 200s and has no production rejection.         |
+| Review area         | Outcome          | Rationale                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product / authority | `FAIL`           | PRD 07 is `APPROVED` / `IN_PROGRESS` and this synthetic Fastify slice is authorized. Shipped `GET /current` silently drops attempts, and the first mutation advertises the frozen operation protocol without enforcing it.                                                                                                       |
+| DAG                 | `PASS`           | PRD 07 depends only on completed PRD 02. No PRD 03/21/25 implementation, catalog, or governance engine is opened.                                                                                                                                                                                                                |
+| Product Principles  | `FAIL`           | PP-11 is broken by a `utf8-json-sha256.v1` digest that is ordinary `JSON.stringify`. PP-12 is strained by a production-visible injection port. PP-07 holds for this slice: no body/health data, no plaintext secret persistence.                                                                                                 |
+| Architecture        | `FAIL`           | Fastify remains the only data plane. TD 007 requires trusted context only from an API-side adapter and forbids a public synthetic login; those hold. The injectable `PlatformOptions.onboarding` seam is the only way to get 200s and has no production rejection.                                                               |
 | Contracts           | `FAIL`           | Frozen request/response Zod is mostly consumed. `GET /current` ignores `cursor` and never emits `nextCursor` when more rows exist. Mutation responses claim `operation_committed` + `utf8-json-sha256.v1` without the pinned canonicalizer or token binding. One unauthorized type export was added to the frozen schema module. |
-| Identity / sessions | `PASS`           | No public synthetic-login route. Production bootstrap injects no context; every onboarding route is `401 UNAUTHENTICATED`. `OnboardingContext` is typed `synthetic: true`. No cookie, provider SDK, or principal/subject is accepted from the browser.                    |
-| Operations          | `FAIL`           | In-memory store and missing PostgreSQL/readiness are authorized limitations. Logger redaction still covers only Authorization headers. `/ready` stays unconditionally ready while a synthetic store is composed.                                                          |
-| Persistence         | `NOT_APPLICABLE` | `packages/database` is untouched. This slice explicitly defers the PRD 07 migration. `NOT_APPLICABLE` is justified for migrations; it is not a pass of the later Data slice.                                                                                              |
-| Security / privacy  | `FAIL`           | No public login, no `claimSecret` echo in tested responses, no-store hook present, dual-role create is denied. Same `RetryToken` can commit two different attempts. SHA-256 verifier is not the specified HMAC. Second-role/same-role both collapse to HTTP 403.           |
-| Failure / recovery  | `FAIL`           | Missing/invalid auth is 401. Unknown/non-issued invitations collapse to `invalid_or_unavailable`. There is no operation ledger, so lost-response recovery cannot replay or mismatch. Current-state cannot page. Self-coach is not evaluated.                               |
-| Tests / CI          | `FAIL`           | Job `quality` is green on `f0da369`. Local 53/53 pass. Required current-state overflow/cursor, same-token mismatch, same-role `mapping_conflict`, unexpected-500 no-store, and create/detail no-store assertions are missing.                                             |
-| Scope / docs        | `FAIL`           | Diff stays inside the authorized API slice except for a type export on the frozen schema module. PR description over-claims stable current-state and operation envelopes relative to actual behavior.                                                                      |
+| Identity / sessions | `PASS`           | No public synthetic-login route. Production bootstrap injects no context; every onboarding route is `401 UNAUTHENTICATED`. `OnboardingContext` is typed `synthetic: true`. No cookie, provider SDK, or principal/subject is accepted from the browser.                                                                           |
+| Operations          | `FAIL`           | In-memory store and missing PostgreSQL/readiness are authorized limitations. Logger redaction still covers only Authorization headers. `/ready` stays unconditionally ready while a synthetic store is composed.                                                                                                                 |
+| Persistence         | `NOT_APPLICABLE` | `packages/database` is untouched. This slice explicitly defers the PRD 07 migration. `NOT_APPLICABLE` is justified for migrations; it is not a pass of the later Data slice.                                                                                                                                                     |
+| Security / privacy  | `FAIL`           | No public login, no `claimSecret` echo in tested responses, no-store hook present, dual-role create is denied. Same `RetryToken` can commit two different attempts. SHA-256 verifier is not the specified HMAC. Second-role/same-role both collapse to HTTP 403.                                                                 |
+| Failure / recovery  | `FAIL`           | Missing/invalid auth is 401. Unknown/non-issued invitations collapse to `invalid_or_unavailable`. There is no operation ledger, so lost-response recovery cannot replay or mismatch. Current-state cannot page. Self-coach is not evaluated.                                                                                     |
+| Tests / CI          | `FAIL`           | Job `quality` is green on `f0da369`. Local 53/53 pass. Required current-state overflow/cursor, same-token mismatch, same-role `mapping_conflict`, unexpected-500 no-store, and create/detail no-store assertions are missing.                                                                                                    |
+| Scope / docs        | `FAIL`           | Diff stays inside the authorized API slice except for a type export on the frozen schema module. PR description over-claims stable current-state and operation envelopes relative to actual behavior.                                                                                                                            |
 
 ## Findings
 
