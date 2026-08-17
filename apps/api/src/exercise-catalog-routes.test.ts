@@ -9,6 +9,7 @@ import {
   type ExerciseRevision,
   type TaxonomyDiscoveryPage,
 } from '@fitness-os/schemas';
+import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
@@ -77,6 +78,36 @@ const createReader = (): ExerciseKnowledgeReader => ({
   })),
 });
 
+const createLogger = () => {
+  const info = vi.fn();
+  const warn = vi.fn();
+  const error = vi.fn();
+  const logger: FastifyBaseLogger = {
+    level: 'info',
+    child: () => logger,
+    debug: vi.fn(),
+    error,
+    fatal: vi.fn(),
+    info,
+    silent: vi.fn(),
+    trace: vi.fn(),
+    warn,
+  };
+  return { logger, info, warn, error };
+};
+
+const compileOnlyMissingInvalidRequest = (
+  app: ReturnType<typeof buildApp>,
+  reader: ExerciseKnowledgeReader,
+): void => {
+  // @ts-expect-error isInvalidRequest is a required integration boundary
+  registerExerciseCatalogRoutes(app, {
+    reader,
+    isStorageUnavailable: () => false,
+  });
+};
+void compileOnlyMissingInvalidRequest;
+
 describe('exercise catalog read routes', () => {
   const apps: ReturnType<typeof buildApp>[] = [];
 
@@ -91,6 +122,7 @@ describe('exercise catalog read routes', () => {
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({ method: 'GET', url: '/exercises' });
@@ -104,14 +136,45 @@ describe('exercise catalog read routes', () => {
     expect(response.headers['x-request-id']).toBeTruthy();
   });
 
-  it('returns an archived exercise when directly addressed', async () => {
+  it('records a bounded structured success outcome', async () => {
     const reader = createReader();
-    vi.mocked(reader.getCurrentExercise).mockResolvedValue(archivedDetail);
-    const app = buildApp({ logger: false });
+    const { logger, info } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(info).toHaveBeenCalledWith(
+      {
+        operation: 'list_exercises',
+        outcome: 'success',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      },
+      'Exercise catalog read completed',
+    );
+    const fields = info.mock.calls.find(
+      ([, message]) => message === 'Exercise catalog read completed',
+    )?.[0] as { durationMs: number } | undefined;
+    expect(fields?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(fields?.durationMs).toBeLessThanOrEqual(86_400_000);
+  });
+
+  it('returns an archived exercise when directly addressed', async () => {
+    const reader = createReader();
+    vi.mocked(reader.getCurrentExercise).mockResolvedValue(archivedDetail);
+    const { logger, info } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({
@@ -122,6 +185,15 @@ describe('exercise catalog read routes', () => {
     expect(response.statusCode).toBe(200);
     expect(exerciseDetailSchema.parse(response.json())).toEqual(archivedDetail);
     expect(reader.getCurrentExercise).toHaveBeenCalledWith(archivedDetail.id);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_current_exercise',
+        outcome: 'success',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
   });
 
   it('returns an immutable historical revision', async () => {
@@ -129,11 +201,13 @@ describe('exercise catalog read routes', () => {
     vi.mocked(reader.getExerciseRevision).mockResolvedValue(
       archivedDetail.currentRevision,
     );
-    const app = buildApp({ logger: false });
+    const { logger, info } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({
@@ -149,15 +223,26 @@ describe('exercise catalog read routes', () => {
       archivedDetail.id,
       1,
     );
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'success',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
   });
 
   it('returns an empty known taxonomy dimension with frozen defaults', async () => {
     const reader = createReader();
-    const app = buildApp({ logger: false });
+    const { logger, info } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({
@@ -175,6 +260,15 @@ describe('exercise catalog read routes', () => {
       lifecycle: 'active',
       limit: 50,
     });
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'list_taxonomy',
+        outcome: 'success',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
   });
 
   it('passes bounded exercise filters and taxonomy discovery options to the reader', async () => {
@@ -184,6 +278,7 @@ describe('exercise catalog read routes', () => {
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
     const termOne = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     const termTwo = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
@@ -231,6 +326,7 @@ describe('exercise catalog read routes', () => {
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({ method: 'GET', url });
@@ -248,13 +344,47 @@ describe('exercise catalog read routes', () => {
     expect(reader.listTaxonomy).not.toHaveBeenCalled();
   });
 
-  it('returns not found for unknown current and historical records', async () => {
+  it('records rejected route input without logging validation details', async () => {
     const reader = createReader();
-    const app = buildApp({ logger: false });
+    const { logger, warn } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercises?limit=private-invalid-value',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(warn).toHaveBeenCalledWith(
+      {
+        operation: 'list_exercises',
+        outcome: 'invalid_request',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+        errorClass: 'RequestValidationError',
+      },
+      'Exercise catalog read completed',
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(
+      'private-invalid-value',
+    );
+  });
+
+  it('returns not found for unknown current and historical records', async () => {
+    const reader = createReader();
+    const { logger, info } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const detailResponse = await app.inject({
@@ -272,6 +402,24 @@ describe('exercise catalog read routes', () => {
       expect(body.error.code).toBe('NOT_FOUND');
       expect(body.error.requestId).toBe(response.headers['x-request-id']);
     }
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_current_exercise',
+        outcome: 'not_found',
+        requestId: detailResponse.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'not_found',
+        requestId: revisionResponse.headers['x-request-id'],
+        durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
   });
 
   it('maps classified storage failures to a content-safe unavailable response', async () => {
@@ -281,11 +429,13 @@ describe('exercise catalog read routes', () => {
     const reader = createReader();
     vi.mocked(reader.listExercises).mockRejectedValue(storageError);
     const classifier = vi.fn((error: unknown) => error === storageError);
-    const app = buildApp({ logger: false });
+    const { logger, warn, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: classifier,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({ method: 'GET', url: '/exercises' });
@@ -297,13 +447,30 @@ describe('exercise catalog read routes', () => {
     expect(response.body).not.toContain('postgres');
     expect(response.body).not.toContain('private.example');
     expect(classifier).toHaveBeenCalledWith(storageError);
+    expect(warn).toHaveBeenCalledWith(
+      {
+        operation: 'list_exercises',
+        outcome: 'storage_unavailable',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+        errorClass: 'Error',
+      },
+      'Exercise catalog read completed',
+    );
+    expect(JSON.stringify([warn.mock.calls, error.mock.calls])).not.toContain(
+      'private.example',
+    );
+    expect(JSON.stringify([warn.mock.calls, error.mock.calls])).not.toContain(
+      'postgres SQL',
+    );
   });
 
   it('maps a reader-detected mismatched cursor to the safe bad-request response', async () => {
     const cursorError = new Error('cursor belongs to exercise-taxonomy');
     const reader = createReader();
     vi.mocked(reader.listExercises).mockRejectedValue(cursorError);
-    const app = buildApp({ logger: false });
+    const { logger, warn } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
@@ -324,6 +491,16 @@ describe('exercise catalog read routes', () => {
       requestId: response.headers['x-request-id'],
     });
     expect(response.body).not.toContain('exercise-taxonomy');
+    expect(warn).toHaveBeenCalledWith(
+      {
+        operation: 'list_exercises',
+        outcome: 'invalid_request',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+        errorClass: 'Error',
+      },
+      'Exercise catalog read completed',
+    );
   });
 
   it('fails closed when the reader returns a corrupt success payload', async () => {
@@ -332,11 +509,13 @@ describe('exercise catalog read routes', () => {
       items: [{ locator: 'https://private.example/reference' }],
       nextCursor: null,
     } as never);
-    const app = buildApp({ logger: false });
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({ method: 'GET', url: '/exercises' });
@@ -345,6 +524,109 @@ describe('exercise catalog read routes', () => {
     expect(response.statusCode).toBe(500);
     expect(body.error.code).toBe('INTERNAL_ERROR');
     expect(response.body).not.toContain('private.example');
+    expect(error).toHaveBeenCalledWith(
+      {
+        operation: 'list_exercises',
+        outcome: 'corrupt_response',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+        errorClass: 'CatalogResponseValidationError',
+      },
+      'Exercise catalog read completed',
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('private.example');
+  });
+
+  it('fails closed when the exercise list contains an archived summary', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue({
+      items: [
+        {
+          id: archivedDetail.id,
+          canonicalKey: archivedDetail.canonicalKey,
+          currentRevision: archivedDetail.currentRevision.revision,
+          currentName: archivedDetail.currentName,
+          lifecycle: archivedDetail.lifecycle,
+          taxonomy: archivedDetail.taxonomy,
+        },
+      ],
+      nextCursor: null,
+    });
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+  });
+
+  it('fails closed when taxonomy results use a different dimension', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue({
+      items: [archivedDetail.taxonomy.modality],
+      nextCursor: null,
+    });
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=equipment',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+  });
+
+  it('fails closed when taxonomy results violate the requested lifecycle', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue({
+      items: [
+        {
+          id: archivedDetail.taxonomy.modality.id,
+          dimensionId: archivedDetail.taxonomy.modality.dimensionId,
+          dimension: archivedDetail.taxonomy.modality.dimension,
+          key: archivedDetail.taxonomy.modality.key,
+          label: archivedDetail.taxonomy.modality.label,
+          meaning: archivedDetail.taxonomy.modality.meaning,
+          lifecycle: 'archived',
+          replacedByTermId: null,
+        },
+      ],
+      nextCursor: null,
+    });
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=active',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
   });
 
   it('contains unexpected reader exceptions behind the internal error envelope', async () => {
@@ -352,11 +634,13 @@ describe('exercise catalog read routes', () => {
     vi.mocked(reader.listTaxonomy).mockRejectedValue(
       new Error('private SQL and locator detail'),
     );
-    const app = buildApp({ logger: false });
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
     apps.push(app);
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({
@@ -369,6 +653,17 @@ describe('exercise catalog read routes', () => {
     expect(body.error.code).toBe('INTERNAL_ERROR');
     expect(body.error.requestId).toBe(response.headers['x-request-id']);
     expect(response.body).not.toContain('private SQL');
+    expect(error).toHaveBeenCalledWith(
+      {
+        operation: 'list_taxonomy',
+        outcome: 'unexpected_error',
+        requestId: response.headers['x-request-id'],
+        durationMs: expect.any(Number),
+        errorClass: 'Error',
+      },
+      'Exercise catalog read completed',
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toContain('private SQL');
   });
 
   it('exposes no catalog mutation alias', async () => {
@@ -378,6 +673,7 @@ describe('exercise catalog read routes', () => {
     registerExerciseCatalogRoutes(app, {
       reader,
       isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
     });
 
     const response = await app.inject({
