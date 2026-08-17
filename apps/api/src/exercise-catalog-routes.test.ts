@@ -1525,6 +1525,77 @@ describe('exercise catalog read routes', () => {
     expect(response.statusCode).toBe(500);
   });
 
+  it('fails closed when projected terms share an unprojected successor', async () => {
+    const successorId = '99999999-9999-4999-8999-999999999999';
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(
+            '11111111-1111-4111-8111-111111111111',
+            'partial-predecessor-one',
+            successorId,
+          ),
+          createReplacedModalityTerm(
+            '22222222-2222-4222-8222-222222222222',
+            'partial-predecessor-two',
+            successorId,
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('accepts projected terms with distinct unprojected successors', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          createReplacedModalityTerm(
+            '11111111-1111-4111-8111-111111111111',
+            'partial-predecessor-one',
+            '88888888-8888-4888-8888-888888888888',
+          ),
+          createReplacedModalityTerm(
+            '22222222-2222-4222-8222-222222222222',
+            'partial-predecessor-two',
+            '99999999-9999-4999-8999-999999999999',
+          ),
+        ],
+        nextCursor: null,
+      }),
+    );
+    const app = buildApp({ logger: false });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&lifecycle=all',
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
   it('fails closed on a cross-dimension replacement in an exercise projection', async () => {
     const successor = createEquipmentTerm(
       '22222222-2222-4222-8222-222222222222',

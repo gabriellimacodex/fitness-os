@@ -224,7 +224,7 @@ const isCatalogProjectionConsistent = ({
   const replacementPredecessorsAreUnique = [...termById.values()].every(
     (term) => {
       const successorId = term.replacedByTermId;
-      if (successorId === null || !termById.has(successorId)) {
+      if (successorId === null) {
         return true;
       }
       const predecessorId = predecessorBySuccessorId.get(successorId);
