@@ -293,17 +293,11 @@ export const exerciseDetailSchema = z
   })
   .strict()
   .superRefine((detail, context) => {
-    const detailEquipment = detail.taxonomy.equipment.map((term) => term.id);
-    const revisionEquipment = detail.currentRevision.taxonomy.equipment.map(
-      (term) => term.id,
-    );
     if (
       detail.currentRevision.exerciseId !== detail.id ||
       detail.currentRevision.displayName !== detail.currentName ||
-      detail.taxonomy.modality.id !==
-        detail.currentRevision.taxonomy.modality.id ||
-      detailEquipment.length !== revisionEquipment.length ||
-      detailEquipment.some((id, index) => id !== revisionEquipment[index])
+      JSON.stringify(detail.taxonomy) !==
+        JSON.stringify(detail.currentRevision.taxonomy)
     ) {
       context.addIssue({
         code: 'custom',

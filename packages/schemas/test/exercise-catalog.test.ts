@@ -95,6 +95,21 @@ describe('exercise catalog identifiers', () => {
     expect(taxonomyTermIdSchema.parse(termId)).toBe(termId);
     expect(referenceCandidateIdSchema.parse(referenceId)).toBe(referenceId);
   });
+
+  it('rejects malformed and non-v4 identifiers for every brand', () => {
+    for (const schema of [
+      exerciseIdSchema,
+      exerciseRevisionIdSchema,
+      taxonomyDimensionIdSchema,
+      taxonomyTermIdSchema,
+      referenceCandidateIdSchema,
+    ]) {
+      expect(schema.safeParse('not-a-uuid').success).toBe(false);
+      expect(
+        schema.safeParse('11111111-1111-1111-8111-111111111111').success,
+      ).toBe(false);
+    }
+  });
 });
 
 describe('exercise catalog values', () => {
@@ -127,6 +142,21 @@ describe('exercise catalog values', () => {
         assessment: 'unassessed',
       }),
     ).toMatchObject({ assessment: 'unassessed' });
+  });
+
+  it('rejects duplicate normalized aliases and non-unassessed references', () => {
+    expect(
+      exerciseRevisionSchema.safeParse({
+        ...revision,
+        aliases: ['Fixture Alias', 'fixture alias'],
+      }).success,
+    ).toBe(false);
+    expect(
+      catalogReferenceCandidateSchema.safeParse({
+        ...reference,
+        assessment: 'verified',
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -186,6 +216,14 @@ describe('exercise catalog public read contracts', () => {
   });
 
   it('rejects unknown fields, invalid bounds, dimensions, cursors, and locators', () => {
+    const summary = {
+      id: exerciseId,
+      canonicalKey: 'fixture-exercise',
+      currentRevision: 1,
+      currentName: 'Fixture Exercise',
+      lifecycle: 'active',
+      taxonomy: revision.taxonomy,
+    } as const;
     expect(
       exerciseIdParamsSchema.safeParse({ exerciseId, actorId: exerciseId })
         .success,
@@ -205,6 +243,36 @@ describe('exercise catalog public read contracts', () => {
       catalogReferenceCandidateSchema.safeParse({
         ...reference,
         locator: 'http://example.test/source',
+      }).success,
+    ).toBe(false);
+    expect(
+      catalogReferenceCandidateSchema.safeParse({
+        ...reference,
+        unknown: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      provenanceSchema.safeParse({
+        ...revision.provenance,
+        unknown: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      taxonomyTermSchema.safeParse({ ...modalityTerm, unknown: true }).success,
+    ).toBe(false);
+    expect(
+      exerciseSummarySchema.safeParse({ ...summary, unknown: true }).success,
+    ).toBe(false);
+    expect(
+      exerciseListPageSchema.safeParse({
+        items: Array.from({ length: 101 }, () => summary),
+        nextCursor: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      taxonomyDiscoveryPageSchema.safeParse({
+        items: Array.from({ length: 101 }, () => modalityTerm),
+        nextCursor: null,
       }).success,
     ).toBe(false);
     expect(
@@ -280,6 +348,22 @@ describe('exercise catalog public read contracts', () => {
         currentName: revision.displayName,
         lifecycle: 'active',
         taxonomy: { modality: modalityTerm, equipment: [] },
+        currentRevision: revision,
+      }).success,
+    ).toBe(false);
+    expect(
+      exerciseDetailSchema.safeParse({
+        id: exerciseId,
+        canonicalKey: 'catalog-exercise',
+        currentName: revision.displayName,
+        lifecycle: 'active',
+        taxonomy: {
+          ...revision.taxonomy,
+          modality: {
+            ...revision.taxonomy.modality,
+            label: 'Contradictory label',
+          },
+        },
         currentRevision: revision,
       }).success,
     ).toBe(false);
