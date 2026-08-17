@@ -12,6 +12,8 @@ import Fastify, {
 } from 'fastify';
 import { randomUUID } from 'node:crypto';
 
+import { registerMovementRoutes } from './movement-routes.js';
+
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
 export interface PlatformOptions {
@@ -107,6 +109,11 @@ export function buildApp(
 
   app.setErrorHandler((error, request, reply) => {
     const isClientError = isFastifyClientInputError(error, validationErrors);
+    const path = request.url.split('?')[0] ?? '';
+
+    if (path === '/movements' || path.startsWith('/movements/')) {
+      reply.header('cache-control', 'no-store');
+    }
 
     if (!isClientError) {
       request.log.error({ err: error }, 'Request failed');
@@ -146,6 +153,8 @@ export function buildApp(
 
     return readyResponseSchema.parse({ status: 'ready' });
   });
+
+  registerMovementRoutes(app);
 
   return app;
 }

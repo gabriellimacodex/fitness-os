@@ -1,6 +1,8 @@
 import {
   apiErrorResponseSchema,
   healthResponseSchema,
+  movementDetailResponseSchema,
+  movementListResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
 } from '@fitness-os/schemas';
@@ -51,10 +53,52 @@ function throwApiError(response: Response, payload: unknown): never {
   );
 }
 
+export const MOVEMENT_READ_TIMEOUT_MS = 3_000;
+
 export type ApiClientOptions = {
   baseUrl: string;
   fetch?: typeof globalThis.fetch;
 };
+
+async function fetchJson(
+  fetchImplementation: typeof globalThis.fetch,
+  url: URL,
+  init: RequestInit = {},
+): Promise<{ payload: unknown; response: Response }> {
+  const response = await fetchImplementation(url, {
+    headers: { accept: 'application/json' },
+    method: 'GET',
+    ...init,
+  });
+  const payload = await readJson(response);
+
+  return { payload, response };
+}
+
+async function fetchMovementJson(
+  fetchImplementation: typeof globalThis.fetch,
+  url: URL,
+): Promise<{ payload: unknown; response: Response }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, MOVEMENT_READ_TIMEOUT_MS);
+
+  try {
+    return await fetchJson(fetchImplementation, url, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof ApiProtocolError) {
+      throw error;
+    }
+
+    throw new ApiProtocolError();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export function createApiClient({
   baseUrl,
@@ -79,14 +123,10 @@ export function createApiClient({
 
   return {
     async health() {
-      const response = await fetchImplementation(
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
         new URL('health', parsedBaseUrl),
-        {
-          headers: { accept: 'application/json' },
-          method: 'GET',
-        },
       );
-      const payload = await readJson(response);
 
       if (!response.ok) {
         throwApiError(response, payload);
@@ -101,14 +141,10 @@ export function createApiClient({
       return health.data;
     },
     async readiness() {
-      const response = await fetchImplementation(
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
         new URL('ready', parsedBaseUrl),
-        {
-          headers: { accept: 'application/json' },
-          method: 'GET',
-        },
       );
-      const payload = await readJson(response);
 
       if (response.status === 503) {
         const readiness = readinessResponseSchema.safeParse(payload);
@@ -131,6 +167,42 @@ export function createApiClient({
       }
 
       return readiness.data;
+    },
+    async movements() {
+      const { payload, response } = await fetchMovementJson(
+        fetchImplementation,
+        new URL('movements', parsedBaseUrl),
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const list = movementListResponseSchema.safeParse(payload);
+
+      if (!list.success) {
+        throw new ApiProtocolError();
+      }
+
+      return list.data;
+    },
+    async movement(movementId: string) {
+      const { payload, response } = await fetchMovementJson(
+        fetchImplementation,
+        new URL(`movements/${encodeURIComponent(movementId)}`, parsedBaseUrl),
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const detail = movementDetailResponseSchema.safeParse(payload);
+
+      if (!detail.success) {
+        throw new ApiProtocolError();
+      }
+
+      return detail.data;
     },
   };
 }

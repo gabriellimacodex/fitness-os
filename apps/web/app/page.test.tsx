@@ -11,6 +11,7 @@ describe('foundation page', () => {
       .replace(/\s+/g, ' ')
       .trim();
 
-    expect(visibleText).toBe('Fitness OS Engineering foundation ready.');
+    expect(visibleText).toContain('Fitness OS Engineering foundation ready.');
+    expect(markup).toContain('href="/movements"');
   });
 });

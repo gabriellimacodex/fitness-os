@@ -1,0 +1,113 @@
+import { getMovementById, listMovements } from '@fitness-os/domain';
+import {
+  apiErrorResponseSchema,
+  movementDetailParamsSchema,
+  movementDetailResponseSchema,
+  movementEmptyQuerySchema,
+  movementListResponseSchema,
+} from '@fitness-os/schemas';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+
+function sendPlatformError(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  statusCode: 400 | 404,
+  code: 'BAD_REQUEST' | 'NOT_FOUND',
+  message: string,
+) {
+  reply.header('cache-control', 'no-store');
+
+  return reply.code(statusCode).send(
+    apiErrorResponseSchema.parse({
+      error: {
+        code,
+        message,
+        requestId: request.id,
+      },
+    }),
+  );
+}
+
+export function registerMovementRoutes(app: FastifyInstance): void {
+  app.addHook('onSend', async (request, reply, payload) => {
+    const path = request.url.split('?')[0] ?? '';
+
+    if (path === '/movements' || path.startsWith('/movements/')) {
+      reply.header('cache-control', 'no-store');
+    }
+
+    return payload;
+  });
+
+  app.get('/movements', async (request, reply) => {
+    const query = movementEmptyQuerySchema.safeParse(request.query);
+
+    if (!query.success) {
+      return sendPlatformError(
+        request,
+        reply,
+        400,
+        'BAD_REQUEST',
+        'Invalid request',
+      );
+    }
+
+    reply.header('cache-control', 'no-store');
+
+    return movementListResponseSchema.parse({
+      items: listMovements(),
+    });
+  });
+
+  app.get('/movements/:movementId', async (request, reply) => {
+    const query = movementEmptyQuerySchema.safeParse(request.query);
+
+    if (!query.success) {
+      return sendPlatformError(
+        request,
+        reply,
+        400,
+        'BAD_REQUEST',
+        'Invalid request',
+      );
+    }
+
+    const params = movementDetailParamsSchema.safeParse(request.params);
+
+    if (!params.success) {
+      return sendPlatformError(
+        request,
+        reply,
+        400,
+        'BAD_REQUEST',
+        'Invalid request',
+      );
+    }
+
+    const result = getMovementById(params.data.movementId);
+
+    if (result.status === 'invalid') {
+      return sendPlatformError(
+        request,
+        reply,
+        400,
+        'BAD_REQUEST',
+        'Invalid request',
+      );
+    }
+
+    if (result.status === 'not_found') {
+      return sendPlatformError(
+        request,
+        reply,
+        404,
+        'NOT_FOUND',
+        'Resource not found',
+      );
+    }
+
+    reply.header('cache-control', 'no-store');
+
+    return movementDetailResponseSchema.parse(result.value);
+  });
+}
