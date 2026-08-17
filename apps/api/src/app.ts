@@ -19,7 +19,10 @@ export interface PlatformOptions {
   readinessCheck?: ReadinessCheck;
 }
 
-function isFastifyClientInputError(error: unknown): boolean {
+function isFastifyClientInputError(
+  error: unknown,
+  validationErrors: WeakSet<Error>,
+): boolean {
   if (
     error instanceof errorCodes.FST_ERR_CTP_BODY_TOO_LARGE ||
     error instanceof errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY ||
@@ -30,24 +33,14 @@ function isFastifyClientInputError(error: unknown): boolean {
     return true;
   }
 
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'FST_ERR_VALIDATION' &&
-    'statusCode' in error &&
-    error.statusCode === 400 &&
-    'validation' in error &&
-    Array.isArray(error.validation) &&
-    'validationContext' in error &&
-    typeof error.validationContext === 'string'
-  );
+  return error instanceof Error && validationErrors.has(error);
 }
 
 export function buildApp(
   options: FastifyServerOptions = {},
   platform: PlatformOptions = {},
 ): FastifyInstance {
+  const validationErrors = new WeakSet<Error>();
   const app = Fastify({
     ...options,
     genReqId: () => randomUUID(),
@@ -72,6 +65,11 @@ export function buildApp(
       },
     },
     requestIdHeader: false,
+    schemaErrorFormatter: () => {
+      const error = new Error('Request validation failed');
+      validationErrors.add(error);
+      return error;
+    },
   });
   const corsAllowedOrigins = new Set(
     platform.corsAllowedOrigins ?? ['http://localhost:3000'],
@@ -103,7 +101,7 @@ export function buildApp(
   );
 
   app.setErrorHandler((error, request, reply) => {
-    const isClientError = isFastifyClientInputError(error);
+    const isClientError = isFastifyClientInputError(error, validationErrors);
 
     if (!isClientError) {
       request.log.error({ err: error }, 'Request failed');

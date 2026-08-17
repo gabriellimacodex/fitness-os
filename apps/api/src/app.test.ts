@@ -3,7 +3,8 @@ import {
   healthResponseSchema,
   readinessResponseSchema,
 } from '@fitness-os/schemas';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FastifyBaseLogger } from 'fastify';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from './app.js';
 
@@ -151,12 +152,25 @@ describe('public errors', () => {
   });
 
   it('does not mistake an unrelated validation-shaped exception for client input', async () => {
-    const app = buildApp({ logger: false });
+    const errorLog = vi.fn();
+    const logger: FastifyBaseLogger = {
+      level: 'error',
+      child: () => logger,
+      debug: vi.fn(),
+      error: errorLog,
+      fatal: vi.fn(),
+      info: vi.fn(),
+      silent: vi.fn(),
+      trace: vi.fn(),
+      warn: vi.fn(),
+    };
+    const app = buildApp({ loggerInstance: logger });
     app.get('/validation-shaped-explosion', async () => {
       throw Object.assign(new Error('private failure detail'), {
-        code: 'FST_ERR_CTP_INVALID_JSON_BODY',
+        code: 'FST_ERR_VALIDATION',
         statusCode: 400,
         validation: [],
+        validationContext: 'body',
       });
     });
 
@@ -169,6 +183,7 @@ describe('public errors', () => {
     expect(response.statusCode).toBe(500);
     expect(body.error.code).toBe('INTERNAL_ERROR');
     expect(response.body).not.toContain('private failure detail');
+    expect(errorLog).toHaveBeenCalled();
     await app.close();
   });
 
