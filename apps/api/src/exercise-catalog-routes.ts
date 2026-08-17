@@ -156,7 +156,22 @@ export function registerExerciseCatalogRoutes(
       );
       if (
         !page.success ||
-        page.data.items.some((item) => item.lifecycle !== 'active')
+        page.data.items.length > query.data.limit ||
+        page.data.items.some((item) => {
+          if (item.lifecycle !== 'active') {
+            return true;
+          }
+          if (query.data.taxonomyTermIds === undefined) {
+            return false;
+          }
+          const assignedTermIds = new Set([
+            item.taxonomy.modality.id,
+            ...item.taxonomy.equipment.map((term) => term.id),
+          ]);
+          return query.data.taxonomyTermIds.some(
+            (termId) => !assignedTermIds.has(termId),
+          );
+        })
       ) {
         logReadOutcome(
           request,
@@ -216,7 +231,7 @@ export function registerExerciseCatalogRoutes(
         );
       }
       const detail = exerciseDetailSchema.safeParse(result);
-      if (!detail.success) {
+      if (!detail.success || detail.data.id !== params.data.exerciseId) {
         logReadOutcome(
           request,
           'get_current_exercise',
@@ -283,7 +298,11 @@ export function registerExerciseCatalogRoutes(
           );
         }
         const revision = exerciseRevisionSchema.safeParse(result);
-        if (!revision.success) {
+        if (
+          !revision.success ||
+          revision.data.exerciseId !== params.data.exerciseId ||
+          revision.data.revision !== params.data.revision
+        ) {
           logReadOutcome(
             request,
             'get_exercise_revision',
@@ -334,6 +353,7 @@ export function registerExerciseCatalogRoutes(
       );
       if (
         !page.success ||
+        page.data.items.length > query.data.limit ||
         page.data.items.some(
           (item) =>
             item.dimension !== query.data.dimension ||

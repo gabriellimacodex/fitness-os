@@ -196,6 +196,47 @@ describe('exercise catalog read routes', () => {
     );
   });
 
+  it('fails closed when current detail belongs to another exercise', async () => {
+    const otherExerciseId = '11111111-1111-4111-8111-111111111111';
+    const reader = createReader();
+    vi.mocked(reader.getCurrentExercise).mockResolvedValue(
+      exerciseDetailSchema.parse({
+        ...archivedDetail,
+        id: otherExerciseId,
+        currentRevision: {
+          ...archivedDetail.currentRevision,
+          exerciseId: otherExerciseId,
+        },
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_current_exercise',
+        outcome: 'corrupt_response',
+        requestId: response.headers['x-request-id'],
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
   it('returns an immutable historical revision', async () => {
     const reader = createReader();
     vi.mocked(reader.getExerciseRevision).mockResolvedValue(
@@ -229,6 +270,78 @@ describe('exercise catalog read routes', () => {
         outcome: 'success',
         requestId: response.headers['x-request-id'],
         durationMs: expect.any(Number),
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
+  it('fails closed when a historical revision belongs to another exercise', async () => {
+    const reader = createReader();
+    vi.mocked(reader.getExerciseRevision).mockResolvedValue(
+      exerciseRevisionSchema.parse({
+        ...archivedDetail.currentRevision,
+        exerciseId: '11111111-1111-4111-8111-111111111111',
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}/revisions/1`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'corrupt_response',
+        requestId: response.headers['x-request-id'],
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
+  it('fails closed when a historical response has another revision number', async () => {
+    const reader = createReader();
+    vi.mocked(reader.getExerciseRevision).mockResolvedValue(
+      exerciseRevisionSchema.parse({
+        ...archivedDetail.currentRevision,
+        revision: 2,
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/exercises/${exerciseId}/revisions/1`,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'get_exercise_revision',
+        outcome: 'corrupt_response',
+        requestId: response.headers['x-request-id'],
       }),
       'Exercise catalog read completed',
     );
@@ -568,6 +681,96 @@ describe('exercise catalog read routes', () => {
     );
   });
 
+  it('fails closed when the exercise page exceeds the requested limit', async () => {
+    const reader = createReader();
+    const activeSummary = {
+      id: archivedDetail.id,
+      canonicalKey: archivedDetail.canonicalKey,
+      currentRevision: archivedDetail.currentRevision.revision,
+      currentName: archivedDetail.currentName,
+      lifecycle: 'active' as const,
+      taxonomy: archivedDetail.taxonomy,
+    };
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [activeSummary, activeSummary],
+        nextCursor: null,
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercises?limit=1',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'list_exercises',
+        outcome: 'corrupt_response',
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
+  it('fails closed when a summary misses one or all requested taxonomy filters', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listExercises).mockResolvedValue(
+      exerciseListPageSchema.parse({
+        items: [
+          {
+            id: archivedDetail.id,
+            canonicalKey: archivedDetail.canonicalKey,
+            currentRevision: archivedDetail.currentRevision.revision,
+            currentName: archivedDetail.currentName,
+            lifecycle: 'active',
+            taxonomy: archivedDetail.taxonomy,
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+    const presentTermId = archivedDetail.taxonomy.modality.id;
+    const missingTermId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const anotherMissingTermId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+    const missingOneResponse = await app.inject({
+      method: 'GET',
+      url: `/exercises?taxonomyTermIds=${presentTermId}&taxonomyTermIds=${missingTermId}`,
+    });
+    const missingAllResponse = await app.inject({
+      method: 'GET',
+      url: `/exercises?taxonomyTermIds=${missingTermId}&taxonomyTermIds=${anotherMissingTermId}`,
+    });
+
+    expect(missingOneResponse.statusCode).toBe(500);
+    expect(missingAllResponse.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'list_exercises',
+        outcome: 'corrupt_response',
+      }),
+      'Exercise catalog read completed',
+    );
+  });
+
   it('fails closed when taxonomy results use a different dimension', async () => {
     const reader = createReader();
     vi.mocked(reader.listTaxonomy).mockResolvedValue({
@@ -590,6 +793,41 @@ describe('exercise catalog read routes', () => {
     expect(response.statusCode).toBe(500);
     expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
       'INTERNAL_ERROR',
+    );
+  });
+
+  it('fails closed when the taxonomy page exceeds the requested limit', async () => {
+    const reader = createReader();
+    vi.mocked(reader.listTaxonomy).mockResolvedValue(
+      taxonomyDiscoveryPageSchema.parse({
+        items: [
+          archivedDetail.taxonomy.modality,
+          archivedDetail.taxonomy.modality,
+        ],
+        nextCursor: null,
+      }),
+    );
+    const { logger, error } = createLogger();
+    const app = buildApp({ loggerInstance: logger });
+    apps.push(app);
+    registerExerciseCatalogRoutes(app, {
+      reader,
+      isStorageUnavailable: () => false,
+      isInvalidRequest: () => false,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/exercise-taxonomy?dimension=modality&limit=1',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'list_taxonomy',
+        outcome: 'corrupt_response',
+      }),
+      'Exercise catalog read completed',
     );
   });
 
