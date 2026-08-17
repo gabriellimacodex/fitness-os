@@ -2,8 +2,8 @@
 
 This table is the authoritative roadmap registry. It records capability-level intent only; detailed PRDs are created just in time under [PRD governance](README.md). Dependencies refer to PRD IDs and must be `COMPLETED` before a dependent PRD begins unless an approved detailed PRD explicitly identifies a non-runtime research lane permitted by the [Master Execution Plan](../execution/MASTER_EXECUTION_PLAN.md).
 
-**Authorization rule:** `PROPOSED` is not authorization. PRD 01 is `COMPLETED`;
-PRDs 02–04 are `IN_PROGRESS`, and PRDs 05–24 remain `APPROVED`, under the
+**Authorization rule:** `PROPOSED` is not authorization. PRDs 01–02 are `COMPLETED`;
+PRDs 03–04 are `IN_PROGRESS`, and PRDs 05–24 remain `APPROVED`, under the
 founder's Autonomous Pilot V1 authorization. They may execute only when their
 dependencies and applicable gates are satisfied. PRD 25 remains `PROPOSED` and
 is not authorized.
@@ -14,7 +14,7 @@ is not authorized.
 | --- | ------------------------- | ------------- | -------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | 00  | Engineering Bootstrap     | `COMPLETED`   | —                          | Yes — Foundation                                                | Orchestrator; Web/PWA; API/Domain; Data/Infrastructure; QA/Security              | Verified engineering and multi-agent foundation.                                                |
 | 01  | Platform Foundation       | `COMPLETED`   | 00                         | No                                                              | Orchestrator; API/Domain; Data/Infrastructure; Security                          | Product-ready platform capabilities and boundaries defined by its detailed PRD.                 |
-| 02  | Student & Coach Domain    | `IN_PROGRESS` | 01                         | No                                                              | API/Domain; Data/Infrastructure; Security                                        | Explicit student and coach domain contracts and authorized persistence model.                   |
+| 02  | Student & Coach Domain    | `COMPLETED`   | 01                         | No                                                              | API/Domain; Data/Infrastructure; Security                                        | Explicit student and coach domain contracts and authorized persistence model.                   |
 | 03  | Exercise Knowledge Base   | `IN_PROGRESS` | 01                         | No                                                              | API/Domain; Data/Infrastructure; Training Intelligence Engineer                  | Governed exercise knowledge and evidence-ready taxonomy.                                        |
 | 04  | Movement Library          | `IN_PROGRESS` | 01                         | No                                                              | Movement Engineer; Web/PWA; API/Domain                                           | Reusable, understandable movement guidance with explicit contracts.                             |
 | 05  | Training Core             | `APPROVED`    | 02, 03, 04                 | Yes — Training Core                                             | Training Intelligence Engineer; API/Domain; Data/Infrastructure; QA/Security     | Deterministic training model and core workflows validated as a major capability.                |

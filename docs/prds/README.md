@@ -8,7 +8,7 @@ All PRDs must comply with the repository-level [Product Principles](../../PRODUC
 
 Registry presence is planning metadata, not implementation authorization. In particular, **`PROPOSED` is not authorization**. The Orchestrator may progress autonomously only among `APPROVED` PRDs whose dependencies and gates permit execution.
 
-PRD 01 is complete. PRDs 02–24 remain approved under the founder's **Autonomous Pilot V1 execution through Pilot Release Candidate** authorization. PRD 25 remains proposed and is outside that authorization.
+PRDs 01–02 are complete. PRDs 03–24 remain authorized under the founder's **Autonomous Pilot V1 execution through Pilot Release Candidate** authorization, subject to their registry states, dependencies, and gates. PRD 25 remains proposed and is outside that authorization.
 
 ## Lifecycle states
 

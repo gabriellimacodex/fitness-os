@@ -6,7 +6,7 @@ This directory defines how Fitness OS may deliver work autonomously after a prod
 
 [`PRODUCT_PRINCIPLES.md`](../../PRODUCT_PRINCIPLES.md) remains the product constitution. Accepted [architecture decisions](../adr/), the current `APPROVED` PRD, and frozen [contracts](../contracts/README.md) constrain every implementation.
 
-The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md), and PRD state is recorded in the [PRD Registry](../prds/PRD_REGISTRY.md). PRDs 00–01 are `COMPLETED`; PRDs 02–04 are `IN_PROGRESS`, and PRDs 05–24 remain `APPROVED`, under Autonomous Pilot V1 authorization; PRD 25 remains `PROPOSED`. A `PROPOSED` entry is planning information, not implementation authority. Execution must stop after PRD 24 and Gate D until Pilot Release receives separate authorization.
+The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md), and PRD state is recorded in the [PRD Registry](../prds/PRD_REGISTRY.md). PRDs 00–02 are `COMPLETED`; PRDs 03–04 are `IN_PROGRESS`; and PRDs 05–24 remain `APPROVED` under Autonomous Pilot V1 authorization. PRD 25 remains `PROPOSED`. A `PROPOSED` entry is planning information, not implementation authority. Execution must stop after PRD 24 and Gate D until Pilot Release receives separate authorization.
 
 ## Control documents
 

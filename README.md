@@ -1,17 +1,17 @@
 # Fitness OS
 
-Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly web application for coaches. This repository contains the completed Epic 00 engineering foundation and its delivery governance; it does not contain product features.
+Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly web application for coaches. This repository contains the completed engineering/platform foundations and the private student–coach domain/persistence foundation. It does not yet expose a public student or coach workflow.
 
 ## Status
 
-**Epic 00 — Engineering & Multi-Agent Bootstrap and PRD 01 — Platform Foundation are complete.** Autonomous Pilot V1 authorizes PRDs 02–24 through the Pilot Release Candidate, subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
+**Epic 00 and PRDs 01–02 are complete.** PRDs 03–04 are in progress, and Autonomous Pilot V1 authorizes PRDs 05–24 through the Pilot Release Candidate subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
 
 ## Stack
 
 - pnpm TypeScript monorepo
 - Next.js App Router and React for `apps/web`
 - Fastify for `apps/api`
-- PostgreSQL-ready Drizzle ORM foundation, without a live database
+- PostgreSQL and Drizzle ORM with versioned migrations and explicit adapters; no production connection is configured
 - Zod for shared contracts
 - Vitest for automated tests
 - ESLint and Prettier for quality checks

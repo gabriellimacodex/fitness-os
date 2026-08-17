@@ -1,11 +1,12 @@
 # PRD 02 — Student & Coach Domain
 
-- Status: `APPROVED`
+- Status: `COMPLETED`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Explicit student and coach domain contracts and authorized persistence model
 - Dependencies: PRD 01 — `COMPLETED`
 - Release gate: Gate A
 - Pre-flight: Independent review required before executable contract freeze
+- Completion evidence: [PRD 02 Gate A record](../execution/gates/PRD_02_GATE_A.md)
 
 ## Context
 
