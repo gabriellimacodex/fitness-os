@@ -17,6 +17,7 @@ import {
   type CreateResult,
   type CreateStudentCoachLink,
   type EndLinkResult,
+  type MissingStudentCoachReferences,
   type StudentCoachLinkRepository,
   type StudentRepository,
 } from '../src/student-coach/index.js';
@@ -34,6 +35,10 @@ const invalidCreateInput: CreateStudentCoachLink = {
   endedAt: null,
 };
 void invalidCreateInput;
+
+// @ts-expect-error Missing-reference outcomes must never carry an empty set.
+const invalidMissingReferences: MissingStudentCoachReferences = [];
+void invalidMissingReferences;
 
 describe('createActiveStudentCoachLink', () => {
   it('constructs the exact schema-valid active link', () => {

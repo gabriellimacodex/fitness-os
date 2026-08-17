@@ -18,12 +18,15 @@ export interface CreateStudentCoachLink {
 export type CreateResult<T> =
   { status: 'created'; value: T } | { status: 'conflict' };
 
+export type MissingStudentCoachReferences =
+  readonly ['student'] | readonly ['coach'] | readonly ['student', 'coach'];
+
 export type CreateLinkResult =
   | { status: 'created'; value: StudentCoachLink }
   | { status: 'conflict' }
   | {
       status: 'missing_references';
-      missing: readonly ('student' | 'coach')[];
+      missing: MissingStudentCoachReferences;
     };
 
 export type EndLinkResult =
