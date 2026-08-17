@@ -22,6 +22,7 @@ import { registerMovementRoutes } from './movement-routes.js';
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
 export interface PlatformOptions {
+  allowSyntheticOnboarding?: boolean;
   corsAllowedOrigins?: readonly string[];
   onboarding?: {
     resolveContext?: ResolveOnboardingContext;
@@ -83,6 +84,15 @@ export function buildApp(
     requestIdHeader: false,
     schemaErrorFormatter: formatSchemaError,
   });
+  if (
+    platform.onboarding !== undefined &&
+    platform.allowSyntheticOnboarding !== true
+  ) {
+    throw new Error(
+      'Synthetic onboarding composition requires an explicit test seam',
+    );
+  }
+
   const corsAllowedOrigins = new Set(
     platform.corsAllowedOrigins ?? ['http://localhost:3000'],
   );

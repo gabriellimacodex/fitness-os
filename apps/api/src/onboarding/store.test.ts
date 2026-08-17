@@ -6,19 +6,22 @@ import {
   digestClaimSecret,
   findInvitationBySecret,
   mappingIdFor,
-  seedIssuedInvitation,
 } from './store.js';
+import { seedIssuedInvitation } from './test-store.js';
 
 describe('onboarding store', () => {
-  it('stores only the digest of a claim secret', () => {
+  it('stores only a versioned HMAC of a claim secret', () => {
     const store = createOnboardingStore();
     const secret = invitationClaimSecretSchema.parse(
       'synthetic-claim-secret-01',
     );
     const invitation = seedIssuedInvitation(store, { claimSecret: secret });
 
-    expect(invitation.claimDigest).toBe(digestClaimSecret(secret));
-    expect(invitation.claimDigest).not.toBe(secret);
+    expect(invitation.claimDigest).toBe(
+      digestClaimSecret(secret, store.pepper),
+    );
+    expect(invitation.claimDigest.startsWith('hmac-sha256.v1:')).toBe(true);
+    expect(invitation.claimDigest).not.toContain(secret);
     expect(JSON.stringify([...store.invitations.values()])).not.toContain(
       secret,
     );

@@ -1,10 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
-
 import {
   canAllocateAttempt,
   evaluateClaimEligibility,
   inspectInvitationState,
   isNonterminal,
+  type ProposedRole,
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
@@ -18,16 +17,25 @@ import {
   onboardingOperationResponseSchema,
   type ApiErrorCode,
   type AttemptDetail,
-  type ProposedRole,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
+import { digestUtf8JsonSha256V1 } from './canonical.js';
 import {
+  compareAttemptOrder,
   createOnboardingStore,
   createStoredAttempt,
+  decodeAttemptCursor,
+  digestClaimSecret,
+  digestRetryToken,
+  encodeAttemptCursor,
   findInvitationBySecret,
   getAttemptForPrincipal,
+  isAfterCursor,
   mappingIdFor,
+  newOperationId,
+  nextOrdinalForRole,
+  operationBindingKey,
   type OnboardingStore,
   type StoredAttempt,
 } from './store.js';
@@ -41,6 +49,8 @@ export interface OnboardingContext {
 export type ResolveOnboardingContext = (
   request: FastifyRequest,
 ) => OnboardingContext | null | Promise<OnboardingContext | null>;
+
+const CURRENT_PAGE_SIZE = 4;
 
 function sendError(
   request: FastifyRequest,
@@ -62,29 +72,6 @@ function sendError(
   );
 }
 
-function digestOperation(input: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(input), 'utf8')
-    .digest('hex');
-}
-
-function committedOperation(
-  namespace: 'inspect_invitation' | 'create_attempt',
-  input: unknown,
-  result: unknown,
-) {
-  return onboardingOperationResponseSchema.parse({
-    operation: {
-      canonicalizationVersion: 'utf8-json-sha256.v1',
-      digest: digestOperation({ input, namespace }),
-      namespace,
-      operationId: randomUUID(),
-      state: 'operation_committed',
-    },
-    result,
-  });
-}
-
 function summarizeAttempt(attempt: AttemptDetail) {
   return attemptSummarySchema.parse({
     attemptId: attempt.attemptId,
@@ -92,6 +79,39 @@ function summarizeAttempt(attempt: AttemptDetail) {
     ordinal: attempt.ordinal,
     proposedRole: attempt.proposedRole,
     purpose: attempt.purpose,
+  });
+}
+
+function invitationReference(store: OnboardingStore, secret: string): string {
+  const invitation = findInvitationBySecret(store, secret);
+  return invitation?.invitationId ?? digestClaimSecret(secret, store.pepper);
+}
+
+function semanticDigest(input: {
+  authority: string;
+  invitationRef: string;
+  namespace: 'inspect_invitation' | 'create_attempt';
+}): string {
+  return digestUtf8JsonSha256V1(input);
+}
+
+function operationEnvelope(input: {
+  digest: string;
+  namespace: 'inspect_invitation' | 'create_attempt';
+  operationId: string;
+  result: unknown;
+  state:
+    'operation_committed' | 'operation_replayed' | 'operation_input_mismatch';
+}) {
+  return onboardingOperationResponseSchema.parse({
+    operation: {
+      canonicalizationVersion: 'utf8-json-sha256.v1',
+      digest: input.digest,
+      namespace: input.namespace,
+      operationId: input.operationId,
+      state: input.state,
+    },
+    result: input.result,
   });
 }
 
@@ -160,18 +180,48 @@ export function registerOnboardingRoutes(
       return;
     }
 
-    const attempts = [...store.attempts.values()]
-      .filter((record) => record.principalKey === context.principalKey)
-      .map((record) => summarizeAttempt(record.detail))
-      .slice(0, 4);
+    let cursor:
+      | {
+          attemptId: string;
+          createdAt: string;
+        }
+      | undefined;
+
+    if (query.data.cursor !== undefined) {
+      const decoded = decodeAttemptCursor(store, query.data.cursor);
+
+      if (decoded === null) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      cursor = decoded;
+    }
+
+    const ordered = [...store.attempts.values()]
+      .filter(
+        (record) =>
+          record.principalKey === context.principalKey &&
+          isNonterminal(record.detail.lifecycle),
+      )
+      .sort(compareAttemptOrder)
+      .filter(
+        (record) => cursor === undefined || isAfterCursor(record, cursor),
+      );
+
+    const page = ordered.slice(0, CURRENT_PAGE_SIZE);
+    const last = page.at(-1);
+    const nextCursor =
+      ordered.length > CURRENT_PAGE_SIZE && last !== undefined
+        ? encodeAttemptCursor(store, last.createdAt, last.detail.attemptId)
+        : null;
 
     return currentOnboardingResponseSchema.parse({
-      attempts,
+      attempts: page.map((record) => summarizeAttempt(record.detail)),
       mappings: context.mappedRoles.map((role) => ({
         mappingId: mappingIdFor(context.principalKey, role),
         role,
       })),
-      nextCursor: null,
+      nextCursor,
     });
   });
 
@@ -188,24 +238,30 @@ export function registerOnboardingRoutes(
     }
 
     const invitation = findInvitationBySecret(store, body.data.claimSecret);
+    const digest = semanticDigest({
+      authority: context.principalKey,
+      invitationRef: invitationReference(store, body.data.claimSecret),
+      namespace: 'inspect_invitation',
+    });
     const inspection = invitation
       ? inspectInvitationState(invitation.state)
       : 'invalid_or_unavailable';
 
     if (inspection !== 'issued' || invitation === undefined) {
-      return committedOperation(
-        'inspect_invitation',
-        { claim: 'redacted' },
-        {
-          outcome: 'invalid_or_unavailable',
-        },
-      );
+      return operationEnvelope({
+        digest,
+        namespace: 'inspect_invitation',
+        operationId: newOperationId(),
+        result: { outcome: 'invalid_or_unavailable' },
+        state: 'operation_committed',
+      });
     }
 
-    return committedOperation(
-      'inspect_invitation',
-      { claim: 'redacted' },
-      {
+    return operationEnvelope({
+      digest,
+      namespace: 'inspect_invitation',
+      operationId: newOperationId(),
+      result: {
         command: 'inspect_invitation',
         inspection: {
           proposedRole: invitation.proposedRole,
@@ -214,7 +270,8 @@ export function registerOnboardingRoutes(
         },
         outcome: 'command_succeeded',
       },
-    );
+      state: 'operation_committed',
+    });
   });
 
   app.post('/v1/onboarding/attempts', async (request, reply) => {
@@ -229,30 +286,82 @@ export function registerOnboardingRoutes(
       return;
     }
 
+    const digest = semanticDigest({
+      authority: context.principalKey,
+      invitationRef: invitationReference(store, body.data.claimSecret),
+      namespace: 'create_attempt',
+    });
+    const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+    const bindingKey = operationBindingKey(
+      context.principalKey,
+      'create_attempt',
+      retryDigest,
+    );
+    const existingOperation = store.operations.get(bindingKey);
+
+    if (existingOperation !== undefined) {
+      if (existingOperation.digest !== digest) {
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'create_attempt',
+          operationId: existingOperation.operationId,
+          result: null,
+          state: 'operation_input_mismatch',
+        });
+      }
+
+      return operationEnvelope({
+        digest: existingOperation.digest,
+        namespace: 'create_attempt',
+        operationId: existingOperation.operationId,
+        result: existingOperation.result,
+        state: 'operation_replayed',
+      });
+    }
+
     const invitation = findInvitationBySecret(store, body.data.claimSecret);
+
+    const commit = (result: unknown) => {
+      const operationId = newOperationId();
+      store.operations.set(bindingKey, {
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+
+      return operationEnvelope({
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
+        state: 'operation_committed',
+      });
+    };
 
     if (
       invitation === undefined ||
       inspectInvitationState(invitation.state) !== 'issued'
     ) {
-      return committedOperation(
-        'create_attempt',
-        { retry: body.data.retryToken },
-        {
-          outcome: 'invalid_or_unavailable',
-        },
-      );
+      return commit({ outcome: 'invalid_or_unavailable' });
+    }
+
+    if (context.mappedRoles.includes(invitation.proposedRole)) {
+      return commit({ outcome: 'mapping_conflict' });
     }
 
     const eligibility = evaluateClaimEligibility({
       alreadyMappedRoles: context.mappedRoles,
       invitationPurpose: invitation.purpose,
       proposedRole: invitation.proposedRole,
-      targetCoachIsSelf: false,
+      targetCoachIsSelf:
+        invitation.targetCoachPrincipalKey !== null &&
+        invitation.targetCoachPrincipalKey === context.principalKey,
     });
 
     if (eligibility.status === 'hard_disabled') {
-      return sendError(request, reply, 403, 'FORBIDDEN', 'Request forbidden');
+      return commit({ outcome: 'invalid_or_unavailable' });
     }
 
     const activeForRole = attemptsForPrincipalRole(
@@ -262,16 +371,12 @@ export function registerOnboardingRoutes(
     );
 
     if (!canAllocateAttempt(activeForRole.length)) {
-      return committedOperation(
-        'create_attempt',
-        { retry: body.data.retryToken },
-        {
-          attempts: activeForRole.map((record) =>
-            summarizeAttempt(record.detail),
-          ),
-          outcome: 'active_attempt_limit_reached',
-        },
-      );
+      return commit({
+        attempts: activeForRole.map((record) =>
+          summarizeAttempt(record.detail),
+        ),
+        outcome: 'active_attempt_limit_reached',
+      });
     }
 
     const existing = activeForRole.find(
@@ -279,33 +384,25 @@ export function registerOnboardingRoutes(
     );
 
     if (existing !== undefined) {
-      return committedOperation(
-        'create_attempt',
-        { retry: body.data.retryToken },
-        {
-          attempt: existing.detail,
-          command: 'attempt',
-          outcome: 'command_succeeded',
-        },
-      );
+      return commit({
+        attempt: existing.detail,
+        command: 'attempt',
+        outcome: 'command_succeeded',
+      });
     }
 
     const record = createStoredAttempt(
       invitation,
-      activeForRole.length + 1,
+      nextOrdinalForRole(store, context.principalKey, invitation.proposedRole),
       context.principalKey,
     );
     store.attempts.set(record.detail.attemptId, record);
 
-    return committedOperation(
-      'create_attempt',
-      { retry: body.data.retryToken },
-      {
-        attempt: record.detail,
-        command: 'attempt',
-        outcome: 'command_succeeded',
-      },
-    );
+    return commit({
+      attempt: record.detail,
+      command: 'attempt',
+      outcome: 'command_succeeded',
+    });
   });
 
   app.get('/v1/onboarding/attempts/:attemptId', async (request, reply) => {

@@ -105,6 +105,8 @@ describe('bootstrapApi', () => {
             paths: [
               'req.headers.authorization',
               "req.headers['proxy-authorization']",
+              'req.body.claimSecret',
+              'req.body.retryToken',
             ],
           },
         },

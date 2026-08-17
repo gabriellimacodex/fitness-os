@@ -42,7 +42,12 @@ interface RuntimeProcess {
 const LOGGER_OPTIONS: FastifyServerOptions['logger'] = {
   redact: {
     censor: '[REDACTED]',
-    paths: ['req.headers.authorization', "req.headers['proxy-authorization']"],
+    paths: [
+      'req.headers.authorization',
+      "req.headers['proxy-authorization']",
+      'req.body.claimSecret',
+      'req.body.retryToken',
+    ],
   },
 };
 

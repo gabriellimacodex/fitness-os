@@ -396,7 +396,6 @@ export type OnboardingOperationId = z.infer<typeof onboardingOperationIdSchema>;
 export type InvitationClaimSecret = z.infer<typeof invitationClaimSecretSchema>;
 export type OnboardingRetryToken = z.infer<typeof retryTokenSchema>;
 export type AttemptDetail = z.infer<typeof attemptDetailSchema>;
-export type ProposedRole = z.infer<typeof proposedRoleSchema>;
 export type OnboardingOperationResponse = z.infer<
   typeof onboardingOperationResponseSchema
 >;
