@@ -4,7 +4,7 @@ This table is the authoritative roadmap registry. It records capability-level in
 
 **Authorization rule:** `PROPOSED` is not authorization. PRDs 01–02 are `COMPLETED`;
 PRDs 03 and 21 are `BLOCKED` by recorded `ARCHITECTURE_DECISION_REQUIRED` stops;
-PRD 04 is `IN_PROGRESS`; PRDs 05–20 and 22–24 remain `APPROVED`, under the founder's
+PRDs 04 and 07 are `IN_PROGRESS`; PRDs 05–06, 08–20, and 22–24 remain `APPROVED`, under the founder's
 Autonomous Pilot V1 authorization. They may execute only when their dependencies
 and applicable gates are satisfied. PRD 25 remains `PROPOSED` and is not
 authorized.
@@ -20,7 +20,7 @@ authorized.
 | 04  | Movement Library          | `IN_PROGRESS` | 01                         | No                                                              | Movement Engineer; Web/PWA; API/Domain                                           | Reusable, understandable movement guidance with explicit contracts.                             |
 | 05  | Training Core             | `APPROVED`    | 02, 03, 04                 | Yes — Training Core                                             | Training Intelligence Engineer; API/Domain; Data/Infrastructure; QA/Security     | Deterministic training model and core workflows validated as a major capability.                |
 | 06  | Training Execution UX     | `APPROVED`    | 05                         | No                                                              | Web/PWA; Training Intelligence Engineer; QA/Security                             | Mobile-first student training execution experience.                                             |
-| 07  | Onboarding                | `APPROVED`    | 02                         | No                                                              | Web/PWA; API/Domain; Data/Infrastructure                                         | Student and coach onboarding within approved identity and consent scope.                        |
+| 07  | Onboarding                | `IN_PROGRESS` | 02                         | No                                                              | Web/PWA; API/Domain; Data/Infrastructure                                         | Student and coach onboarding within approved identity and consent scope.                        |
 | 08  | Body Scan Capture         | `APPROVED`    | 07, 21                     | No                                                              | Body Intelligence Engineer; Web/PWA; API/Domain; Security Specialist             | Privacy-first body capture workflow with explicit provenance and failure handling.              |
 | 09  | Body Intelligence         | `APPROVED`    | 08                         | Yes — Body Intelligence + Digital Twin                          | Body Intelligence Engineer; API/Domain; Data/Infrastructure; Security Specialist | Validated estimates clearly distinguished from measurements and preserved historically.         |
 | 10  | Body Snapshot             | `APPROVED`    | 09                         | No                                                              | Body Intelligence Engineer; API/Domain; Data/Infrastructure                      | Immutable, provenance-rich body-state snapshots.                                                |
