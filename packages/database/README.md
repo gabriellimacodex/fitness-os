@@ -3,11 +3,12 @@
 This package owns the Fitness OS PostgreSQL schema boundary, Drizzle Kit
 configuration, migrations, and persistence adapters.
 
-PRD 02 adds only the `students`, `coaches`, and `student_coach_links` tables and
-their narrowly scoped repositories. It adds no runtime application composition,
-public route, production connection, credential, profile field, or authorization
-claim. The adapter consumes the domain-owned repository ports; the domain package
-does not depend on this package.
+PRD 02 owns `students`, `coaches`, and `student_coach_links` and their
+repositories. PRD 03 Option A adds the exercise catalog tables, the global
+`catalog_operation` ledger with ledger-key integrity fields, taxonomy dimension
+seeds, subset journal readiness, and recovery evidence. Neither PRD adds a
+public route, production connection, or product authorization claim. The
+presentation cursor secret is never used to sign ledger results.
 
 `createStudentCoachDatabase(connectionString)` accepts an explicit connection
 string and returns the database handle, repositories, and an explicit async
@@ -39,7 +40,8 @@ TEST_DATABASE_URL=postgresql://...@127.0.0.1:5432/fitness_os_prd02_test \
 ```
 
 The suite validates clean migration apply, constraints, indexes, migration
-replay, recovery isolation, typed repository outcomes, history rules, and
-concurrent create/end operations. See
-`evidence/PRD_02_MIGRATION_RECOVERY.md` for the recovery boundary and drift
+replay, recovery isolation, typed repository outcomes, history rules, concurrent
+create/end operations, catalog seeds, Option A ledger commit/replay, and subset
+readiness. See `evidence/PRD_02_MIGRATION_RECOVERY.md` and
+`evidence/PRD_03_MIGRATION_RECOVERY.md` for recovery boundaries and drift
 commands.

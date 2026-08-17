@@ -61,9 +61,19 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
     `);
 
     expect(rows.map((row) => row.table_name)).toEqual([
+      'catalog_operation',
       'coaches',
+      'exercise',
+      'exercise_lifecycle_event',
+      'exercise_reference_candidate',
+      'exercise_revision',
+      'exercise_revision_reference',
+      'exercise_revision_taxonomy_term',
       'student_coach_links',
       'students',
+      'taxonomy_dimension',
+      'taxonomy_lifecycle_event',
+      'taxonomy_term',
     ]);
   });
 
@@ -282,7 +292,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
     const after = await connection.db.execute<{ count: number }>(sql`
       SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
     `);
-    expect(before[0]?.count).toBe(1);
+    expect(before[0]?.count).toBe(2);
     expect(after).toEqual(before);
   });
 

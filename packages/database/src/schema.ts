@@ -8,6 +8,20 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+export {
+  SEEDED_TAXONOMY_DIMENSIONS,
+  catalogOperations,
+  exerciseLifecycleEvents,
+  exerciseReferenceCandidates,
+  exerciseRevisionReferences,
+  exerciseRevisionTaxonomyTerms,
+  exerciseRevisions,
+  exercises,
+  taxonomyDimensions,
+  taxonomyLifecycleEvents,
+  taxonomyTerms,
+} from './catalog/tables.js';
+
 export const students = pgTable('students', {
   id: uuid('id').primaryKey(),
   createdAt: timestamp('created_at', {
