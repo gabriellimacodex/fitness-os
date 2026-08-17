@@ -65,6 +65,10 @@ decisions, and production evidence interaction are independently cleared.
 - `PrincipalReference` is a backend-only protected reference derived from a
   verified issuer, stable opaque subject, environment, and derivation version.
   It is never accepted from or returned to a client and grants no role.
+- Reference rotation resolves every approved lookup version as one logical
+  identity before any first binding. Exactly one version may emit new primary
+  references, and a cutover cannot activate it until alias coverage is
+  complete and readiness proves every replica uses the same keyring epoch.
 - Reads and invitation inspection create no Fitness OS identity state. The
   first principal and external binding are created only inside the first
   authorized retry-token-bearing onboarding mutation.
@@ -207,14 +211,53 @@ The initial mechanism is HMAC-SHA-256 through a `PrincipalReferenceDeriver`
 port. The HMAC key is supplied only by composition, never stored in product
 tables, and production use requires approved secret management. Length-prefixing
 and fixed UTF-8 normalization prevent tuple ambiguity. The persisted binding
-stores derivation version and digest, not the raw subject. The reference is
-stable only within its environment and approved issuer.
+stores no raw subject; immutable reference aliases store derivation version and
+digest. The reference is stable only within its environment and approved
+issuer.
 
-Rotation adds a new derivation version. Approved legacy versions remain
-lookup-only until a separately reviewed migration/recovery plan links them;
-ordinary onboarding never rewrites a binding. Failure to resolve one exact
-binding denies and routes subject-changing recovery to a future authorized
-workflow. Hashing does not make the reference anonymous; it remains protected
+The composition exposes a closed, environment-bound derivation keyring with
+one `active_write_version`, zero or more `lookup_only_versions`, and a stored
+rotation epoch. For each verified context, the adapter derives candidates for
+every approved version and asks `PrincipalBindingRepository` to resolve them in
+one transaction. Zero logical matches may enter first binding only under the
+active write version. One logical binding match wins even when several of its
+immutable aliases match. References that resolve to more than one distinct
+binding or principal are corrupt state: the transaction performs no identity
+or command mutation, returns `internal_corrupt_state`, and fails readiness.
+
+Rotation is prepare, cover, then cut over; it is never a version fallback:
+
+1. install the new key as `lookup_only` on every replica while the prior
+   version remains the sole writer;
+2. in the prepared epoch, require every newly established binding to receive
+   aliases for both the current writer and candidate atomically, so the future
+   coverage set cannot regress;
+3. atomically mark the candidate `covering`, which makes readiness false and
+   disables new identity mutation; then derive old and new references only from
+   the same verified adapter context, lock each logical binding in stable
+   order, and atomically insert its immutable candidate alias plus provenance;
+4. prove that every active binding has exactly one alias for the candidate
+   version, no candidate alias conflicts, operation-authority aliases remain
+   resolvable, and every deployment replica reports the same keyring epoch; and
+5. only then flip the database rotation control row in one transaction so the
+   candidate becomes `active_write` and the prior version becomes
+   `lookup_only`.
+
+Coverage input must come from the same verified subject context or from a
+separately reviewed adapter migration capability that can prove equivalent
+subject ownership. Product-table digests cannot be reverse-migrated. If the
+selected adapter cannot provide complete attributable coverage, the candidate
+remains lookup-only and cutover does not occur.
+
+An incomplete migration or a replica/config epoch mismatch makes onboarding
+not ready and disables new identity mutation; it cannot emit the new version.
+A lookup-only version can resolve an existing binding but can never create a
+binding, become preferred after a no-match, or overwrite a newer alias. The
+client supplies neither version nor digest. Retiring a lookup version requires
+separate reviewed evidence that no binding, retained operation authority,
+retry, or recovery window depends on it. Ordinary onboarding never rewrites a
+binding, and subject-changing recovery remains a future authorized workflow.
+Hashing does not make a reference anonymous; every alias remains protected
 identity data.
 
 ## Contract plan
@@ -410,9 +453,15 @@ authorization engine, or unit-of-work abstraction.
 ### Core records
 
 - `Principal`: opaque identity, lifecycle, environment, trusted creation time.
-- `ExternalPrincipalBinding`: principal, protected reference version/digest,
-  approved issuer key, adapter contract version, immutable provenance and
-  lifecycle. It stores no raw provider subject.
+- `ExternalPrincipalBinding`: one logical principal binding, approved issuer
+  key, adapter contract version, immutable provenance and lifecycle. It stores
+  no raw provider subject.
+- `PrincipalReferenceAlias`: immutable binding, derivation version/digest,
+  rotation epoch and provenance; uniqueness prevents one protected reference
+  from naming two bindings.
+- `PrincipalReferenceRotation`: environment, closed keyring epoch, one active
+  write version, approved lookup versions, coverage state, and trusted cutover
+  provenance; it stores no key material.
 - `PrincipalRoleMapping`: principal, exact `student` or `coach` role, nominal
   PRD 02 record ID, immutable provenance and lifecycle. Roles are independent
   mappings and never inferred.
@@ -443,8 +492,8 @@ metadata, IP address, user agent, or client-controlled trusted timestamp.
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `IdentitySessionPort`            | Convert a verified backend session into trusted provider-neutral context or a closed denial; never expose provider claims |
 | `IdentitySessionStore`           | Persist/rotate only protected opaque authorization/session state behind the adapter; expose no provider token or profile  |
-| `PrincipalReferenceDeriver`      | Produce one protected versioned reference from verified issuer/subject/environment using protected key material           |
-| `PrincipalBindingRepository`     | Resolve and atomically establish one principal/binding, preserve alias history, and detect integrity conflicts            |
+| `PrincipalReferenceDeriver`      | Produce the complete approved-version candidate set from verified issuer/subject/environment using protected key material |
+| `PrincipalBindingRepository`     | Resolve candidates to one logical binding, atomically establish aliases, enforce rotation epoch, and fail on ambiguity    |
 | `PrincipalRoleMappingRepository` | Read exact role mappings and enforce role/domain uniqueness without inferring authorization                               |
 | `InvitationSecretVerifier`       | Generate/verify versioned high-entropy claim material; return only verifier-safe classifications                          |
 | `OnboardingInvitationRepository` | Issue, inspect, lock, expire, revoke, and claim invitations through closed outcomes                                       |
@@ -512,9 +561,16 @@ Only an integrity-checked `ready` gateway result bound to the exact principal,
 attempt, proposed role, invitation purpose, requirement package/version, and
 validity window can enter `ready_to_claim`. Claim revalidates that binding and
 current gateway status under the operation; a stale browser view has no effect.
-Package replacement moves no completed history and requires a new idempotent
-policy operation while the attempt remains or returns to `policy_pending` only
-through an explicitly frozen transition.
+There is no `ready_to_claim → policy_pending` edge. Package replacement never
+rewrites the attempt's immutable package/evidence binding and never reopens any
+state. Under the same principal/role guard, it terminalizes the current
+nonterminal attempt with a closed internal superseded reason, releases that
+slot exactly once, and may create a successor with a new attempt ID, ordinal,
+`policy_pending` state, predecessor link, and new package binding only when the
+same invitation is still claimable. The terminalization and successor
+allocation are one idempotent operation; if claimability or integrity fails,
+the predecessor remains terminal and no successor is created. Completed
+history is never changed.
 
 Every transition uses optimistic aggregate version checks plus the material
 row locks described below, writes transition evidence, and releases an active
@@ -603,6 +659,12 @@ If the interaction is absent, pending, expired, replaced, mismatched, blocked,
 unavailable, or synthetic in production, claim remains incomplete or reaches a
 closed terminal rule. No fallback policy or generated text is permitted.
 
+A package replacement is not consumed into an existing attempt. It invokes the
+forward-only terminalization/successor rule above, and the successor starts a
+distinct interaction under its new operation and immutable package binding.
+Neither polling nor a gateway response can move an attempt backward or edit a
+stored package version.
+
 PRD 21 remains informative context only. Composing a future PRD 21 or equivalent
 adapter does not change PRD 07's PRD 02-only registry dependency and does not
 move governance records or legal responsibilities into onboarding.
@@ -623,7 +685,7 @@ The closed initial namespaces are:
 - `onboarding.policy_evidence_consume`;
 - `onboarding.invitation_claim`; and
 - `onboarding.attempt_terminalize` for deterministic server-scheduled expiry
-  or abandonment work.
+  or abandonment work and package-supersession terminalization/successor work.
 
 The persisted operation key is
 `onboarding.<command_kind>:<OperationId>`. Its UUID suffix must equal the stored
@@ -643,8 +705,10 @@ including a replay; knowing a token or operation locator is never sufficient.
 
 1. Authenticate, check CSRF/Origin/rate/body limits, parse the strict request,
    and verify ownership or invitation proof without revealing detail.
-2. Resolve the canonical authority: existing principal, protected pre-binding
-   reference, or restricted operator.
+2. Derive the canonical authority candidates read-only: existing principal,
+   protected pre-binding references, or restricted operator. This preliminary
+   resolution acquires no material binding/principal lock; the command
+   transaction re-resolves and locks them only after its operation row.
 3. Canonicalize the complete semantic command input and compute its versioned
    digest.
 4. Look up the scoped retry-token binding across every immutable authority
@@ -701,21 +765,32 @@ a replacement retry token. A corrupt or contradictory state returns
 
 The canonical authority for a first-binding command remains its protected
 pre-binding reference forever. The operation stores that reference alias before
-principal creation. In the same transaction, the binding adapter:
+principal creation. The boundary may verify invitation proof read-only before
+the transaction to avoid unauthorized work, but that read grants no authority
+and acquires no material lock. In the same transaction, the binding adapter:
 
-1. re-verifies and locks the invitation/effect scope needed by the command;
-2. checks the unique active external binding for derivation version/digest;
-3. if absent, inserts a provisional principal and attempts the binding with
-   `ON CONFLICT DO NOTHING` on the protected-reference uniqueness key;
-4. if another transaction won, removes the uncommitted provisional principal
-   in the same transaction and locks/uses the winner; no orphan commits;
-5. inserts an immutable principal authority alias for the operation and a
-   continuous uniqueness binding for the retry token; and
-6. continues the enclosing attempt/issuance/claim command against the one
-   authoritative principal.
+1. locks the reference-rotation control row, derives and resolves the complete
+   approved-version candidate set, and fails closed on more than one logical
+   binding match;
+2. for zero matches, acquires the transaction-scoped reference arbiter for the
+   active write version and re-reads every candidate; if a concurrent
+   transaction won, it locks and uses that one logical binding, otherwise it
+   inserts one provisional principal, binding, and all aliases required by the
+   current rotation phase, then inserts the immutable principal authority alias
+   and continuous retry-token uniqueness binding while still in the
+   principal/binding stage;
+3. locks the principal/role guard and affected attempts when the enclosing
+   command requires them, then locks the invitation/effect scope in the global
+   order below and re-verifies proof, lifecycle, expiry, and ownership;
+4. rolls back the complete transaction—including the provisional principal,
+   binding, aliases, authority alias, and operation effect—if that locked
+   authorization check fails, so invalid or racing invitation state creates no
+   identity row; and
+5. continues the enclosing command against the one authoritative principal.
 
-The conflict-safe insert waits for the competing transaction as PostgreSQL
-requires; the loser does not depend on a driver exception or rewrite a binding.
+The deterministic reference arbiter makes a competitor wait before insertion;
+the unique alias constraint remains defense in depth, and the loser re-reads
+the winner instead of depending on a driver exception or rewriting a binding.
 A retry after session resolution yields the principal alias, finds the original
 operation, and cannot allocate a new principal-scoped operation for the same
 token. Concurrent different tokens may create distinct operation rows, but
@@ -724,32 +799,56 @@ ordinary repository exposes provisional-principal deletion or rebinding.
 
 ### Stable lock order
 
-Commands acquire only the locks they need, in this global order:
+Every onboarding mutation uses PostgreSQL `SERIALIZABLE` isolation and acquires
+only the stages it needs, always in this one global relative order:
 
 1. operation/retry-token row or deterministic server-trigger row;
-2. external binding and principal;
+2. reference-rotation control and reference arbiters, immutable reference
+   aliases, external bindings and principal rows, then operation-authority
+   aliases;
 3. principal/proposed-role cardinality guard;
-4. attempt in `(created_at, attempt_id)` order;
-5. invitation;
+4. attempts in `(created_at, attempt_id)` order;
+5. invitations;
 6. existing role mappings in fixed `student`, then `coach` order;
-7. completion and onboarding transition aggregates; and
+7. policy interaction/evidence rows, then completion and onboarding transition
+   aggregates; and
 8. PRD 02 student row, then coach row, then exact student–coach pair, preserving
    TD02's lock order.
 
-When a row does not yet exist, the corresponding uniqueness constraint is the
-arbiter and the adapter re-reads the winner under lock. Multi-row operations
-sort identifiers bytewise before locking. No route implements its own order.
-Expected uniqueness conflicts map to typed outcomes; serialization/deadlock
-errors may be retried only by the operation executor under the same operation
-and semantic digest, never by duplicating the command.
+Every command—including first binding, attempt create/resume/abandon,
+terminalization/successor, policy start/consume, issue/revoke, and claim—uses
+this relative order when it touches more than one stage. It may skip an
+irrelevant stage but may never acquire an earlier stage after a later one.
+First binding therefore resolves/locks principal and binding identity before
+guard, attempts, and invitation; read-only proof checking before the transaction
+does not change that order. Rows within a stage sort version/digest or IDs
+bytewise as applicable. A not-yet-existing row uses its stage's deterministic
+advisory/unique arbiter and re-reads any winner under lock at that stage. Its
+physical insert may follow later-stage validation only while that earlier
+arbiter remains held and the insert cannot wait on another earlier-stage
+contender. No route or reconciler implements a local alternative order.
+
+Expected uniqueness conflicts map to typed outcomes. The executor may retry
+only PostgreSQL `40001` serialization failures and `40P01` deadlocks, with a
+small bounded attempt count and full-jitter backoff. Each retry keeps the same
+`OperationId`, authority, semantic digest, retry-token binding, and current
+fence, restarts the whole serializable transaction, and reacquires locks from
+stage 1; it never allocates a replacement operation or repeats a known
+committed effect. After exhaustion or an ambiguous commit, a fresh fenced
+serializable transaction first re-reads the same operation: a visible committed
+result is replayed unchanged; otherwise the matching pending operation moves to
+`operation_reconciling` and returns HTTP 202. The namespace reconciler inspects
+authoritative effect/provenance first and may resume only the same operation
+when absence of an effect is proven. It never blindly retries, changes the lock
+order, or converts ambiguity into success.
 
 ### Claim transaction
 
 Claim performs these checks and effects in one database transaction:
 
 1. resolve/reconcile the operation and first binding if needed;
-2. lock the principal/role guard, attempt, invitation, mappings, and target
-   coach context in stable order;
+2. lock principal/binding identity, the principal/role guard, attempts,
+   invitation, mappings, and target coach context in the global order;
 3. re-verify the body-held secret, claimability, trusted expiry, stored attempt
    scope, current policy/evidence binding, and operation input;
 4. deny second-role and self-coach paths before creating a domain row;
@@ -777,7 +876,9 @@ following record families and constraints are mandatory.
 | Planned table family                 | Minimum database responsibility                                                                                                                  |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `onboarding_principals`              | Opaque principal and trusted lifecycle; no profile/contact/provider fields                                                                       |
-| `onboarding_external_bindings`       | Protected reference version/digest, issuer/environment, principal FK, immutable provenance; unique active protected reference                    |
+| `onboarding_external_bindings`       | One logical issuer/environment-to-principal binding with immutable provenance and no raw subject                                                 |
+| `onboarding_principal_ref_aliases`   | Immutable version/digest aliases to one binding; global protected-reference uniqueness and rotation provenance                                   |
+| `onboarding_principal_ref_rotation`  | One environment keyring epoch, active-write/lookup-only versions, coverage/cutover state and no key material                                     |
 | `onboarding_principal_role_mappings` | Exact role plus nominal PRD 02 record FK; unique active principal/role and unique active domain-record ownership                                 |
 | `onboarding_invitations`             | Purpose-specific issuer/coach checks, unique verifier digest/version, state/version, expiry, one terminal result, operation provenance           |
 | `onboarding_attempt_guards`          | One principal/role row; active count check `0 <= count AND count <= 4`, next ordinal, lock version                                               |
@@ -798,6 +899,13 @@ interaction, coach invitation listing, and reconciliation. It adds no person
 search, profile lookup, arbitrary JSON, legal content, seed user, production
 policy, credential, or real data.
 
+Reference aliases are additive history, not replacement bindings. Database
+constraints prevent one `(environment, derivation_version, digest)` from
+naming multiple logical bindings and permit only one rotation-control row and
+active write version per environment. Coverage completeness and replica
+keyring equality require readiness evidence because key material and replica
+configuration are deliberately absent from product tables.
+
 ### Database-enforced attempt and transition integrity
 
 A deferred constraint trigger or equivalently reviewed PostgreSQL routine
@@ -807,6 +915,9 @@ verifies at commit:
 - count never exceeds four or falls below zero;
 - every attempt leaving the nonterminal set releases one slot exactly once;
 - one active exact scope and monotonic ordinal/version hold;
+- allowed per-attempt edges are exactly `policy_pending → ready_to_claim →
+completed` or either nonterminal state to `terminal`; no edge returns to
+  `policy_pending`;
 - terminal attempts never reopen and completed attempts retain completion;
 - invitation and attempt terminal transitions have one matching append-only
   event and operation; and
@@ -819,7 +930,8 @@ messages never cross the API.
 
 ### Migration order
 
-1. Create principal and external-binding tables and protected uniqueness.
+1. Create principals, logical external bindings, reference aliases, rotation
+   control, and protected uniqueness.
 2. Create role mappings referencing existing PRD 02 student/coach tables.
 3. Create operation ledger, authority aliases, and closed result storage.
 4. Create invitations.
@@ -852,8 +964,12 @@ The internal onboarding readiness model is conjunctive and projects only
 secret generators; canonicalizer; verifier; operation ledger; mandatory event
 sink; synthetic identity/policy ports explicitly bound to a disposable
 environment; closed result coverage; exact first-binding alias reconciliation;
-fixed-cap and guard integrity; deterministic selection; policy reference-only
-enforcement; and current synthetic recovery evidence.
+one active-write reference version; equality between the database rotation
+epoch and every serving replica's complete keyring epoch; full active-binding
+alias coverage for any covering or active candidate version; zero ambiguous
+multi-binding candidate matches; fixed-cap and guard integrity; deterministic
+selection; policy reference-only enforcement; and current synthetic recovery
+evidence.
 
 Production onboarding readiness additionally requires a reviewed non-synthetic
 identity/session adapter, approved issuer configuration, least-privilege
@@ -869,9 +985,11 @@ Safe internal diagnostics are closed classifications: migration missing,
 schema mismatch, identity adapter missing/synthetic/integrity invalid, policy
 gateway missing/synthetic/blocked, credential unavailable, operation
 reconciliation incomplete, orphan-principal evidence, attempt-guard drift or
-overflow, result coverage incomplete, dual-role/self-coach bypass, recovery
-unverified, configuration mismatch, or active stop. Public readiness exposes
-none of the issuer, subject, tenant, host, package, credential, or raw error.
+overflow, reference-keyring epoch mismatch, reference-alias coverage incomplete,
+reference multiple-match, result coverage incomplete, dual-role/self-coach
+bypass, recovery unverified, configuration mismatch, or active stop. Public
+readiness exposes none of the issuer, subject, tenant, host, package,
+credential, derivation version, or raw error.
 
 Structured operational events contain request/correlation ID, namespaced
 operation ID, closed stage/outcome/reason, duration, adapter class/version, and
@@ -891,6 +1009,8 @@ coarsened. No third-party analytics or session replay is added.
 | CSRF or unapproved origin                | Reject before command acceptance; no retry/operation row or protected lookup                                                                         |
 | Claim-secret theft/forwarding            | Authentication, principal scope, single-use state, expiry, rate controls, and generic errors; possession alone is insufficient                       |
 | Brute force or enumeration               | High entropy, keyed/versioned verifier, constant-time comparison where applicable, bounded body/rate controls, and indistinguishable public failures |
+| Partial/stale reference-key rotation     | Multi-version lookup; no cutover or identity mutation until alias coverage and replica epoch readiness are complete                                  |
+| Reference downgrade or multiple match    | Legacy versions are lookup-only; distinct binding matches fail closed, perform no mutation, and fail readiness                                       |
 | Concurrent first binding                 | Protected-reference uniqueness converges on one principal; provisional loser never commits; aliases preserve replay identity                         |
 | Lost first-binding response              | Reconcile binding, principal, aliases, operation, and enclosing effect; never create or rebind again                                                 |
 | Same token, changed input/command        | `operation_input_mismatch`; zero command mutation                                                                                                    |
@@ -933,6 +1053,10 @@ collision, stale operation fences, and corrupt-state recovery.
 - Provider outage preserves invitation and attempt state. Session loss requires
   authentication again. Subject replacement, issuer migration, account merge,
   and disputed ownership remain outside scope.
+- Reference-key rotation preserves every immutable alias. An interrupted
+  coverage pass resumes at the stored rotation epoch; cutover remains disabled
+  until coverage is complete, and rollback means retaining the prior writer,
+  never deleting aliases or accepting a legacy-only new binding.
 - Restricted operators may revoke an unclaimed invitation but cannot read its
   secret, force claim, map a principal, rewrite completion, override the cap,
   or bypass policy/dual-role checks.
@@ -973,8 +1097,14 @@ and disposable infrastructure.
 
 ### Domain unit tests
 
-- protected reference separation by issuer/environment/version and no raw
-  subject in output/state;
+- protected reference separation by issuer/environment/version, complete
+  multi-version candidate lookup, one logical same-binding match, zero-match
+  active-version creation, legacy no-match anti-downgrade, distinct-binding
+  multiple-match fail-closed behavior, and no raw subject in output/state;
+- rotation prepare/coverage/cutover, atomic old/new alias creation for new and
+  existing bindings, interrupted coverage resume, incomplete-coverage and
+  replica-epoch readiness denial, legacy retirement retention checks, and no
+  duplicate principal across rotation races;
 - principal/binding uniqueness, same-token replay, different-token concurrency,
   pre-/post-binding alias lookup, provisional rollback, mismatch, lost response,
   and one authoritative principal with no orphan;
@@ -982,8 +1112,9 @@ and disposable infrastructure.
   behavior;
 - exact-scope attempt convergence, four distinct active attempts, fifth denial,
   cap isolation by principal/role, deterministic selection, slot release,
-  expiry/abandon/create races, completed resume, terminal non-reopen, and valid
-  successor behavior;
+  expiry/abandon/create races, direct rejection of
+  `ready_to_claim → policy_pending`, completed resume, terminal non-reopen, and
+  valid successor behavior;
 - coach/student claim plans and exact PRD 02 effects, including all injected
   failure rollback points and mapping/invitation races;
 - real-user second-role and self-coach denial under missing founder decision,
@@ -992,7 +1123,8 @@ and disposable infrastructure.
 - operation replay/mismatch/new-token behavior, lease/fence expiry, pending
   reconciliation, and each namespace-specific reconciler;
 - policy interaction start/poll/consume convergence, package replacement,
-  binding mismatch/expiry denial, and absence of content/responses/payloads;
+  forward-only predecessor terminalization/successor creation, binding
+  mismatch/expiry denial, and absence of content/responses/payloads;
 - production rejection of synthetic identity/policy ports; and
 - source-boundary tests excluding framework, provider, and persistence imports
   from domain.
@@ -1023,7 +1155,11 @@ and disposable infrastructure.
   transition when service validation is bypassed;
 - real races for first binding, alias insertion, same/different retry tokens,
   attempt create/release, claim/claim, claim/revoke, competing invitations,
-  mapping, policy consumption, and stale fences;
+  package-supersede/claim, mapping, policy consumption, and stale fences;
+- serializable lock-order races across first binding, guard, attempts, and
+  invitation; bounded `40001`/`40P01` retry under the same operation/fence;
+  exhaustion and ambiguous commit entering reconciliation without duplicate
+  effects;
 - failure injection at every material claim write with zero partial principal,
   binding, PRD 02 record/link, mapping, completion, event, or result;
 - deterministic lock order and typed expected constraint mapping with raw
