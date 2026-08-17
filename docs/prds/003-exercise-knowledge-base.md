@@ -382,10 +382,14 @@ dependencies and gate are satisfied. PRD 15 may later assess reference
 candidates and build a versioned Evidence Base; PRD 03 does not pre-authorize
 that work.
 
-No current stop condition applies. Production credentials are not required for
-contract, domain, migration, or injected integration validation. If a later
-mandatory deployment gate requires unavailable database access, the applicable
-credential stop is evaluated at that time rather than guessed here.
+`ARCHITECTURE_DECISION_REQUIRED` is active. PRD 03 implementation may not
+resume until the architecture owner selects and records a durable ledger-key
+strategy and a forward-compatible migration-readiness strategy, after which
+the affected paths require correction, exact-head gates, and independent
+re-review. Production credentials are not required to record or review this
+stop. If a later mandatory deployment gate requires unavailable database
+access, the applicable credential stop is evaluated at that time rather than
+guessed here.
 
 ## Release gate
 
