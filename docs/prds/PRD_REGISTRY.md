@@ -3,7 +3,7 @@
 This table is the authoritative roadmap registry. It records capability-level intent only; detailed PRDs are created just in time under [PRD governance](README.md). Dependencies refer to PRD IDs and must be `COMPLETED` before a dependent PRD begins unless an approved detailed PRD explicitly identifies a non-runtime research lane permitted by the [Master Execution Plan](../execution/MASTER_EXECUTION_PLAN.md).
 
 **Authorization rule:** `PROPOSED` is not authorization. PRDs 01–02 are `COMPLETED`;
-PRDs 03–04 are `IN_PROGRESS`, and PRDs 05–24 remain `APPROVED`, under the
+PRDs 03–04 and 21 are `IN_PROGRESS`; PRDs 05–20 and 22–24 remain `APPROVED`, under the
 founder's Autonomous Pilot V1 authorization. They may execute only when their
 dependencies and applicable gates are satisfied. PRD 25 remains `PROPOSED` and
 is not authorized.
@@ -33,7 +33,7 @@ is not authorized.
 | 18  | Coach Workspace           | `APPROVED`    | 02, 06, 14, 17             | No                                                              | Web/PWA; API/Domain; Training Intelligence Engineer                              | Desktop- and tablet-friendly coach workflows over validated student and training data.          |
 | 19  | PWA Production Hardening  | `APPROVED`    | 06, 07                     | No                                                              | Web/PWA; QA/Security                                                             | Production-ready PWA reliability, installation, and authorized offline behavior.                |
 | 20  | Notifications             | `APPROVED`    | 01, 07                     | No                                                              | API/Domain; Web/PWA; Security Specialist                                         | Consent-aware notification capability behind provider adapters.                                 |
-| 21  | Privacy & Data Governance | `APPROVED`    | 02                         | No                                                              | Security Specialist; API/Domain; Data/Infrastructure                             | Enforced consent, access, retention, deletion, audit, and data-use controls.                    |
+| 21  | Privacy & Data Governance | `IN_PROGRESS` | 02                         | No                                                              | Security Specialist; API/Domain; Data/Infrastructure                             | Enforced consent, access, retention, deletion, audit, and data-use controls.                    |
 | 22  | Form Intelligence POC     | `APPROVED`    | 04, 06                     | Conditional — technology, safety, privacy, and human perception | Computer Vision Engineer; Movement Engineer; QA/Security                         | Isolated feasibility evidence and a go/no-go recommendation; no automatic runtime inclusion.    |
 | 23  | Pilot Observability       | `APPROVED`    | 19, 20, 21                 | No                                                              | Data/Analytics Engineer; Data/Infrastructure; QA/Security                        | Privacy-aware operational visibility for pilot reliability and support.                         |
 | 24  | Release Candidate         | `APPROVED`    | 11, 13, 18, 19, 20, 21, 23 | Yes — Release Candidate                                         | Orchestrator; QA/Security; Security Specialist; all capability owners            | Fitness OS Pilot Release Candidate meeting all Gate D requirements and documenting limitations. |
