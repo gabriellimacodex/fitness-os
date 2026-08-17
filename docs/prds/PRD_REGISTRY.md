@@ -3,7 +3,8 @@
 This table is the authoritative roadmap registry. It records capability-level intent only; detailed PRDs are created just in time under [PRD governance](README.md). Dependencies refer to PRD IDs and must be `COMPLETED` before a dependent PRD begins unless an approved detailed PRD explicitly identifies a non-runtime research lane permitted by the [Master Execution Plan](../execution/MASTER_EXECUTION_PLAN.md).
 
 **Authorization rule:** `PROPOSED` is not authorization. PRDs 01–02 are `COMPLETED`;
-PRDs 03 and 21 are `BLOCKED` by recorded `ARCHITECTURE_DECISION_REQUIRED` stops;
+PRDs 03 and 21 remain `BLOCKED` pending Option A implementation resume after the
+founder recorded those architecture decisions on 2026-08-17;
 PRDs 04 and 07 are `IN_PROGRESS`; PRDs 05–06, 08–20, and 22–24 remain `APPROVED`, under the founder's
 Autonomous Pilot V1 authorization. They may execute only when their dependencies
 and applicable gates are satisfied. PRD 25 remains `PROPOSED` and is not

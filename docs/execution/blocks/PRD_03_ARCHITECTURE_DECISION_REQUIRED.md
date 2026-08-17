@@ -1,7 +1,10 @@
 # PRD 03 — Architecture Decision Required
 
-- Status: `ACTIVE`
+- Status: `DECISION_RECORDED`
 - Recorded: 2026-08-17
+- Decision recorded: 2026-08-17
+- Selected option: `A`
+- Decision record: [PRD 03 Option A](../decisions/PRD_03_OPTION_A.md)
 - Stop condition: `ARCHITECTURE_DECISION_REQUIRED`
 - Affected path: PRD 03 and every dependency path that requires PRD 03
 - Independent review target: `2198b28c1785093751b970ee666d96a2843fc6d2`
@@ -12,8 +15,9 @@
 The PRD 03 database lane completed three meaningful correction rounds and the
 next independent review still found two architectural HIGH findings. The
 Autonomous Delivery Charter therefore prohibits another autonomous patch round.
-No Gate A PASS, merge, completion transition, or production ingestion is
-permitted until an authorized architecture decision is recorded.
+No Gate A PASS, merge, completion transition, or production ingestion was
+permitted until an authorized architecture decision was recorded. Option A is
+now recorded; implementation has not resumed.
 
 ## Unresolved conflicts
 
@@ -109,16 +113,15 @@ decouples presentation and durable-data lifecycles, supports controlled key
 rotation, and makes forward-fix migrations possible without weakening existing
 database invariants.
 
-Until a decision is explicitly recorded:
+The founder recorded Option A on 2026-08-17. The architecture stop is
+satisfied for the two findings above. Implementation has not resumed.
 
-- PRD 03 remains `BLOCKED` and cannot receive Gate A PASS or `COMPLETED`;
+- PRD 03 remains `BLOCKED` until an Option A implementation wave starts from
+  current `main`;
+- a fourth autonomous correction of the failed candidate is still prohibited;
+- Gate A PASS and `COMPLETED` remain unavailable;
 - PRD 05 and PRD 15 cannot begin because they depend on PRD 03, and their
   downstream path to PRD 24 remains blocked;
-- PRD 04, PRD 07, and policy-neutral PRD 21 work are not architecturally
-  invalidated by this decision, but they do not authorize bypassing PRD 03; and
+- PRD 04, PRD 07, and recorded PRD 21 Option A work are not architecturally
+  invalidated, but they do not authorize bypassing PRD 03; and
 - PRD 25 remains outside authorized scope.
-
-The minimum human determination required is selection of Option A, Option B,
-or another explicitly specified architecture that resolves both durable replay
-key lifecycle and forward-compatible readiness without lowering PRD 03's
-acceptance criteria.
