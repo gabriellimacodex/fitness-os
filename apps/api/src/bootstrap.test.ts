@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { bootstrapApi, parsePort, readServerConfig } from './bootstrap.js';
+import {
+  bootstrapApi,
+  parseCorsAllowedOrigins,
+  parsePort,
+  readServerConfig,
+} from './bootstrap.js';
 
 describe('parsePort', () => {
   it('rejects values that are not integer literals', () => {
@@ -25,6 +30,46 @@ describe('readServerConfig', () => {
   });
 });
 
+describe('parseCorsAllowedOrigins', () => {
+  it('defaults to the local web origin', () => {
+    expect(parseCorsAllowedOrigins(undefined)).toEqual([
+      'http://localhost:3000',
+    ]);
+  });
+
+  it('trims and deduplicates configured origins', () => {
+    expect(
+      parseCorsAllowedOrigins(
+        ' https://student.example,https://coach.example,https://student.example ',
+      ),
+    ).toEqual(['https://student.example', 'https://coach.example']);
+  });
+
+  it('normalizes equivalent absolute HTTP(S) origins before deduplication', () => {
+    expect(
+      parseCorsAllowedOrigins(
+        'HTTPS://EXAMPLE.COM/,https://example.com:443,http://LOCALHOST:80',
+      ),
+    ).toEqual(['https://example.com', 'http://localhost']);
+  });
+
+  it('rejects empty and non-HTTP absolute origins', () => {
+    for (const value of [
+      '',
+      'https://valid.example,',
+      'relative',
+      'ftp://host',
+      'https://user:secret@host',
+      'https://host/path',
+      'https://host?query=value',
+    ]) {
+      expect(() => parseCorsAllowedOrigins(value)).toThrow(
+        'CORS_ALLOWED_ORIGINS must contain absolute HTTP(S) origins',
+      );
+    }
+  });
+});
+
 describe('bootstrapApi', () => {
   it('uses explicit network config and redacts authorization headers', async () => {
     const runtime = {
@@ -44,21 +89,28 @@ describe('bootstrapApi', () => {
 
     await bootstrapApi({
       createApp,
-      env: { HOST: '192.0.2.10', PORT: '4321' },
+      env: {
+        CORS_ALLOWED_ORIGINS: 'https://student.example',
+        HOST: '192.0.2.10',
+        PORT: '4321',
+      },
       runtime,
     });
 
-    expect(createApp).toHaveBeenCalledWith({
-      logger: {
-        redact: {
-          censor: '[REDACTED]',
-          paths: [
-            'req.headers.authorization',
-            "req.headers['proxy-authorization']",
-          ],
+    expect(createApp).toHaveBeenCalledWith(
+      {
+        logger: {
+          redact: {
+            censor: '[REDACTED]',
+            paths: [
+              'req.headers.authorization',
+              "req.headers['proxy-authorization']",
+            ],
+          },
         },
       },
-    });
+      { corsAllowedOrigins: ['https://student.example'] },
+    );
     expect(app.listen).toHaveBeenCalledWith({
       host: '192.0.2.10',
       port: 4321,

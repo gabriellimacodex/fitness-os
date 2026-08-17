@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fitness-os/schemas": "workspace:*",
     "@fitness-os/ui": "workspace:*",
     "next": "16.3.1",
     "react": "19.2.8",

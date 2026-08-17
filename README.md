@@ -74,6 +74,8 @@ The PWA/browser, future native clients, and other future clients consume the sam
 
 Runtime workspace packages follow `src → build → dist → package exports`. Executable shared contracts are Zod schemas in `packages/schemas`; `docs/contracts` is the human registry and freeze layer.
 
+The Fastify platform keeps liveness and readiness distinct, emits server-generated request correlation, returns shared schema-backed public errors, and applies an explicit browser-origin allowlist. The reusable web API client validates provider responses rather than trusting implicit payload shapes.
+
 See [the architecture overview](docs/architecture/README.md) and the accepted ADRs in [`docs/adr`](docs/adr/).
 
 ## Multi-agent engineering
