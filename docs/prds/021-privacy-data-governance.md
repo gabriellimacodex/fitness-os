@@ -1,12 +1,12 @@
 # PRD 21 — Privacy & Data Governance
 
-- Status: `IN_PROGRESS`
+- Status: `BLOCKED`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Enforced consent, access, retention, deletion, audit, and data-use controls
 - Dependencies: PRD 02 — `COMPLETED`
 - Release gate: Gate A
 - Design pre-flight: `PASS` — see [independent review](../execution/reviews/PRD_21_DESIGN_PREFLIGHT.md); policy-agnostic contract freeze is authorized by the [Technical Design review](../execution/reviews/PRD_21_TECHNICAL_DESIGN_REVIEW.md)
-- Stop boundary: Policy-agnostic design and synthetic-data implementation may proceed; material legal or privacy policy choices require `LEGAL_PRIVACY_DECISION_REQUIRED`
+- Active stops: schema-contract work is blocked by [`ARCHITECTURE_DECISION_REQUIRED`](../execution/blocks/PRD_21_ARCHITECTURE_DECISION_REQUIRED.md); real-data or production policy activation independently requires `LEGAL_PRIVACY_DECISION_REQUIRED`
 
 ## Context
 
