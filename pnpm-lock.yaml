@@ -49,6 +49,15 @@ importers:
         specifier: 4.20.6
         version: 4.20.6
 
+  apps/catalog-ingest:
+    dependencies:
+      '@fitness-os/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@fitness-os/schemas':
+        specifier: workspace:*
+        version: link:../../packages/schemas
+
   apps/web:
     dependencies:
       '@fitness-os/schemas':
