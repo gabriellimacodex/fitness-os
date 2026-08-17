@@ -4,7 +4,7 @@ Fitness OS is planned as a mobile-first PWA for students and a desktop-friendly 
 
 ## Status
 
-**Epic 00 — Engineering & Multi-Agent Bootstrap is complete.** Autonomous Pilot V1 authorizes PRDs 01–24 through the Pilot Release Candidate, subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
+**Epic 00 — Engineering & Multi-Agent Bootstrap and PRD 01 — Platform Foundation are complete.** Autonomous Pilot V1 authorizes PRDs 02–24 through the Pilot Release Candidate, subject to dependencies and gates. PRD 25 — Pilot Release remains proposed and cannot begin without separate explicit authorization.
 
 ## Stack
 

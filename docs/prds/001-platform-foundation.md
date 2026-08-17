@@ -1,10 +1,11 @@
 # PRD 01 — Platform Foundation
 
-- Status: `APPROVED`
+- Status: `COMPLETED`
 - Approval basis: Inherited from approved parent PRD under Autonomous Pilot V1 authorization
 - Parent registry outcome: Product-ready platform capabilities and boundaries
 - Dependencies: PRD 00 — `COMPLETED`
 - Release gate: Gate A
+- Completion evidence: [PRD 01 Gate A record](../execution/gates/PRD_01_GATE_A.md)
 
 ## Context
 
