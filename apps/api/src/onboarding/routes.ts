@@ -1,23 +1,28 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import {
   canAllocateAttempt,
   evaluateClaimEligibility,
   inspectInvitationState,
   isNonterminal,
+  revokeInvitation,
   transitionAttempt,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
+  abandonAttemptRequestSchema,
   apiErrorResponseSchema,
   attemptDetailSchema,
   attemptLocatorSchema,
   attemptSummarySchema,
-  abandonAttemptRequestSchema,
   claimAttemptRequestSchema,
   createAttemptRequestSchema,
   currentOnboardingResponseSchema,
+  emptyOnboardingQuerySchema,
   inspectInvitationRequestSchema,
+  invitationClaimSecretSchema,
+  invitationLocatorSchema,
+  issueStudentInvitationRequestSchema,
   onboardingCompletionIdSchema,
   onboardingCurrentQuerySchema,
   onboardingOperationResponseSchema,
@@ -25,6 +30,8 @@ import {
   onboardingPolicyPackageIdSchema,
   policyRefreshRequestSchema,
   resumeAttemptRequestSchema,
+  revokeStudentInvitationRequestSchema,
+  studentInvitationListResponseSchema,
   type ApiErrorCode,
   type AttemptDetail,
 } from '@fitness-os/schemas';
@@ -43,9 +50,10 @@ import {
   getAttemptForPrincipal,
   isAfterCursor,
   mappingIdFor,
+  mappedRolesFor,
+  newInvitationId,
   newOperationId,
   nextOrdinalForRole,
-  mappedRolesFor,
   operationBindingKey,
   recordRoleMapping,
   type OnboardingMutationNamespace,
@@ -98,6 +106,31 @@ function summarizeAttempt(attempt: AttemptDetail) {
 function invitationReference(store: OnboardingStore, secret: string): string {
   const invitation = findInvitationBySecret(store, secret);
   return invitation?.invitationId ?? digestClaimSecret(secret, store.pepper);
+}
+
+function effectiveMappedRoles(
+  store: OnboardingStore,
+  context: OnboardingContext,
+): ProposedRole[] {
+  return [
+    ...new Set([
+      ...context.mappedRoles,
+      ...mappedRolesFor(store, context.principalKey),
+    ]),
+  ];
+}
+
+function hasCoachMapping(
+  store: OnboardingStore,
+  context: OnboardingContext,
+): boolean {
+  return effectiveMappedRoles(store, context).includes('coach');
+}
+
+function newClaimSecret() {
+  return invitationClaimSecretSchema.parse(
+    randomBytes(24).toString('base64url'),
+  );
 }
 
 function syntheticPolicyHandoff() {
@@ -898,6 +931,250 @@ export function registerOnboardingRoutes(
         ),
         outcome: 'completed',
         role: record.detail.proposedRole,
+      });
+    },
+  );
+
+  app.get('/v1/onboarding/student-invitations', async (request, reply) => {
+    const query = emptyOnboardingQuerySchema.safeParse(request.query);
+
+    if (!query.success) {
+      return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+    }
+
+    const context = await requireContext(request, reply);
+    if (context === null) {
+      return;
+    }
+
+    if (!hasCoachMapping(store, context)) {
+      return sendError(request, reply, 403, 'FORBIDDEN', 'Forbidden');
+    }
+
+    const items = [...store.invitations.values()]
+      .filter(
+        (invitation) =>
+          invitation.purpose === 'student_onboarding' &&
+          invitation.targetCoachPrincipalKey === context.principalKey,
+      )
+      .map((invitation) => ({
+        invitationId: invitation.invitationId,
+        purpose: 'student_onboarding' as const,
+        state: invitation.state,
+      }))
+      .sort((left, right) =>
+        left.invitationId < right.invitationId
+          ? -1
+          : left.invitationId > right.invitationId
+            ? 1
+            : 0,
+      )
+      .slice(0, 50);
+
+    return studentInvitationListResponseSchema.parse({ items });
+  });
+
+  app.post('/v1/onboarding/student-invitations', async (request, reply) => {
+    const body = issueStudentInvitationRequestSchema.safeParse(request.body);
+
+    if (!body.success) {
+      return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+    }
+
+    const context = await requireContext(request, reply);
+    if (context === null) {
+      return;
+    }
+
+    if (!hasCoachMapping(store, context)) {
+      return sendError(request, reply, 403, 'FORBIDDEN', 'Forbidden');
+    }
+
+    const digest = semanticDigest({
+      authority: context.principalKey,
+      namespace: 'issue_student_invitation',
+    });
+    const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+    const bindingKey = operationBindingKey(
+      context.principalKey,
+      'issue_student_invitation',
+      retryDigest,
+    );
+    const existingOperation = store.operations.get(bindingKey);
+
+    if (existingOperation !== undefined) {
+      if (existingOperation.digest !== digest) {
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'issue_student_invitation',
+          operationId: existingOperation.operationId,
+          result: null,
+          state: 'operation_input_mismatch',
+        });
+      }
+
+      return operationEnvelope({
+        digest: existingOperation.digest,
+        namespace: 'issue_student_invitation',
+        operationId: existingOperation.operationId,
+        result: existingOperation.result,
+        state: 'operation_replayed',
+      });
+    }
+
+    const claimSecret = newClaimSecret();
+    const invitationId = newInvitationId();
+    store.invitations.set(invitationId, {
+      claimDigest: digestClaimSecret(claimSecret, store.pepper),
+      invitationId,
+      proposedRole: 'student',
+      purpose: 'student_onboarding',
+      state: 'issued',
+      targetCoachPrincipalKey: context.principalKey,
+    });
+
+    const result = {
+      command: 'issue_student_invitation' as const,
+      issued: {
+        claimSecret,
+        invitationId,
+        purpose: 'student_onboarding' as const,
+        state: 'issued' as const,
+      },
+      outcome: 'command_succeeded' as const,
+    };
+
+    const operationId = newOperationId();
+    store.operations.set(bindingKey, {
+      digest,
+      namespace: 'issue_student_invitation',
+      operationId,
+      result,
+      retryDigest,
+    });
+
+    return operationEnvelope({
+      digest,
+      namespace: 'issue_student_invitation',
+      operationId,
+      result,
+      state: 'operation_committed',
+    });
+  });
+
+  app.post(
+    '/v1/onboarding/student-invitations/:invitationId/revoke',
+    async (request, reply) => {
+      const params = invitationLocatorSchema.safeParse(request.params);
+      const body = revokeStudentInvitationRequestSchema.safeParse(request.body);
+
+      if (!params.success || !body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const context = await requireContext(request, reply);
+      if (context === null) {
+        return;
+      }
+
+      if (!hasCoachMapping(store, context)) {
+        return sendError(request, reply, 403, 'FORBIDDEN', 'Forbidden');
+      }
+
+      const digest = semanticDigest({
+        authority: context.principalKey,
+        invitationId: params.data.invitationId,
+        namespace: 'revoke_student_invitation',
+      });
+      const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+      const bindingKey = operationBindingKey(
+        context.principalKey,
+        'revoke_student_invitation',
+        retryDigest,
+      );
+      const existingOperation = store.operations.get(bindingKey);
+
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'revoke_student_invitation',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'revoke_student_invitation',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const commit = (result: unknown) => {
+        const operationId = newOperationId();
+        store.operations.set(bindingKey, {
+          digest,
+          namespace: 'revoke_student_invitation',
+          operationId,
+          result,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'revoke_student_invitation',
+          operationId,
+          result,
+          state: 'operation_committed',
+        });
+      };
+
+      const invitation = store.invitations.get(params.data.invitationId);
+      if (
+        invitation === undefined ||
+        invitation.purpose !== 'student_onboarding' ||
+        invitation.targetCoachPrincipalKey !== context.principalKey
+      ) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      const revoked = revokeInvitation(invitation.state);
+      if (revoked.status === 'already_terminal') {
+        return commit({
+          command: 'revoke_student_invitation',
+          invitation: {
+            invitationId: invitation.invitationId,
+            purpose: 'student_onboarding',
+            state: invitation.state,
+          },
+          outcome: 'command_succeeded',
+        });
+      }
+
+      if (revoked.status !== 'advanced') {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      invitation.state = revoked.state;
+      store.invitations.set(invitation.invitationId, invitation);
+
+      return commit({
+        command: 'revoke_student_invitation',
+        invitation: {
+          invitationId: invitation.invitationId,
+          purpose: 'student_onboarding',
+          state: invitation.state,
+        },
+        outcome: 'command_succeeded',
       });
     },
   );
