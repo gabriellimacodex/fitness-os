@@ -1,22 +1,30 @@
 import {
   privacyActorContextReferenceSchema,
+  privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
+  privacyPolicyVersionIdSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
+  privacyRetentionExceptionIdSchema,
+  privacySubjectRequestIdSchema,
+  privacySubjectRequestReferenceSchema,
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
-  privacyOperationIdSchema,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
 import {
   authoritativeEvidenceState,
+  authorizeRetentionExecution,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  planRetentionPreview,
   planWithdrawal,
+  transitionSubjectRequest,
 } from '../src/privacy-governance/index.js';
 
 const policy = privacyPolicyPackageReferenceSchema.parse({
@@ -245,5 +253,197 @@ describe('withdrawal planning', () => {
       withdrawnAt: '2026-08-18T12:06:00.000Z',
     });
     expect(second.status).toBe('already_withdrawn');
+  });
+});
+
+describe('subject request transitions', () => {
+  const baseRequest = privacySubjectRequestReferenceSchema.parse({
+    requestId: privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    ),
+    requestType: 'export',
+    state: 'received',
+    verification: null,
+    policyVersionId: policy.versionId,
+    inventoryVersionDigest: '1'.repeat(64),
+    correlationId: privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    ),
+    updatedAt: '2026-08-18T12:00:00.000Z',
+  });
+
+  it('advances received → verification_required → ready with verification', () => {
+    const pending = transitionSubjectRequest({
+      request: baseRequest,
+      next: 'verification_required',
+      updatedAt: '2026-08-18T12:01:00.000Z',
+    });
+    expect(pending.status).toBe('advanced');
+    if (pending.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    const readyWithoutVerification = transitionSubjectRequest({
+      request: pending.request,
+      next: 'ready',
+      updatedAt: '2026-08-18T12:02:00.000Z',
+    });
+    expect(readyWithoutVerification).toMatchObject({
+      status: 'invalid',
+      reason: 'verification_required',
+    });
+
+    const ready = transitionSubjectRequest({
+      request: pending.request,
+      next: 'ready',
+      updatedAt: '2026-08-18T12:02:00.000Z',
+      verification: {
+        verificationRefDigest: '2'.repeat(64),
+        synthetic: true,
+      },
+      productionMode: false,
+    });
+    expect(ready.status).toBe('advanced');
+    if (ready.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(ready.request.state).toBe('ready');
+  });
+
+  it('rejects synthetic verification in production mode', () => {
+    const pending = transitionSubjectRequest({
+      request: baseRequest,
+      next: 'verification_required',
+      updatedAt: '2026-08-18T12:01:00.000Z',
+    });
+    if (pending.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    const blocked = transitionSubjectRequest({
+      request: pending.request,
+      next: 'ready',
+      updatedAt: '2026-08-18T12:02:00.000Z',
+      verification: {
+        verificationRefDigest: '2'.repeat(64),
+        synthetic: true,
+      },
+      productionMode: true,
+    });
+    expect(blocked).toMatchObject({
+      status: 'invalid',
+      reason: 'synthetic_verification_in_production',
+    });
+  });
+
+  it('rejects illegal jumps and reports terminal states', () => {
+    const illegal = transitionSubjectRequest({
+      request: baseRequest,
+      next: 'completed',
+      updatedAt: '2026-08-18T12:03:00.000Z',
+    });
+    expect(illegal).toMatchObject({
+      status: 'invalid',
+      reason: 'illegal_transition',
+    });
+
+    const denied = transitionSubjectRequest({
+      request: {
+        ...baseRequest,
+        state: 'denied',
+      },
+      next: 'ready',
+      updatedAt: '2026-08-18T12:04:00.000Z',
+    });
+    expect(denied.status).toBe('already_terminal');
+  });
+});
+
+describe('retention preview and execution gates', () => {
+  it('plans a deterministic synthetic preview without side effects', () => {
+    const left = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [
+        privacyRetentionExceptionIdSchema.parse(
+          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        ),
+        privacyRetentionExceptionIdSchema.parse(
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ),
+      ],
+      productionMode: false,
+    });
+    const right = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['b'.repeat(64), 'c'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [
+        privacyRetentionExceptionIdSchema.parse(
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ),
+        privacyRetentionExceptionIdSchema.parse(
+          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        ),
+      ],
+      productionMode: false,
+    });
+
+    expect(left.status).toBe('planned');
+    expect(right.status).toBe('planned');
+    if (left.status !== 'planned' || right.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+    expect(left.preview.selectionDigest).toBe(right.preview.selectionDigest);
+    expect(left.preview.processorDescriptorDigests).toEqual([
+      'b'.repeat(64),
+      'c'.repeat(64),
+    ]);
+  });
+
+  it('hard-disables production retention execution and allows synthetic tests only', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: true,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toEqual({ status: 'allowed_synthetic_test' });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: false,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'synthetic_fixtures_required',
+    });
   });
 });
