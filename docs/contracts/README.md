@@ -113,16 +113,20 @@ is backend-only and must never appear on a public request or response schema.
 | Evidence locators                      | `privacyEvidenceReferenceSchema` in `privacy-governance.ts`                                                | Authorization evidence store      | Domain evaluation, ledger, and tests          | Frozen |
 | Withdrawal references                  | `privacyWithdrawalReferenceSchema` in `privacy-governance.ts`                                              | Authorization evidence ledger     | Domain evaluation, ledger, and tests          | Frozen |
 | Data-use decisions                     | `privacyDataUseDecisionSchema` / `privacyDataUseDenyReasonSchema` in `privacy-governance.ts`               | Data-use evaluator                | Domain evaluation and tests                   | Frozen |
+| Actor context references               | `privacyActorContextReferenceSchema` / `privacyAuthorityClaimSchema` in `privacy-governance.ts`            | Identity → privacy adapter        | Domain evaluation and tests                   | Frozen |
+| Purpose version references             | `privacyPurposeVersionReferenceSchema` in `privacy-governance.ts`                                          | Purpose registry                  | Domain evaluation and tests                   | Frozen |
 
-Option A foundation plus reference-only policy/evidence/withdrawal locators and
-tagged data-use decisions: every declared operation kind has exactly one
-versioned canonical profile; `retention_preview` declares `/approvedExceptionIds`
-as a set-like path with UTF-8 bytewise sort before digest; `completed` and
-`partially_failed` lifecycle results require `proofId`, and `denied` rejects it.
+Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose
+locators and tagged data-use decisions: every declared operation kind has exactly
+one versioned canonical profile; `retention_preview` declares
+`/approvedExceptionIds` as a set-like path with UTF-8 bytewise sort before digest;
+`completed` and `partially_failed` lifecycle results require `proofId`, and
+`denied` rejects it. Actor context binds principal identity by digest and closed
+authority claims only — no raw token, student/coach ID, or legal role. Purpose
+versions bind allowed operations/categories without legal purpose text.
 Policy/evidence/withdrawal schemas carry digests and IDs only — no legal copy or
 participant answers. Withdrawal is one-way (`withdrawn` only) and never reopens
 evidence. `DataUseDecision` is a tagged `allowed` | `denied` union with a closed
-deny taxonomy — never a boolean grant. Request, audit, actor context, purpose
-metadata, processor, and readiness contracts remain for later coordinated freeze
-slices. No public Fastify routes or database migrations are authorized by this
-foundation.
+deny taxonomy — never a boolean grant. Request, audit, processor, and readiness
+contracts remain for later coordinated freeze slices. No public Fastify routes or
+database migrations are authorized by this foundation.

@@ -375,3 +375,85 @@ export const privacyDataUseDecisionSchema = z.discriminatedUnion('outcome', [
 export type PrivacyDataUseDecision = z.infer<
   typeof privacyDataUseDecisionSchema
 >;
+
+/**
+ * Closed engineering authority claims on an actor context.
+ * Not product roles, legal roles, or bearer credentials.
+ */
+export const privacyAuthorityClaimSchema = z.enum([
+  'data_use_evaluate',
+  'authorization_evidence_append',
+  'authorization_withdrawal',
+  'subject_request_transition',
+  'processor_step_execute',
+  'retention_preview',
+  'retention_execute',
+  'governance_lifecycle',
+]);
+export type PrivacyAuthorityClaim = z.infer<typeof privacyAuthorityClaimSchema>;
+
+export const privacyAuthorityClaimsSchema = z
+  .array(privacyAuthorityClaimSchema)
+  .max(32);
+
+/**
+ * Backend actor context reference for evaluation. Principal identity is bound
+ * by digest only — no raw token, credential, student/coach ID, or legal role.
+ */
+export const privacyActorContextReferenceSchema = z
+  .object({
+    issuer: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._:-]+$/),
+    version: z.number().int().min(1).max(10_000),
+    principalReferenceDigest: privacySha256DigestSchema,
+    authorityClaims: privacyAuthorityClaimsSchema,
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyActorContextReference = z.infer<
+  typeof privacyActorContextReferenceSchema
+>;
+
+export const canonicalizePrivacyAuthorityClaims = (
+  claims: readonly PrivacyAuthorityClaim[],
+): PrivacyAuthorityClaim[] => sortPrivacySetIdentifiers([...claims]);
+
+export const privacyPurposeActivationStateSchema = z.enum([
+  'active',
+  'inactive',
+  'superseded',
+]);
+export type PrivacyPurposeActivationState = z.infer<
+  typeof privacyPurposeActivationStateSchema
+>;
+
+/**
+ * Immutable purpose/version binding for evaluation. Carries allowed
+ * operations/categories and evidence requirement only — no legal purpose text.
+ */
+export const privacyPurposeVersionReferenceSchema = z
+  .object({
+    purposeId: privacyPurposeIdSchema,
+    purposeVersionId: privacyPurposeVersionIdSchema,
+    policyVersionId: privacyPolicyVersionIdSchema,
+    allowedOperationKinds: z.array(privacyOperationKindSchema).max(32),
+    allowedCategoryIds: z.array(privacyEngineeringCategoryIdSchema).max(64),
+    evidenceRequired: z.boolean(),
+    activationState: privacyPurposeActivationStateSchema,
+    contentDigest: privacySha256DigestSchema,
+  })
+  .strict();
+export type PrivacyPurposeVersionReference = z.infer<
+  typeof privacyPurposeVersionReferenceSchema
+>;
+
+export const canonicalizePrivacyPurposeVersionReference = (
+  input: PrivacyPurposeVersionReference,
+): PrivacyPurposeVersionReference => ({
+  ...input,
+  allowedCategoryIds: sortPrivacySetIdentifiers(input.allowedCategoryIds),
+  allowedOperationKinds: sortPrivacySetIdentifiers(input.allowedOperationKinds),
+});
