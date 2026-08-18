@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   PRIVACY_CANONICAL_PROFILES,
   PRIVACY_OPERATION_KINDS,
+  canonicalizePrivacyAuthorityClaims,
+  canonicalizePrivacyPurposeVersionReference,
   canonicalizeRetentionPreviewApprovedExceptionIds,
   getPrivacyCanonicalProfile,
   governanceLifecycleResultSchema,
+  privacyActorContextReferenceSchema,
   privacyCanonicalizationVersionSchema,
   privacyDataUseDecisionSchema,
   privacyDataUseDenyReasonSchema,
@@ -13,6 +16,7 @@ import {
   privacyLifecycleProofIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
+  privacyPurposeVersionReferenceSchema,
   privacyRetentionExceptionIdSchema,
   privacyWithdrawalReferenceSchema,
   retentionPreviewCanonicalInputSchema,
@@ -283,6 +287,97 @@ describe('withdrawal and data-use decision contracts', () => {
       privacyDataUseDecisionSchema.safeParse({
         ...allowed,
         legalBasis: 'consent',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('actor context and purpose version references', () => {
+  it('accepts actor context with digest-bound principal and closed authority claims', () => {
+    const parsed = privacyActorContextReferenceSchema.parse({
+      issuer: 'synthetic.identity.v1',
+      version: 1,
+      principalReferenceDigest: 'a'.repeat(64),
+      authorityClaims: ['data_use_evaluate', 'authorization_evidence_append'],
+      synthetic: true,
+    });
+    expect(parsed.synthetic).toBe(true);
+    expect(
+      canonicalizePrivacyAuthorityClaims([
+        'retention_preview',
+        'data_use_evaluate',
+        'retention_preview',
+      ]),
+    ).toEqual(
+      sortPrivacySetIdentifiers([
+        'data_use_evaluate',
+        'retention_preview',
+        'retention_preview',
+      ]),
+    );
+
+    expect(
+      privacyActorContextReferenceSchema.safeParse({
+        ...parsed,
+        rawToken: 'secret',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyActorContextReferenceSchema.safeParse({
+        ...parsed,
+        studentId: '22222222-2222-4222-8222-222222222222',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyActorContextReferenceSchema.safeParse({
+        ...parsed,
+        authorityClaims: ['coach'],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts purpose version bindings without legal purpose text', () => {
+    const purpose = privacyPurposeVersionReferenceSchema.parse({
+      purposeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      purposeVersionId: '33333333-3333-4333-8333-333333333333',
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      allowedOperationKinds: [
+        'authorization_withdrawal',
+        'data_use_evaluation',
+      ],
+      allowedCategoryIds: [
+        '44444444-4444-4444-8444-444444444444',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+      evidenceRequired: true,
+      activationState: 'active',
+      contentDigest: 'f'.repeat(64),
+    });
+
+    const canonical = canonicalizePrivacyPurposeVersionReference(purpose);
+    expect(canonical.allowedOperationKinds).toEqual(
+      sortPrivacySetIdentifiers([
+        'authorization_withdrawal',
+        'data_use_evaluation',
+      ]),
+    );
+    expect(canonical.allowedCategoryIds).toEqual(
+      sortPrivacySetIdentifiers([
+        '22222222-2222-4222-8222-222222222222',
+        '44444444-4444-4444-8444-444444444444',
+      ]),
+    );
+
+    expect(
+      privacyPurposeVersionReferenceSchema.safeParse({
+        ...purpose,
+        noticeText: 'forbidden',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyPurposeVersionReferenceSchema.safeParse({
+        ...purpose,
+        activationState: 'draft',
       }).success,
     ).toBe(false);
   });
