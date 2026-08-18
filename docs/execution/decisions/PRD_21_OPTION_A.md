@@ -5,7 +5,7 @@
 - Decision maker: Founder
 - Selected option: `A` — exhaustive versioned canonical profiles and one proof locator
 - Source stop: [PRD 21 Architecture Decision Required](../blocks/PRD_21_ARCHITECTURE_DECISION_REQUIRED.md)
-- Implementation: not resumed
+- Implementation: resumed
 - Independent remaining stop: `LEGAL_PRIVACY_DECISION_REQUIRED`
 
 ## Decision
@@ -43,8 +43,9 @@ processing, production policy activation, or PRD 21 completion.
 
 ## Remaining blocks
 
-- PRD 21 remains `BLOCKED` in the registry until the Option A implementation
-  wave starts. Schema freeze, Gate A PASS, and `COMPLETED` remain unavailable.
+- PRD 21 is `IN_PROGRESS` on the Option A implementation wave. Full schema
+  freeze beyond the Option A foundation, Gate A PASS, and `COMPLETED` remain
+  unavailable until later coordinated slices and reviews pass.
 - `LEGAL_PRIVACY_DECISION_REQUIRED` remains independently active for all real
   data and production policy paths.
 - PRDs 08, 14, 23, and 24 still cannot begin or complete paths that require
@@ -52,3 +53,5 @@ processing, production policy activation, or PRD 21 completion.
 - PRD 07 may continue only in its separately authorized synthetic,
   policy-reference-only lane.
 - PRD 25 remains outside authorized scope.
+- Do not patch the rejected schema-contract candidate
+  (`df76f91c1f73f12031eaacfa9da9af38d1b39670`).
