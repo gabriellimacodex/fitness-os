@@ -7,7 +7,7 @@
 - Explicitly excluded: **PRD 25 — Pilot Release** (`PROPOSED`; needs separate
   authorization)
 - Date recorded: 2026-08-18
-- Progress snapshot head: `65729d1` (PR #33 merged; see Progress below)
+- Progress snapshot head: `e7f0232` (PR #48 merged; see Progress below)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -85,19 +85,22 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                   |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                             |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                             |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                          |
-| PRD 07               | `IN_PROGRESS` — synthetic API + claim/mappings on `main` (#31, #32); real-user activation still stop-gated                                                                    |
-| PRD 21               | `IN_PROGRESS` — Option A foundation + policy/evidence reference contracts merged (#28, #33); next contract/API slices open; real-data under `LEGAL_PRIVACY_DECISION_REQUIRED` |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                      |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                     |
+| Area                 | State                                                                                                                                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                      |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                             |
+| PRD 07               | `IN_PROGRESS` — synthetic onboarding surfaces on `main` (through #37); real-user activation still stop-gated by `LEGAL_PRIVACY`                                                                                                  |
+| PRD 21               | `IN_PROGRESS` — Option A contracts + domain + synthetic API + disposable PG through subject-request current-pointer (#28–#48 on `e7f0232`); next: append-only transition history, then remaining Option A / Gate A when eligible |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                         |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                        |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
+
+Open stop that blocks production privacy / real-user onboarding: **LEGAL_PRIVACY**
+— disposable/synthetic persistence and policy-neutral mechanics remain authorized.
 
 ## Execution sequence from current progress
 
@@ -113,8 +116,12 @@ Work the DAG; use safe wave parallelism only when ownership and contracts allow.
 
 3. **PRD 07** — continue authorized synthetic / policy-reference onboarding;
    real users blocked by `LEGAL_PRIVACY` until cleared.
-4. **PRD 21** — continue Option A from current `main`; synthetic/policy-neutral
-   mechanics first; real-data/production policy stay stop-gated.
+4. **PRD 21** — continue Option A from current `main` (`e7f0232`):
+   - finish append-only subject-request **transition history** (schemas → table →
+     migration → adapters → tests → Agent 90 → CI → merge);
+   - wire remaining synthetic/disposable seams without claiming production policy;
+   - Gate A / registry `COMPLETED` only when Option A acceptance is evidence-backed
+     and `LEGAL_PRIVACY` does not still block required criteria.
 5. **PRD 05** Training Core — only after 03+04 `COMPLETED`; then Gate A /
    external Training Core gate as required.
 
