@@ -1,6 +1,8 @@
 import {
+  authorizeRetentionExecution,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  planRetentionPreview,
   planWithdrawal,
   transitionSubjectRequest,
 } from '@fitness-os/domain';
@@ -9,6 +11,10 @@ import {
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticRetentionExecutionAuthorizeRequestSchema,
+  privacySyntheticRetentionExecutionAuthorizeResponseSchema,
+  privacySyntheticRetentionPreviewRequestSchema,
+  privacySyntheticRetentionPreviewResponseSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticSubjectRequestTransitionResponseSchema,
   privacySyntheticWithdrawalPlanRequestSchema,
@@ -199,4 +205,58 @@ export function registerPrivacySyntheticRoutes(
       withdrawal: result.withdrawal,
     });
   });
+
+  app.post(
+    '/v1/privacy/synthetic/retention-preview',
+    async (request, reply) => {
+      const body = privacySyntheticRetentionPreviewRequestSchema.safeParse(
+        request.body,
+      );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const result = planRetentionPreview(body.data);
+
+      if (result.status === 'invalid') {
+        return privacySyntheticRetentionPreviewResponseSchema.parse({
+          status: 'invalid',
+          reason: result.reason,
+        });
+      }
+
+      return privacySyntheticRetentionPreviewResponseSchema.parse({
+        status: 'planned',
+        preview: result.preview,
+      });
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/retention-execution-authorize',
+    async (request, reply) => {
+      const body =
+        privacySyntheticRetentionExecutionAuthorizeRequestSchema.safeParse(
+          request.body,
+        );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const result = authorizeRetentionExecution(body.data);
+
+      if (result.status === 'hard_disabled') {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          status: 'hard_disabled',
+          reason: result.reason,
+        });
+      }
+
+      return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+        status: 'allowed_synthetic_test',
+      });
+    },
+  );
 }

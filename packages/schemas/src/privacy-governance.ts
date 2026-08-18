@@ -883,3 +883,86 @@ export const privacySyntheticWithdrawalPlanResponseSchema = z
 export type PrivacySyntheticWithdrawalPlanResponse = z.infer<
   typeof privacySyntheticWithdrawalPlanResponseSchema
 >;
+
+/**
+ * Disposable synthetic API for retention preview planning. Read-only; never
+ * deletes or transforms data. Not a production public privacy route.
+ */
+export const privacySyntheticRetentionPreviewRequestSchema = z
+  .object({
+    policyVersionId: privacyPolicyVersionIdSchema,
+    policySynthetic: z.boolean(),
+    inventoryVersionDigest: privacySha256DigestSchema,
+    processorDescriptorDigests: z.array(privacySha256DigestSchema).max(64),
+    watermark: privacyTrustedUtcMsSchema,
+    approvedExceptionIds: privacyApprovedExceptionIdsSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticRetentionPreviewRequest = z.infer<
+  typeof privacySyntheticRetentionPreviewRequestSchema
+>;
+
+export const privacySyntheticRetentionPreviewResponseSchema = z
+  .object({
+    status: z.enum(['planned', 'invalid']),
+    reason: z
+      .enum([
+        'policy_synthetic_in_production',
+        'missing_inventory_digest',
+        'missing_processor_descriptors',
+        'missing_watermark',
+      ])
+      .optional(),
+    preview: z
+      .object({
+        policyVersionId: privacyPolicyVersionIdSchema,
+        inventoryVersionDigest: privacySha256DigestSchema,
+        processorDescriptorDigests: z.array(privacySha256DigestSchema).max(64),
+        watermark: privacyTrustedUtcMsSchema,
+        selectionDigest: privacySha256DigestSchema,
+        approvedExceptionIds: privacyApprovedExceptionIdsSchema,
+        synthetic: z.literal(true),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticRetentionPreviewResponse = z.infer<
+  typeof privacySyntheticRetentionPreviewResponseSchema
+>;
+
+/**
+ * Disposable synthetic API for retention execution authorization.
+ * Production path remains hard-disabled.
+ */
+export const privacySyntheticRetentionExecutionAuthorizeRequestSchema = z
+  .object({
+    productionMode: z.boolean(),
+    policySynthetic: z.boolean(),
+    authoritySynthetic: z.boolean(),
+    previewExecuted: z.boolean(),
+    previewExpired: z.boolean(),
+    digestsMatch: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticRetentionExecutionAuthorizeRequest = z.infer<
+  typeof privacySyntheticRetentionExecutionAuthorizeRequestSchema
+>;
+
+export const privacySyntheticRetentionExecutionAuthorizeResponseSchema = z
+  .object({
+    status: z.enum(['allowed_synthetic_test', 'hard_disabled']),
+    reason: z
+      .enum([
+        'production_path',
+        'synthetic_fixtures_required',
+        'preview_mismatch',
+        'preview_expired_or_executed',
+      ])
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
+  typeof privacySyntheticRetentionExecutionAuthorizeResponseSchema
+>;

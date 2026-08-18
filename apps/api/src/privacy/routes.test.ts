@@ -126,8 +126,25 @@ describe('synthetic privacy composition seam', () => {
       url: '/v1/privacy/synthetic/withdrawal-plan',
       payload: {},
     });
+    const retentionPreview = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {},
+    });
+    const retentionAuthorize = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {},
+    });
 
-    for (const response of [readiness, evaluate, transition, withdrawal]) {
+    for (const response of [
+      readiness,
+      evaluate,
+      transition,
+      withdrawal,
+      retentionPreview,
+      retentionAuthorize,
+    ]) {
       expect(response.statusCode).toBe(404);
       expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
         'NOT_FOUND',
@@ -333,6 +350,120 @@ describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
       withdrawal: { processingOutcome: 'idempotent_replay' },
     });
     expect(replay.body).not.toContain('noticeText');
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/retention-preview', () => {
+  const previewPayload = {
+    policyVersionId: policy.versionId,
+    policySynthetic: true,
+    inventoryVersionDigest: '3'.repeat(64),
+    processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+    watermark: '2026-08-18T00:00:00.000Z',
+    approvedExceptionIds: [
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    ],
+    productionMode: false,
+  };
+
+  it('returns a deterministic planned preview without side effects', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const left = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+    const right = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        processorDescriptorDigests: ['b'.repeat(64), 'c'.repeat(64)],
+        approvedExceptionIds: [
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        ],
+      },
+    });
+
+    expect(left.statusCode).toBe(200);
+    expect(left.headers['cache-control']).toBe('no-store');
+    expect(left.json()).toMatchObject({
+      status: 'planned',
+      preview: { synthetic: true },
+    });
+    expect(left.json().preview.selectionDigest).toBe(
+      right.json().preview.selectionDigest,
+    );
+    expect(left.json().preview.processorDescriptorDigests).toEqual([
+      'b'.repeat(64),
+      'c'.repeat(64),
+    ]);
+    expect(left.body).not.toContain('DELETE');
+
+    await app.close();
+  });
+
+  it('rejects synthetic policy preview in productionMode', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        productionMode: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'invalid',
+      reason: 'policy_synthetic_in_production',
+    });
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
+  it('hard-disables production execution and allows disposable synthetic tests', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const production = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: true,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      },
+    });
+    expect(production.json()).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+
+    const synthetic = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      },
+    });
+    expect(synthetic.json()).toEqual({ status: 'allowed_synthetic_test' });
 
     await app.close();
   });

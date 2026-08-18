@@ -23,6 +23,8 @@ import {
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
+  privacySyntheticRetentionExecutionAuthorizeRequestSchema,
+  privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticWithdrawalPlanRequestSchema,
   privacyWithdrawalReferenceSchema,
@@ -676,5 +678,29 @@ describe('processor descriptor and readiness contracts', () => {
         operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       }).existing,
     ).toBeNull();
+
+    expect(
+      privacySyntheticRetentionPreviewRequestSchema.safeParse({
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        policySynthetic: true,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        approvedExceptionIds: [],
+        productionMode: false,
+        sql: 'delete from subjects',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse({
+        productionMode: true,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }).productionMode,
+    ).toBe(true);
   });
 });
