@@ -22,13 +22,13 @@ import {
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestReferenceSchema,
+  privacySyntheticDataUseEvaluateRequestSchema,
   privacyWithdrawalReferenceSchema,
   canonicalizePrivacyProcessorDescriptorReference,
   canonicalizePrivacyReadinessDiagnosticCodes,
   retentionPreviewCanonicalInputSchema,
   sortPrivacySetIdentifiers,
 } from '../src/privacy-governance.js';
-
 const proofId = privacyLifecycleProofIdSchema.parse(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 );
@@ -590,6 +590,59 @@ describe('processor descriptor and readiness contracts', () => {
       privacyReadinessResultSchema.safeParse({
         ...stopped,
         diagnosticCodes: ['sql_exception'],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts synthetic data-use evaluate requests without legal copy fields', () => {
+    const request = privacySyntheticDataUseEvaluateRequestSchema.parse({
+      actor: {
+        issuer: 'synthetic.identity.v1',
+        version: 1,
+        principalReferenceDigest: 'e'.repeat(64),
+        authorityClaims: ['data_use_evaluate'],
+        synthetic: true,
+      },
+      purpose: {
+        purposeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        purposeVersionId: '33333333-3333-4333-8333-333333333333',
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        allowedOperationKinds: ['data_use_evaluation'],
+        allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+        evidenceRequired: true,
+        activationState: 'active',
+        contentDigest: 'b'.repeat(64),
+      },
+      policy: {
+        packageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        versionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        contentDigest: 'a'.repeat(64),
+        synthetic: true,
+      },
+      processor: {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        descriptorDigest: 'c'.repeat(64),
+        inventoryVersionDigest: 'd'.repeat(64),
+        allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+        allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+        capabilities: ['access'],
+        supportsSubjectLookup: true,
+        codeOwner: 'packages.domain.privacy',
+        synthetic: true,
+      },
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: '44444444-4444-4444-8444-444444444444',
+      evidence: null,
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      productionMode: false,
+    });
+    expect(request.productionMode).toBe(false);
+    expect(
+      privacySyntheticDataUseEvaluateRequestSchema.safeParse({
+        ...request,
+        noticeText: 'forbidden',
       }).success,
     ).toBe(false);
   });

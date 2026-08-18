@@ -787,3 +787,34 @@ export type PrivacyReadinessResult = z.infer<
 export const canonicalizePrivacyReadinessDiagnosticCodes = (
   codes: readonly PrivacyReadinessDiagnosticCode[],
 ): PrivacyReadinessDiagnosticCode[] => sortPrivacySetIdentifiers([...codes]);
+
+/**
+ * Disposable synthetic API request for the explicit allowSyntheticPrivacy
+ * seam. Not a production public privacy route contract.
+ */
+export const privacySyntheticDataUseEvaluateRequestSchema = z
+  .object({
+    actor: privacyActorContextReferenceSchema,
+    purpose: privacyPurposeVersionReferenceSchema,
+    policy: privacyPolicyPackageReferenceSchema,
+    processor: privacyProcessorDescriptorReferenceSchema,
+    operationKind: privacyOperationKindSchema,
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema,
+    evidence: privacyEvidenceReferenceSchema.nullable(),
+    subjectScopeId: privacySubjectScopeIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticDataUseEvaluateRequest = z.infer<
+  typeof privacySyntheticDataUseEvaluateRequestSchema
+>;
+
+export const privacySyntheticDataUseEvaluateResponseSchema = z
+  .object({
+    status: z.enum(['evaluated', 'audit_unavailable']),
+    decision: privacyDataUseDecisionSchema,
+  })
+  .strict();
+export type PrivacySyntheticDataUseEvaluateResponse = z.infer<
+  typeof privacySyntheticDataUseEvaluateResponseSchema
+>;

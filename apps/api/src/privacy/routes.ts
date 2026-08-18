@@ -4,47 +4,18 @@ import {
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
-  privacyActorContextReferenceSchema,
-  privacyDataUseDecisionSchema,
-  privacyEngineeringCategoryIdSchema,
-  privacyEvidenceReferenceSchema,
-  privacyOperationKindSchema,
-  privacyPolicyPackageReferenceSchema,
-  privacyProcessorDescriptorReferenceSchema,
-  privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
-  privacySubjectScopeIdSchema,
+  privacySyntheticDataUseEvaluateRequestSchema,
+  privacySyntheticDataUseEvaluateResponseSchema,
   type ApiErrorCode,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
 
 export interface PrivacySyntheticOptions {
   /** Fixed clock for deterministic tests; defaults to domain synthetic clock. */
   fixedUtcMs?: string;
 }
-
-const syntheticDataUseEvaluateRequestSchema = z
-  .object({
-    actor: privacyActorContextReferenceSchema,
-    purpose: privacyPurposeVersionReferenceSchema,
-    policy: privacyPolicyPackageReferenceSchema,
-    processor: privacyProcessorDescriptorReferenceSchema,
-    operationKind: privacyOperationKindSchema,
-    engineeringCategoryId: privacyEngineeringCategoryIdSchema,
-    evidence: privacyEvidenceReferenceSchema.nullable(),
-    subjectScopeId: privacySubjectScopeIdSchema,
-    productionMode: z.boolean(),
-  })
-  .strict();
-
-const syntheticDataUseEvaluateResponseSchema = z
-  .object({
-    status: z.enum(['evaluated', 'audit_unavailable']),
-    decision: privacyDataUseDecisionSchema,
-  })
-  .strict();
 
 function sendError(
   request: FastifyRequest,
@@ -119,7 +90,7 @@ export function registerPrivacySyntheticRoutes(
   app.post(
     '/v1/privacy/synthetic/data-use-evaluate',
     async (request, reply) => {
-      const body = syntheticDataUseEvaluateRequestSchema.safeParse(
+      const body = privacySyntheticDataUseEvaluateRequestSchema.safeParse(
         request.body,
       );
 
@@ -147,7 +118,7 @@ export function registerPrivacySyntheticRoutes(
         productionMode: body.data.productionMode,
       });
 
-      const response = syntheticDataUseEvaluateResponseSchema.parse({
+      const response = privacySyntheticDataUseEvaluateResponseSchema.parse({
         status: result.status,
         decision: result.decision,
       });
