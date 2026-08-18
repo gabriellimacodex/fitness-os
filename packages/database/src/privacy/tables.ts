@@ -280,3 +280,83 @@ export const privacySubjectRequest = pgTable(
     index('privacy_subject_request_updated_at_idx').on(table.updatedAt),
   ],
 );
+
+/**
+ * Append-only transition history for data-subject requests.
+ * Ordinary application roles must not update or delete these rows.
+ */
+export const privacySubjectRequestTransition = pgTable(
+  'privacy_subject_request_transition',
+  {
+    transitionId: uuid('transition_id').primaryKey(),
+    requestId: uuid('request_id').notNull(),
+    previousState: text('previous_state').notNull(),
+    nextState: text('next_state').notNull(),
+    operationId: uuid('operation_id').notNull(),
+    correlationId: uuid('correlation_id').notNull(),
+    reasonCode: text('reason_code'),
+    verificationRefDigest: text('verification_ref_digest'),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.requestId],
+      foreignColumns: [privacySubjectRequest.requestId],
+      name: 'privacy_subject_request_transition_request_id_fk',
+    }).onDelete('restrict'),
+    uniqueIndex('privacy_subject_request_transition_operation_id_unique').on(
+      table.operationId,
+    ),
+    check(
+      'privacy_subject_request_transition_previous_state_check',
+      sql`${table.previousState} IN (
+        'received',
+        'verification_required',
+        'policy_blocked',
+        'ready',
+        'in_progress',
+        'partially_failed',
+        'completed',
+        'cancelled',
+        'denied'
+      )`,
+    ),
+    check(
+      'privacy_subject_request_transition_next_state_check',
+      sql`${table.nextState} IN (
+        'received',
+        'verification_required',
+        'policy_blocked',
+        'ready',
+        'in_progress',
+        'partially_failed',
+        'completed',
+        'cancelled',
+        'denied'
+      )`,
+    ),
+    check(
+      'privacy_subject_request_transition_reason_code_check',
+      sql`${table.reasonCode} IS NULL OR ${table.reasonCode} IN (
+        'forward',
+        'verification_accepted',
+        'policy_blocked',
+        'cancelled',
+        'denied'
+      )`,
+    ),
+    check(
+      'privacy_subject_request_transition_verification_digest_check',
+      sql`${table.verificationRefDigest} IS NULL OR ${table.verificationRefDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    index('privacy_subject_request_transition_request_id_idx').on(
+      table.requestId,
+    ),
+    index('privacy_subject_request_transition_recorded_at_idx').on(
+      table.recordedAt,
+    ),
+  ],
+);

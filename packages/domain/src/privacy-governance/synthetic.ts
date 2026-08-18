@@ -11,7 +11,9 @@ import {
   type PrivacyProcessorDescriptorReference,
   type PrivacyPurposeVersionReference,
   type PrivacySubjectRequestReference,
+  type PrivacySubjectRequestTransitionReference,
   type PrivacyWithdrawalReference,
+  privacySubjectRequestTransitionReferenceSchema,
 } from '@fitness-os/schemas';
 
 import type {
@@ -198,6 +200,10 @@ export class SyntheticPrivacyRuntimeProcessorRegistry implements PrivacyRuntimeP
 
 export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectRequestRepository {
   private readonly byId = new Map<string, PrivacySubjectRequestReference>();
+  private readonly transitions = new Map<
+    string,
+    PrivacySubjectRequestTransitionReference[]
+  >();
 
   async get(requestId: string) {
     return this.byId.get(requestId) ?? null;
@@ -211,10 +217,18 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     return 'accepted' as const;
   }
 
+  async listTransitions(requestId: string) {
+    return [...(this.transitions.get(requestId) ?? [])];
+  }
+
   async applyTransition(input: {
     requestId: string;
     next: PrivacySubjectRequestReference['state'];
     updatedAt: string;
+    transitionId: PrivacySubjectRequestTransitionReference['transitionId'];
+    operationId: PrivacySubjectRequestTransitionReference['operationId'];
+    correlationId: PrivacySubjectRequestTransitionReference['correlationId'];
+    reasonCode?: PrivacySubjectRequestTransitionReference['reasonCode'];
     verification?: PrivacySubjectRequestReference['verification'];
     productionMode?: boolean;
   }) {
@@ -231,11 +245,29 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
       productionMode: input.productionMode,
     });
 
-    if (result.status === 'advanced') {
-      this.byId.set(result.request.requestId, result.request);
+    if (result.status !== 'advanced') {
+      return result;
     }
 
-    return result;
+    const transition = privacySubjectRequestTransitionReferenceSchema.parse({
+      transitionId: input.transitionId,
+      requestId: current.requestId,
+      previousState: current.state,
+      nextState: result.request.state,
+      operationId: input.operationId,
+      correlationId: input.correlationId,
+      reasonCode: input.reasonCode ?? null,
+      verificationRefDigest:
+        result.request.verification?.verificationRefDigest ?? null,
+      recordedAt: input.updatedAt,
+    });
+
+    this.byId.set(result.request.requestId, result.request);
+    const history = this.transitions.get(current.requestId) ?? [];
+    history.push(transition);
+    this.transitions.set(current.requestId, history);
+
+    return { ...result, transition };
   }
 }
 

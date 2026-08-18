@@ -529,6 +529,45 @@ export type PrivacySubjectRequestReference = z.infer<
   typeof privacySubjectRequestReferenceSchema
 >;
 
+export const privacySubjectRequestTransitionIdSchema = z
+  .uuidv4()
+  .brand<'PrivacySubjectRequestTransitionId'>();
+export type PrivacySubjectRequestTransitionId = z.infer<
+  typeof privacySubjectRequestTransitionIdSchema
+>;
+
+/**
+ * Append-only subject-request transition evidence. Ordinary application
+ * mutation never updates or deletes these rows.
+ */
+export const privacySubjectRequestTransitionReasonSchema = z.enum([
+  'forward',
+  'verification_accepted',
+  'policy_blocked',
+  'cancelled',
+  'denied',
+]);
+export type PrivacySubjectRequestTransitionReason = z.infer<
+  typeof privacySubjectRequestTransitionReasonSchema
+>;
+
+export const privacySubjectRequestTransitionReferenceSchema = z
+  .object({
+    transitionId: privacySubjectRequestTransitionIdSchema,
+    requestId: privacySubjectRequestIdSchema,
+    previousState: privacySubjectRequestStateSchema,
+    nextState: privacySubjectRequestStateSchema,
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    reasonCode: privacySubjectRequestTransitionReasonSchema.nullable(),
+    verificationRefDigest: privacySha256DigestSchema.nullable(),
+    recordedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacySubjectRequestTransitionReference = z.infer<
+  typeof privacySubjectRequestTransitionReferenceSchema
+>;
+
 export const privacyAuditEventKindSchema = z.enum([
   'data_use_evaluated',
   'authorization_evidence_appended',

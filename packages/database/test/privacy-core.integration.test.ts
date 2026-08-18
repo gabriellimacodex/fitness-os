@@ -19,6 +19,7 @@ import {
   privacyPurposeVersionReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
@@ -124,7 +125,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -319,6 +320,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         requestId: request.requestId,
         next: 'ready',
         updatedAt: '2026-08-18T12:01:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'a1111111-1111-4111-8111-111111111111',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
         verification: {
           verificationRefDigest: '2'.repeat(64),
           synthetic: true,
@@ -334,6 +344,16 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         requestId: request.requestId,
         next: 'ready',
         updatedAt: '2026-08-18T12:02:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'a1111111-1111-4111-8111-111111111111',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        reasonCode: 'verification_accepted',
         verification: {
           verificationRefDigest: '2'.repeat(64),
           synthetic: true,
@@ -345,9 +365,36 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         throw new Error('expected advanced');
       }
       expect(advanced.request.state).toBe('ready');
+      expect(advanced.transition).toMatchObject({
+        previousState: 'verification_required',
+        nextState: 'ready',
+        reasonCode: 'verification_accepted',
+        verificationRefDigest: '2'.repeat(64),
+      });
       await expect(subjectRequests.get(request.requestId)).resolves.toEqual(
         advanced.request,
       );
+      await expect(
+        subjectRequests.listTransitions(request.requestId),
+      ).resolves.toEqual([advanced.transition]);
+
+      const conflict = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'in_progress',
+        updatedAt: '2026-08-18T12:03:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'c3333333-3333-4333-8333-333333333333',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+      expect(conflict).toEqual({ status: 'conflict' });
     });
   },
 );

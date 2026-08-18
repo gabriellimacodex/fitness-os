@@ -13,6 +13,9 @@ import type {
   PrivacyPurposeVersionReference,
   PrivacySubjectRequestReference,
   PrivacySubjectRequestState,
+  PrivacySubjectRequestTransitionId,
+  PrivacySubjectRequestTransitionReason,
+  PrivacySubjectRequestTransitionReference,
   PrivacySubjectScopeId,
   PrivacyVerificationReference,
   PrivacyWithdrawalReference,
@@ -89,6 +92,7 @@ export type PrivacySubjectRequestApplyResult =
   | {
       status: 'advanced';
       request: PrivacySubjectRequestReference;
+      transition: PrivacySubjectRequestTransitionReference;
     }
   | {
       status: 'already_terminal';
@@ -108,18 +112,24 @@ export type PrivacySubjectRequestApplyResult =
     };
 
 /**
- * Current-pointer repository for data-subject requests.
- * Transition history remains a later append-only slice.
+ * Current-pointer repository plus append-only transition history.
  */
 export interface PrivacySubjectRequestRepository {
   get(requestId: string): Promise<PrivacySubjectRequestReference | null>;
   put(
     record: PrivacySubjectRequestReference,
   ): Promise<PrivacyReferencePutResult>;
+  listTransitions(
+    requestId: string,
+  ): Promise<readonly PrivacySubjectRequestTransitionReference[]>;
   applyTransition(input: {
     requestId: string;
     next: PrivacySubjectRequestState;
     updatedAt: string;
+    transitionId: PrivacySubjectRequestTransitionId;
+    operationId: PrivacyOperationId;
+    correlationId: PrivacyCorrelationId;
+    reasonCode?: PrivacySubjectRequestTransitionReason | null;
     verification?: PrivacyVerificationReference | null;
     productionMode?: boolean;
   }): Promise<PrivacySubjectRequestApplyResult>;

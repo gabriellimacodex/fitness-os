@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type {
   PrivacyReferencePutResult,
   PrivacySubjectRequestApplyResult,
@@ -7,13 +7,22 @@ import type {
 import { transitionSubjectRequest } from '@fitness-os/domain';
 import {
   privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionReferenceSchema,
+  type PrivacyCorrelationId,
+  type PrivacyOperationId,
   type PrivacySubjectRequestReference,
   type PrivacySubjectRequestState,
+  type PrivacySubjectRequestTransitionId,
+  type PrivacySubjectRequestTransitionReason,
+  type PrivacySubjectRequestTransitionReference,
   type PrivacyVerificationReference,
 } from '@fitness-os/schemas';
 
 import type { PostgresConnection } from '../connection.js';
-import { privacySubjectRequest } from './tables.js';
+import {
+  privacySubjectRequest,
+  privacySubjectRequestTransition,
+} from './tables.js';
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {
   if (
@@ -58,6 +67,22 @@ function toReference(
   });
 }
 
+function toTransition(
+  row: typeof privacySubjectRequestTransition.$inferSelect,
+): PrivacySubjectRequestTransitionReference {
+  return privacySubjectRequestTransitionReferenceSchema.parse({
+    transitionId: row.transitionId,
+    requestId: row.requestId,
+    previousState: row.previousState,
+    nextState: row.nextState,
+    operationId: row.operationId,
+    correlationId: row.correlationId,
+    reasonCode: row.reasonCode,
+    verificationRefDigest: row.verificationRefDigest,
+    recordedAt: new Date(row.recordedAt).toISOString(),
+  });
+}
+
 function toRow(record: PrivacySubjectRequestReference) {
   return {
     requestId: record.requestId,
@@ -98,10 +123,23 @@ export function createPostgresPrivacySubjectRequestRepository(
       }
     },
 
+    listTransitions: async (requestId) => {
+      const rows = await connection.db
+        .select()
+        .from(privacySubjectRequestTransition)
+        .where(eq(privacySubjectRequestTransition.requestId, requestId))
+        .orderBy(asc(privacySubjectRequestTransition.recordedAt));
+      return rows.map(toTransition);
+    },
+
     applyTransition: async (input: {
       requestId: string;
       next: PrivacySubjectRequestState;
       updatedAt: string;
+      transitionId: PrivacySubjectRequestTransitionId;
+      operationId: PrivacyOperationId;
+      correlationId: PrivacyCorrelationId;
+      reasonCode?: PrivacySubjectRequestTransitionReason | null;
       verification?: PrivacyVerificationReference | null;
       productionMode?: boolean;
     }): Promise<PrivacySubjectRequestApplyResult> => {
@@ -128,12 +166,53 @@ export function createPostgresPrivacySubjectRequestRepository(
         return result;
       }
 
-      await connection.db
-        .update(privacySubjectRequest)
-        .set(toRow(result.request))
-        .where(eq(privacySubjectRequest.requestId, result.request.requestId));
+      const transition = privacySubjectRequestTransitionReferenceSchema.parse({
+        transitionId: input.transitionId,
+        requestId: current.requestId,
+        previousState: current.state,
+        nextState: result.request.state,
+        operationId: input.operationId,
+        correlationId: input.correlationId,
+        reasonCode: input.reasonCode ?? null,
+        verificationRefDigest:
+          result.request.verification?.verificationRefDigest ?? null,
+        recordedAt: input.updatedAt,
+      });
 
-      return result;
+      try {
+        await connection.db.transaction(async (tx) => {
+          await tx
+            .update(privacySubjectRequest)
+            .set(toRow(result.request))
+            .where(
+              eq(privacySubjectRequest.requestId, result.request.requestId),
+            );
+          await tx.insert(privacySubjectRequestTransition).values({
+            transitionId: transition.transitionId,
+            requestId: transition.requestId,
+            previousState: transition.previousState,
+            nextState: transition.nextState,
+            operationId: transition.operationId,
+            correlationId: transition.correlationId,
+            reasonCode: transition.reasonCode,
+            verificationRefDigest: transition.verificationRefDigest,
+            recordedAt: transition.recordedAt,
+          });
+        });
+      } catch (error) {
+        if (
+          isUniqueViolation(
+            error,
+            'privacy_subject_request_transition_operation_id_unique',
+          ) ||
+          isUniqueViolation(error, 'privacy_subject_request_transition_pkey')
+        ) {
+          return { status: 'conflict' };
+        }
+        throw error;
+      }
+
+      return { request: result.request, status: 'advanced', transition };
     },
   };
 }

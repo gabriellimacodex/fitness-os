@@ -120,6 +120,7 @@ is backend-only and must never appear on a public request or response schema.
 | Processor descriptors                   | `privacyProcessorDescriptorReferenceSchema` in `privacy-governance.ts`                                     | Runtime processor registry        | Domain evaluation, readiness, and tests       | Frozen |
 | Privacy readiness                       | `privacyReadinessResultSchema` / diagnostic codes in `privacy-governance.ts`                               | Privacy readiness composition     | API readiness adapters and tests              | Frozen |
 | Synthetic data-use evaluate (test seam) | `privacySyntheticDataUseEvaluateRequestSchema` / response in `privacy-governance.ts`                       | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
+| Subject-request transition history      | `privacySubjectRequestTransitionReferenceSchema` in `privacy-governance.ts`                                | Append-only request history       | Domain/database adapters and tests            | Frozen |
 | Synthetic subject-request transition    | `privacySyntheticSubjectRequestTransitionRequestSchema` / response in `privacy-governance.ts`              | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
 | Synthetic withdrawal plan               | `privacySyntheticWithdrawalPlanRequestSchema` / response in `privacy-governance.ts`                        | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
 | Synthetic retention preview             | `privacySyntheticRetentionPreviewRequestSchema` / response in `privacy-governance.ts`                      | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
@@ -146,7 +147,8 @@ one-way (`withdrawn` only) and never reopens evidence. `DataUseDecision` is a
 tagged `allowed` | `denied` union with a closed deny taxonomy — never a boolean
 grant. No public Fastify production privacy routes are authorized by this
 foundation. Disposable PostgreSQL persistence for Option A policy/purpose/
-processor references, subject-request current pointers, and evidence /
-withdrawal / audit ledgers may land in additive migrations under
-`packages/database` for synthetic test environments only; production policy
-activation remains stopped by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+processor references, subject-request current pointers, append-only
+subject-request transition history, and evidence / withdrawal / audit
+ledgers may land in additive migrations under `packages/database` for
+synthetic test environments only; production policy activation remains
+stopped by `LEGAL_PRIVACY_DECISION_REQUIRED`.
