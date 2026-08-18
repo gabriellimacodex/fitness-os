@@ -4,7 +4,8 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
-  transitionSubjectRequest,
+  SyntheticPrivacySubjectRequestRepository,
+  type PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
@@ -27,6 +28,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 export interface PrivacySyntheticOptions {
   /** Fixed clock for deterministic tests; defaults to domain synthetic clock. */
   fixedUtcMs?: string;
+  /**
+   * Optional subject-request repository. Defaults to an in-memory synthetic
+   * repository shared for the lifetime of this route registration.
+   */
+  subjectRequests?: PrivacySubjectRequestRepository;
 }
 
 function sendError(
@@ -86,6 +92,8 @@ export function registerPrivacySyntheticRoutes(
   options: PrivacySyntheticOptions = {},
 ): void {
   const fixedUtcMs = options.fixedUtcMs ?? '2026-08-18T12:00:00.000Z';
+  const subjectRequests =
+    options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -155,10 +163,21 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = transitionSubjectRequest({
-        request: body.data.request,
+      const existing = await subjectRequests.get(body.data.request.requestId);
+      if (existing === null) {
+        // Concurrent seed may lose the race; proceed to applyTransition on the
+        // winner rather than mapping "already exists" as a transition conflict.
+        await subjectRequests.put(body.data.request);
+      }
+
+      const result = await subjectRequests.applyTransition({
+        requestId: body.data.request.requestId,
         next: body.data.next,
         updatedAt: fixedUtcMs,
+        transitionId: body.data.transitionId,
+        operationId: body.data.operationId,
+        correlationId: body.data.correlationId,
+        reasonCode: body.data.reasonCode,
         verification: body.data.verification,
         productionMode: body.data.productionMode,
       });
@@ -170,9 +189,23 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      if (result.status === 'conflict') {
+        return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+          status: 'conflict',
+        });
+      }
+
+      if (result.status === 'already_terminal') {
+        return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+          status: 'already_terminal',
+          request: result.request,
+        });
+      }
+
       return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
-        status: result.status,
+        status: 'advanced',
         request: result.request,
+        transition: result.transition,
       });
     },
   );
