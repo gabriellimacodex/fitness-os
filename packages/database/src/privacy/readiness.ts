@@ -18,6 +18,7 @@ const REQUIRED_PRIVACY_CORE_MIGRATION_FILES = [
   '0000_flippant_rick_jones.sql',
   '0001_prd03_exercise_catalog.sql',
   '0002_prd21_privacy_core.sql',
+  '0003_prd21_privacy_policy_purpose_processor.sql',
 ] as const;
 
 function hashMigrationFile(relativePath: string): string {
@@ -45,6 +46,9 @@ export type PrivacyCoreReadinessResult =
     };
 
 const REQUIRED_TABLES = [
+  'privacy_policy_package_version',
+  'privacy_purpose_version',
+  'privacy_processor_registration',
   'privacy_authorization_evidence',
   'privacy_withdrawal',
   'privacy_audit_event',

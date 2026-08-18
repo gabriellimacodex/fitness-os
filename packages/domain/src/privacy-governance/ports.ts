@@ -37,14 +37,22 @@ export interface PrivacyAuditSink {
   ): Promise<'accepted' | 'unavailable'>;
 }
 
+export type PrivacyReferencePutResult = 'accepted' | 'conflict';
+
 export interface PrivacyPolicyPackageRepository {
   getActive(versionId: string): Promise<PrivacyPolicyPackageReference | null>;
+  put(
+    record: PrivacyPolicyPackageReference,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 export interface PrivacyPurposeRegistry {
   getVersion(
     purposeVersionId: string,
   ): Promise<PrivacyPurposeVersionReference | null>;
+  put(
+    record: PrivacyPurposeVersionReference,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 export type PrivacyEvidenceAppendResult = 'accepted' | 'conflict';
@@ -69,6 +77,9 @@ export interface PrivacyRuntimeProcessorRegistry {
   getDescriptor(
     processorId: string,
   ): Promise<PrivacyProcessorDescriptorReference | null>;
+  put(
+    record: PrivacyProcessorDescriptorReference,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 export interface PrivacyDataUsePorts {
