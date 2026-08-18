@@ -61,6 +61,7 @@ export {
   privacyProcessorRegistration,
   privacyPurposeVersion,
   privacySubjectRequest,
+  privacySubjectRequestTransition,
   privacyWithdrawal,
   requiredPrivacyCoreMigrationHashes,
   type PrivacyCoreReadinessResult,

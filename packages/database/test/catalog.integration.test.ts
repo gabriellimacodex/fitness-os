@@ -75,6 +75,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'privacy_processor_registration',
         'privacy_purpose_version',
         'privacy_subject_request',
+        'privacy_subject_request_transition',
         'privacy_withdrawal',
         'student_coach_links',
         'students',

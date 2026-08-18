@@ -22,6 +22,7 @@ import {
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
@@ -426,6 +427,33 @@ describe('subject request and audit event references', () => {
       privacySubjectRequestReferenceSchema.safeParse({
         ...parsed,
         state: 'legally_approved',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts append-only subject-request transition references without free text', () => {
+    const parsed = privacySubjectRequestTransitionReferenceSchema.parse({
+      transitionId: 'a1111111-1111-4111-8111-111111111111',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      previousState: 'verification_required',
+      nextState: 'ready',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      reasonCode: 'verification_accepted',
+      verificationRefDigest: '2'.repeat(64),
+      recordedAt: '2026-08-18T12:01:00.000Z',
+    });
+    expect(parsed.nextState).toBe('ready');
+    expect(
+      privacySubjectRequestTransitionReferenceSchema.safeParse({
+        ...parsed,
+        reasonCode: 'legally_approved',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacySubjectRequestTransitionReferenceSchema.safeParse({
+        ...parsed,
+        note: 'operator comment',
       }).success,
     ).toBe(false);
   });

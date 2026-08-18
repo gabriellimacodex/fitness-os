@@ -5,6 +5,7 @@ export {
   privacyProcessorRegistration,
   privacyPurposeVersion,
   privacySubjectRequest,
+  privacySubjectRequestTransition,
   privacyWithdrawal,
 } from './tables.js';
 export {

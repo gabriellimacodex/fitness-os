@@ -11,6 +11,7 @@ import {
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
@@ -280,6 +281,16 @@ describe('synthetic subject request repository', () => {
       requestId: request.requestId,
       next: 'ready',
       updatedAt: '2026-08-18T12:01:00.000Z',
+      transitionId: privacySubjectRequestTransitionIdSchema.parse(
+        'a1111111-1111-4111-8111-111111111111',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'b2222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      reasonCode: 'verification_accepted',
       verification: {
         verificationRefDigest: '2'.repeat(64),
         synthetic: true,
@@ -287,9 +298,39 @@ describe('synthetic subject request repository', () => {
       productionMode: false,
     });
     expect(advanced.status).toBe('advanced');
+    if (advanced.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(advanced.transition).toMatchObject({
+      previousState: 'verification_required',
+      nextState: 'ready',
+      reasonCode: 'verification_accepted',
+    });
+    await expect(repo.listTransitions(request.requestId)).resolves.toEqual([
+      advanced.transition,
+    ]);
     await expect(repo.get(request.requestId)).resolves.toMatchObject({
       state: 'ready',
     });
+
+    await expect(
+      repo.applyTransition({
+        requestId: request.requestId,
+        next: 'in_progress',
+        updatedAt: '2026-08-18T12:02:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'c3333333-3333-4333-8333-333333333333',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        reasonCode: 'forward',
+        productionMode: false,
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
   });
 });
 
