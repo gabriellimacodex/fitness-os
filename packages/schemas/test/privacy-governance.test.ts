@@ -7,11 +7,14 @@ import {
   getPrivacyCanonicalProfile,
   governanceLifecycleResultSchema,
   privacyCanonicalizationVersionSchema,
+  privacyDataUseDecisionSchema,
+  privacyDataUseDenyReasonSchema,
   privacyEvidenceReferenceSchema,
   privacyLifecycleProofIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
   privacyRetentionExceptionIdSchema,
+  privacyWithdrawalReferenceSchema,
   retentionPreviewCanonicalInputSchema,
   sortPrivacySetIdentifiers,
 } from '../src/privacy-governance.js';
@@ -169,6 +172,117 @@ describe('policy and evidence reference contracts', () => {
       privacyEvidenceReferenceSchema.safeParse({
         ...parsed,
         consentAnswer: true,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('withdrawal and data-use decision contracts', () => {
+  const withdrawalBase = {
+    withdrawalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    state: 'withdrawn' as const,
+    withdrawnAt: '2026-08-18T12:00:00.000Z',
+    operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    processingOutcome: 'accepted' as const,
+  };
+
+  it('records one-way withdrawal against evidence without reopening fields', () => {
+    const parsed = privacyWithdrawalReferenceSchema.parse(withdrawalBase);
+    expect(parsed.state).toBe('withdrawn');
+
+    expect(
+      privacyWithdrawalReferenceSchema.safeParse({
+        ...withdrawalBase,
+        state: 'active',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyWithdrawalReferenceSchema.safeParse({
+        ...withdrawalBase,
+        reopened: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyWithdrawalReferenceSchema.safeParse({
+        ...withdrawalBase,
+        noticeText: 'forbidden',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts idempotent withdrawal replay without editing evidence', () => {
+    expect(
+      privacyWithdrawalReferenceSchema.parse({
+        ...withdrawalBase,
+        processingOutcome: 'idempotent_replay',
+      }).processingOutcome,
+    ).toBe('idempotent_replay');
+  });
+
+  it('requires a closed deny reason on denied data-use decisions', () => {
+    const denied = privacyDataUseDecisionSchema.parse({
+      outcome: 'denied',
+      reasonCode: 'evidence_withdrawn',
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+      correlationId: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(denied.outcome).toBe('denied');
+    expect(privacyDataUseDenyReasonSchema.options).toContain(
+      'evidence_withdrawn',
+    );
+    expect(privacyDataUseDenyReasonSchema.options).toContain(
+      'dependency_unavailable',
+    );
+
+    expect(
+      privacyDataUseDecisionSchema.safeParse({
+        outcome: 'denied',
+        evaluatedAt: '2026-08-18T12:00:00.000Z',
+        correlationId: '11111111-1111-4111-8111-111111111111',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyDataUseDecisionSchema.safeParse({
+        outcome: 'denied',
+        reasonCode: 'not_a_real_reason',
+        evaluatedAt: '2026-08-18T12:00:00.000Z',
+        correlationId: '11111111-1111-4111-8111-111111111111',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('binds allowed decisions to digests and versions without boolean grants', () => {
+    const allowed = privacyDataUseDecisionSchema.parse({
+      outcome: 'allowed',
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      actorContextDigest: 'c'.repeat(64),
+      purposeVersionId: '33333333-3333-4333-8333-333333333333',
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: '44444444-4444-4444-8444-444444444444',
+      processorDescriptorVersionDigest: 'd'.repeat(64),
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      policyDigest: 'e'.repeat(64),
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(allowed.outcome).toBe('allowed');
+
+    expect(
+      privacyDataUseDecisionSchema.safeParse({
+        ...allowed,
+        reasonCode: 'evidence_missing',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyDataUseDecisionSchema.safeParse({
+        outcome: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyDataUseDecisionSchema.safeParse({
+        ...allowed,
+        legalBasis: 'consent',
       }).success,
     ).toBe(false);
   });
