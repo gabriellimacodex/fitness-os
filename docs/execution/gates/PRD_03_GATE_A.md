@@ -2,12 +2,14 @@
 
 - Capability: Exercise Knowledge Base
 - Record type: Gate A completion evidence
-- Exact reviewed head: _set to this PR head before merge_
+- Exact reviewed head: `f936d032ba7647b41272b03681689831430d1a25`
 - Pull requests: `#21` Option A data, `#23` domain, `#25` read API, `#26`
   reader/ingest/verifier, `#27` ingest CLI + platform helper, `#29` curation
   mutations, plus this Gate A package PR
 - Final independent reviewer: Agent 90
-- Disposition: `PENDING` until Agent 90 PASS on this package head
+- Disposition: `PASS`
+- Gate A review: `docs/execution/reviews/PRD_03_GATE_A_REVIEW_R2.md`
+- CI: Actions run `32155647000`
 - Record timestamp: `2026-08-18`
 
 ## Disposition

@@ -3,7 +3,7 @@
 This table is the authoritative roadmap registry. It records capability-level intent only; detailed PRDs are created just in time under [PRD governance](README.md). Dependencies refer to PRD IDs and must be `COMPLETED` before a dependent PRD begins unless an approved detailed PRD explicitly identifies a non-runtime research lane permitted by the [Master Execution Plan](../execution/MASTER_EXECUTION_PLAN.md).
 
 **Authorization rule:** `PROPOSED` is not authorization. PRDs 01–02 are `COMPLETED`;
-PRD 03 is `IN_PROGRESS` on the isolated Option A wave; PRD 21 is `IN_PROGRESS`
+PRD 03 is `COMPLETED` (Option A Gate A PASS); PRD 21 is `IN_PROGRESS`
 on the isolated Option A implementation wave after the founder recorded that
 architecture decision on 2026-08-17;
 PRDs 04 and 07 are `IN_PROGRESS`; PRDs 05–06, 08–20, and 22–24 remain `APPROVED`, under the founder's
@@ -18,7 +18,7 @@ authorized.
 | 00  | Engineering Bootstrap     | `COMPLETED`   | —                          | Yes — Foundation                                                | Orchestrator; Web/PWA; API/Domain; Data/Infrastructure; QA/Security              | Verified engineering and multi-agent foundation.                                                |
 | 01  | Platform Foundation       | `COMPLETED`   | 00                         | No                                                              | Orchestrator; API/Domain; Data/Infrastructure; Security                          | Product-ready platform capabilities and boundaries defined by its detailed PRD.                 |
 | 02  | Student & Coach Domain    | `COMPLETED`   | 01                         | No                                                              | API/Domain; Data/Infrastructure; Security                                        | Explicit student and coach domain contracts and authorized persistence model.                   |
-| 03  | Exercise Knowledge Base   | `IN_PROGRESS` | 01                         | No                                                              | API/Domain; Data/Infrastructure; Training Intelligence Engineer                  | Governed exercise knowledge and evidence-ready taxonomy. Gate A package pending Agent 90.       |
+| 03  | Exercise Knowledge Base   | `COMPLETED`   | 01                         | No                                                              | API/Domain; Data/Infrastructure; Training Intelligence Engineer                  | Governed exercise knowledge and evidence-ready taxonomy.                                        |
 | 04  | Movement Library          | `IN_PROGRESS` | 01                         | No                                                              | Movement Engineer; Web/PWA; API/Domain                                           | Reusable, understandable movement guidance with explicit contracts.                             |
 | 05  | Training Core             | `APPROVED`    | 02, 03, 04                 | Yes — Training Core                                             | Training Intelligence Engineer; API/Domain; Data/Infrastructure; QA/Security     | Deterministic training model and core workflows validated as a major capability.                |
 | 06  | Training Execution UX     | `APPROVED`    | 05                         | No                                                              | Web/PWA; Training Intelligence Engineer; QA/Security                             | Mobile-first student training execution experience.                                             |
