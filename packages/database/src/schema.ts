@@ -22,6 +22,12 @@ export {
   taxonomyTerms,
 } from './catalog/tables.js';
 
+export {
+  privacyAuditEvent,
+  privacyAuthorizationEvidence,
+  privacyWithdrawal,
+} from './privacy/tables.js';
+
 export const students = pgTable('students', {
   id: uuid('id').primaryKey(),
   createdAt: timestamp('created_at', {

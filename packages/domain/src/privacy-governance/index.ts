@@ -5,11 +5,13 @@ export type {
   PrivacyDataUseEvaluationInput,
   PrivacyDataUseEvaluationResult,
   PrivacyDataUsePorts,
+  PrivacyEvidenceAppendResult,
   PrivacyIdFactory,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
   PrivacyTrustedClock,
+  PrivacyWithdrawalAppendResult,
 } from './ports.js';
 export {
   isTerminalSubjectRequestState,
