@@ -1,13 +1,18 @@
 import {
   apiErrorResponseSchema,
   privacyActorContextReferenceSchema,
+  privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
+  privacySubjectRequestIdSchema,
+  privacySubjectRequestReferenceSchema,
   privacySubjectScopeIdSchema,
+  privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -111,12 +116,23 @@ describe('synthetic privacy composition seam', () => {
       url: '/v1/privacy/synthetic/data-use-evaluate',
       payload: evaluatePayload,
     });
+    const transition = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {},
+    });
+    const withdrawal = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {},
+    });
 
-    expect(readiness.statusCode).toBe(404);
-    expect(evaluate.statusCode).toBe(404);
-    expect(apiErrorResponseSchema.parse(readiness.json()).error.code).toBe(
-      'NOT_FOUND',
-    );
+    for (const response of [readiness, evaluate, transition, withdrawal]) {
+      expect(response.statusCode).toBe(404);
+      expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+        'NOT_FOUND',
+      );
+    }
 
     await app.close();
   });
@@ -202,6 +218,121 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate', () => {
     expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
       'BAD_REQUEST',
     );
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
+  const baseRequest = privacySubjectRequestReferenceSchema.parse({
+    requestId: privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    ),
+    requestType: 'export',
+    state: 'verification_required',
+    verification: null,
+    policyVersionId: policy.versionId,
+    inventoryVersionDigest: '1'.repeat(64),
+    correlationId: privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    ),
+    updatedAt: '2026-08-18T11:00:00.000Z',
+  });
+
+  it('advances to ready with verification outside productionMode', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: baseRequest,
+        next: 'ready',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      status: 'advanced',
+      request: { state: 'ready' },
+    });
+
+    await app.close();
+  });
+
+  it('rejects synthetic verification in productionMode', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: baseRequest,
+        next: 'ready',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: true,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'invalid',
+      reason: 'synthetic_verification_in_production',
+    });
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
+  it('accepts the first withdrawal and replays the same operation', async () => {
+    const app = buildSyntheticPrivacyApp();
+    const withdrawalId = privacyWithdrawalIdSchema.parse(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    );
+    const operationId = privacyOperationIdSchema.parse(
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    );
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {
+        existing: null,
+        withdrawalId,
+        evidenceId: evidence.evidenceId,
+        operationId,
+      },
+    });
+    expect(first.json()).toMatchObject({
+      status: 'accepted',
+      withdrawal: { state: 'withdrawn', processingOutcome: 'accepted' },
+    });
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {
+        existing: first.json().withdrawal,
+        withdrawalId,
+        evidenceId: evidence.evidenceId,
+        operationId,
+      },
+    });
+    expect(replay.json()).toMatchObject({
+      status: 'idempotent_replay',
+      withdrawal: { processingOutcome: 'idempotent_replay' },
+    });
+    expect(replay.body).not.toContain('noticeText');
 
     await app.close();
   });

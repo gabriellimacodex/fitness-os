@@ -120,6 +120,8 @@ is backend-only and must never appear on a public request or response schema.
 | Processor descriptors                   | `privacyProcessorDescriptorReferenceSchema` in `privacy-governance.ts`                                     | Runtime processor registry        | Domain evaluation, readiness, and tests       | Frozen |
 | Privacy readiness                       | `privacyReadinessResultSchema` / diagnostic codes in `privacy-governance.ts`                               | Privacy readiness composition     | API readiness adapters and tests              | Frozen |
 | Synthetic data-use evaluate (test seam) | `privacySyntheticDataUseEvaluateRequestSchema` / response in `privacy-governance.ts`                       | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
+| Synthetic subject-request transition    | `privacySyntheticSubjectRequestTransitionRequestSchema` / response in `privacy-governance.ts`              | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
+| Synthetic withdrawal plan               | `privacySyntheticWithdrawalPlanRequestSchema` / response in `privacy-governance.ts`                        | Synthetic API only                | Disposable `allowSyntheticPrivacy` tests      | Frozen |
 
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
 request/audit/processor locators, tagged data-use decisions, and fail-closed

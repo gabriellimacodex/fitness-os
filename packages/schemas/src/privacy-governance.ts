@@ -818,3 +818,68 @@ export const privacySyntheticDataUseEvaluateResponseSchema = z
 export type PrivacySyntheticDataUseEvaluateResponse = z.infer<
   typeof privacySyntheticDataUseEvaluateResponseSchema
 >;
+
+/**
+ * Disposable synthetic API for subject-request transitions behind
+ * allowSyntheticPrivacy. Not a production public privacy route.
+ */
+export const privacySyntheticSubjectRequestTransitionRequestSchema = z
+  .object({
+    request: privacySubjectRequestReferenceSchema,
+    next: privacySubjectRequestStateSchema,
+    verification: privacyVerificationReferenceSchema.nullable().optional(),
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticSubjectRequestTransitionRequest = z.infer<
+  typeof privacySyntheticSubjectRequestTransitionRequestSchema
+>;
+
+export const privacySyntheticSubjectRequestTransitionResponseSchema = z
+  .object({
+    status: z.enum(['advanced', 'already_terminal', 'invalid']),
+    reason: z
+      .enum([
+        'illegal_transition',
+        'verification_required',
+        'synthetic_verification_in_production',
+        'terminal_state',
+      ])
+      .optional(),
+    request: privacySubjectRequestReferenceSchema.optional(),
+  })
+  .strict();
+export type PrivacySyntheticSubjectRequestTransitionResponse = z.infer<
+  typeof privacySyntheticSubjectRequestTransitionResponseSchema
+>;
+
+/**
+ * Disposable synthetic API for withdrawal planning behind
+ * allowSyntheticPrivacy. Does not mutate evidence rows.
+ */
+export const privacySyntheticWithdrawalPlanRequestSchema = z
+  .object({
+    existing: privacyWithdrawalReferenceSchema.nullable(),
+    withdrawalId: privacyWithdrawalIdSchema,
+    evidenceId: privacyEvidenceIdSchema,
+    operationId: privacyOperationIdSchema,
+  })
+  .strict();
+export type PrivacySyntheticWithdrawalPlanRequest = z.infer<
+  typeof privacySyntheticWithdrawalPlanRequestSchema
+>;
+
+export const privacySyntheticWithdrawalPlanResponseSchema = z
+  .object({
+    status: z.enum([
+      'accepted',
+      'idempotent_replay',
+      'already_withdrawn',
+      'conflict',
+    ]),
+    withdrawal: privacyWithdrawalReferenceSchema.optional(),
+  })
+  .strict();
+export type PrivacySyntheticWithdrawalPlanResponse = z.infer<
+  typeof privacySyntheticWithdrawalPlanResponseSchema
+>;

@@ -23,6 +23,8 @@ import {
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
+  privacySyntheticSubjectRequestTransitionRequestSchema,
+  privacySyntheticWithdrawalPlanRequestSchema,
   privacyWithdrawalReferenceSchema,
   canonicalizePrivacyProcessorDescriptorReference,
   canonicalizePrivacyReadinessDiagnosticCodes,
@@ -645,5 +647,34 @@ describe('processor descriptor and readiness contracts', () => {
         noticeText: 'forbidden',
       }).success,
     ).toBe(false);
+  });
+
+  it('freezes synthetic subject-request and withdrawal plan seam contracts', () => {
+    expect(
+      privacySyntheticSubjectRequestTransitionRequestSchema.safeParse({
+        request: {
+          requestId: '66666666-6666-4666-8666-666666666666',
+          requestType: 'export',
+          state: 'verification_required',
+          verification: null,
+          policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          inventoryVersionDigest: '1'.repeat(64),
+          correlationId: '55555555-5555-4555-8555-555555555555',
+          updatedAt: '2026-08-18T12:00:00.000Z',
+        },
+        next: 'ready',
+        productionMode: false,
+        legalEntitlement: true,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      privacySyntheticWithdrawalPlanRequestSchema.parse({
+        existing: null,
+        withdrawalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      }).existing,
+    ).toBeNull();
   });
 });
