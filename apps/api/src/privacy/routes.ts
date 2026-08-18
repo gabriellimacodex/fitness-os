@@ -1,12 +1,18 @@
 import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  planWithdrawal,
+  transitionSubjectRequest,
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticSubjectRequestTransitionRequestSchema,
+  privacySyntheticSubjectRequestTransitionResponseSchema,
+  privacySyntheticWithdrawalPlanRequestSchema,
+  privacySyntheticWithdrawalPlanResponseSchema,
   type ApiErrorCode,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
@@ -130,4 +136,67 @@ export function registerPrivacySyntheticRoutes(
       return response;
     },
   );
+
+  app.post(
+    '/v1/privacy/synthetic/subject-request-transition',
+    async (request, reply) => {
+      const body =
+        privacySyntheticSubjectRequestTransitionRequestSchema.safeParse(
+          request.body,
+        );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const result = transitionSubjectRequest({
+        request: body.data.request,
+        next: body.data.next,
+        updatedAt: fixedUtcMs,
+        verification: body.data.verification,
+        productionMode: body.data.productionMode,
+      });
+
+      if (result.status === 'invalid') {
+        return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+          status: 'invalid',
+          reason: result.reason,
+        });
+      }
+
+      return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+        status: result.status,
+        request: result.request,
+      });
+    },
+  );
+
+  app.post('/v1/privacy/synthetic/withdrawal-plan', async (request, reply) => {
+    const body = privacySyntheticWithdrawalPlanRequestSchema.safeParse(
+      request.body,
+    );
+
+    if (!body.success) {
+      return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+    }
+
+    const result = planWithdrawal({
+      existing: body.data.existing,
+      withdrawalId: body.data.withdrawalId,
+      evidenceId: body.data.evidenceId,
+      operationId: body.data.operationId,
+      withdrawnAt: fixedUtcMs,
+    });
+
+    if (result.status === 'conflict') {
+      return privacySyntheticWithdrawalPlanResponseSchema.parse({
+        status: 'conflict',
+      });
+    }
+
+    return privacySyntheticWithdrawalPlanResponseSchema.parse({
+      status: result.status,
+      withdrawal: result.withdrawal,
+    });
+  });
 }
