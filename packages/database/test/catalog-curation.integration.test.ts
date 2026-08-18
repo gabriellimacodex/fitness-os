@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-import { sql } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -18,6 +18,8 @@ import {
   createExerciseCatalogCuration,
   createExerciseCatalogReader,
   createPostgresConnection,
+  exerciseLifecycleEvents,
+  taxonomyLifecycleEvents,
   type LedgerKeyRing,
   type PostgresConnection,
 } from '../src/index.js';
@@ -294,6 +296,243 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(replaceReplay).toMatchObject({
         status: 'taxonomy_term_replaced',
         replayed: true,
+      });
+    });
+
+    it('publishes revision 2, rejects stale expected revision, and reactivates', async () => {
+      const curation = createExerciseCatalogCuration(connection, ring);
+      const reader = createExerciseCatalogReader(connection);
+
+      const modality = expectReady(
+        createTaxonomyTermCommand({
+          operationId: randomUUID(),
+          dimensionId: SEEDED_TAXONOMY_DIMENSIONS.modality.id,
+          dimension: 'modality',
+          key: 'cardio',
+          label: 'Cardio',
+          meaning: 'Cardio modality for revision tests.',
+        }),
+      );
+      const equipment = expectReady(
+        createTaxonomyTermCommand({
+          operationId: randomUUID(),
+          dimensionId: SEEDED_TAXONOMY_DIMENSIONS.equipment.id,
+          dimension: 'equipment',
+          key: 'none',
+          label: 'None',
+          meaning: 'No equipment for revision tests.',
+        }),
+      );
+      const modalityCreated = await curation.createTaxonomyTerm(modality);
+      const equipmentCreated = await curation.createTaxonomyTerm(equipment);
+      if (
+        modalityCreated.status !== 'taxonomy_term_created' ||
+        equipmentCreated.status !== 'taxonomy_term_created'
+      ) {
+        throw new Error('expected taxonomy creates');
+      }
+
+      const firstPublish = expectReady(
+        createPublishExerciseCommand({
+          operationId: randomUUID(),
+          semanticInput: {
+            target: {
+              canonicalKey: 'jumping-jack',
+              exerciseId: null,
+            },
+            expectedCurrentRevision: null,
+            content: {
+              displayName: 'Jumping Jack',
+              aliases: [],
+              description: 'First revision of jumping jack.',
+              taxonomy: {
+                modalityTermId: modalityCreated.term.id,
+                equipmentTermIds: [equipmentCreated.term.id],
+              },
+              provenance: {
+                originKind: 'internally_curated',
+                changeReason: 'Initial revision publish',
+                primaryProvenanceReference: null,
+              },
+              references: [],
+            },
+          },
+        }),
+      );
+      const published = await curation.publishExercise(firstPublish);
+      expect(published).toMatchObject({
+        status: 'published',
+        replayed: false,
+        exercise: { currentRevision: { revision: 1 } },
+      });
+      if (published.status !== 'published') {
+        throw new Error('expected published');
+      }
+
+      const secondPublish = expectReady(
+        createPublishExerciseCommand({
+          operationId: randomUUID(),
+          semanticInput: {
+            target: {
+              canonicalKey: 'jumping-jack',
+              exerciseId: published.exercise.id,
+            },
+            expectedCurrentRevision: 1,
+            content: {
+              displayName: 'Jumping Jack',
+              aliases: ['Star Jump'],
+              description: 'Second immutable revision of jumping jack.',
+              taxonomy: {
+                modalityTermId: modalityCreated.term.id,
+                equipmentTermIds: [equipmentCreated.term.id],
+              },
+              provenance: {
+                originKind: 'internally_curated',
+                changeReason: 'Add alias on revision 2',
+                primaryProvenanceReference: null,
+              },
+              references: [],
+            },
+          },
+        }),
+      );
+      const revisionTwo = await curation.publishExercise(secondPublish);
+      expect(revisionTwo).toMatchObject({
+        status: 'published',
+        replayed: false,
+        exercise: {
+          id: published.exercise.id,
+          currentRevision: { revision: 2, displayName: 'Jumping Jack' },
+        },
+      });
+      if (revisionTwo.status !== 'published') {
+        throw new Error('expected published revision 2');
+      }
+
+      const current = await reader.getCurrentExercise(published.exercise.id);
+      expect(current?.currentRevision).toMatchObject({
+        revision: 2,
+        aliases: ['Star Jump'],
+      });
+      const prior = await reader.getExerciseRevision(published.exercise.id, 1);
+      expect(prior?.revision).toBe(1);
+      expect(prior?.aliases).toEqual([]);
+
+      const stalePublish = expectReady(
+        createPublishExerciseCommand({
+          operationId: randomUUID(),
+          semanticInput: {
+            target: {
+              canonicalKey: 'jumping-jack',
+              exerciseId: published.exercise.id,
+            },
+            expectedCurrentRevision: 1,
+            content: {
+              displayName: 'Jumping Jack Stale',
+              aliases: [],
+              description: 'Stale concurrent publish attempt.',
+              taxonomy: {
+                modalityTermId: modalityCreated.term.id,
+                equipmentTermIds: [equipmentCreated.term.id],
+              },
+              provenance: {
+                originKind: 'internally_curated',
+                changeReason: 'Stale expected revision',
+                primaryProvenanceReference: null,
+              },
+              references: [],
+            },
+          },
+        }),
+      );
+      const stale = await curation.publishExercise(stalePublish);
+      expect(stale).toEqual({
+        status: 'stale_revision',
+        expectedCurrentRevision: 1,
+        actualCurrentRevision: 2,
+      });
+
+      const archive = expectReady(
+        createExerciseLifecycleCommand({
+          operationId: randomUUID(),
+          exerciseId: published.exercise.id,
+          targetLifecycle: 'archived',
+          reason: 'Archive before reactivate proof',
+        }),
+      );
+      const archived = await curation.setExerciseLifecycle(archive);
+      expect(archived).toMatchObject({
+        status: 'exercise_archived',
+        exercise: { lifecycle: 'archived' },
+      });
+
+      const reactivate = expectReady(
+        createExerciseLifecycleCommand({
+          operationId: randomUUID(),
+          exerciseId: published.exercise.id,
+          targetLifecycle: 'active',
+          reason: 'Reactivate after archive',
+        }),
+      );
+      const reactivated = await curation.setExerciseLifecycle(reactivate);
+      expect(reactivated).toMatchObject({
+        status: 'exercise_reactivated',
+        replayed: false,
+        exercise: {
+          id: published.exercise.id,
+          lifecycle: 'active',
+          currentRevision: { revision: 2 },
+        },
+      });
+
+      const [exerciseEvent] = await connection.db
+        .select()
+        .from(exerciseLifecycleEvents)
+        .where(eq(exerciseLifecycleEvents.exerciseId, published.exercise.id))
+        .orderBy(desc(exerciseLifecycleEvents.recordedAt))
+        .limit(1);
+      expect(exerciseEvent).toMatchObject({
+        eventKind: 'reactivated',
+        previousLifecycle: 'archived',
+        nextLifecycle: 'active',
+      });
+
+      // Taxonomy reactivate is covered for completeness. Schema check allows
+      // created|archived|replaced only, so event_kind is recorded as 'created'
+      // while previous/next lifecycle still capture the transition.
+      const archiveTerm = expectReady(
+        createTaxonomyTermLifecycleCommand({
+          operationId: randomUUID(),
+          termId: equipmentCreated.term.id,
+          targetLifecycle: 'archived',
+          reason: 'Archive equipment before reactivate',
+        }),
+      );
+      await curation.setTaxonomyTermLifecycle(archiveTerm);
+      const reactivateTerm = expectReady(
+        createTaxonomyTermLifecycleCommand({
+          operationId: randomUUID(),
+          termId: equipmentCreated.term.id,
+          targetLifecycle: 'active',
+          reason: 'Reactivate equipment after archive',
+        }),
+      );
+      const termReactivated =
+        await curation.setTaxonomyTermLifecycle(reactivateTerm);
+      expect(termReactivated).toMatchObject({
+        status: 'taxonomy_term_reactivated',
+        term: { id: equipmentCreated.term.id, lifecycle: 'active' },
+      });
+      const [taxonomyEvent] = await connection.db
+        .select()
+        .from(taxonomyLifecycleEvents)
+        .where(eq(taxonomyLifecycleEvents.termId, equipmentCreated.term.id))
+        .orderBy(desc(taxonomyLifecycleEvents.recordedAt))
+        .limit(1);
+      expect(taxonomyEvent).toMatchObject({
+        eventKind: 'created',
+        previousLifecycle: 'archived',
+        nextLifecycle: 'active',
       });
     });
   },
