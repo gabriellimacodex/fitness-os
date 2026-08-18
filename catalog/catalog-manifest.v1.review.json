@@ -1,0 +1,22 @@
+{
+  "recordVersion": "catalog-manifest-review.v1",
+  "disposition": "PASS",
+  "reviewerRole": "independent-agent-90",
+  "manifestPath": "catalog/catalog-manifest.v1.json",
+  "schemaVersion": "catalog-manifest.v1",
+  "canonicalizationVersion": "exercise-catalog.v1",
+  "sourceCommit": "199671a797b49325e2cf165bc1ce84d7ef3a212b",
+  "canonicalDigest": "eb2c64954a47b83bc46a2a191f218c12dcf5069486728bc225e760aed4f988da",
+  "counts": {
+    "modalityTerms": 1,
+    "equipmentTerms": 1,
+    "exercises": 1,
+    "references": 0
+  },
+  "findings": {
+    "blocker": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  }
+}
