@@ -79,8 +79,25 @@ describe('onboarding routes without trusted context', () => {
       method: 'GET',
       url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555',
     });
+    const resume = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555/resume',
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const abandon = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555/abandon',
+      payload: { retryToken: RETRY_TOKEN },
+    });
 
-    for (const response of [current, inspect, create, detail]) {
+    for (const response of [
+      current,
+      inspect,
+      create,
+      detail,
+      resume,
+      abandon,
+    ]) {
       const body = apiErrorResponseSchema.parse(response.json());
 
       expect(response.statusCode).toBe(401);
@@ -681,6 +698,86 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
     expect(onboardingAttemptIdSchema.safeParse('not-a-uuid').success).toBe(
       false,
     );
+    await app.close();
+  });
+});
+
+describe('resume and abandon', () => {
+  it('resumes a nonterminal attempt as current_state and abandons to terminal', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+    const lifecycle = createdBody.result.attempt.lifecycle;
+
+    const resumed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-resume') },
+    });
+    const resumedBody = onboardingOperationResponseSchema.parse(resumed.json());
+    expect(resumedBody.result).toMatchObject({
+      outcome: 'current_state',
+      attempt: { attemptId, lifecycle },
+    });
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-resume') },
+    });
+    expect(replay.json()).toMatchObject({
+      operation: { state: 'operation_replayed' },
+      result: { outcome: 'current_state' },
+    });
+
+    const abandoned = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/abandon`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-abandon'),
+      },
+    });
+    const abandonedBody = onboardingOperationResponseSchema.parse(
+      abandoned.json(),
+    );
+    expect(abandonedBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: {
+        attemptId,
+        lifecycle: 'terminal',
+        terminalReason: 'abandoned',
+      },
+    });
+
+    const secondAbandon = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/abandon`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-abandon-2'),
+      },
+    });
+    expect(secondAbandon.json()).toMatchObject({
+      result: {
+        outcome: 'already_terminal',
+        attempt: { lifecycle: 'terminal', terminalReason: 'abandoned' },
+      },
+    });
+
     await app.close();
   });
 });
