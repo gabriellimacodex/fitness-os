@@ -47,3 +47,14 @@ export {
   type LedgerKeyStatus,
   type SignedLedgerResult,
 } from './catalog/index.js';
+export {
+  checkPrivacyCoreDatabaseReadiness,
+  createPostgresPrivacyAuditSink,
+  createPostgresPrivacyAuthorizationEvidenceLedger,
+  privacyAuditEvent,
+  privacyAuthorizationEvidence,
+  privacyWithdrawal,
+  requiredPrivacyCoreMigrationHashes,
+  type PrivacyCoreReadinessResult,
+  type PostgresPrivacyAuthorizationEvidenceLedger,
+} from './privacy/index.js';

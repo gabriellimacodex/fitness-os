@@ -23,6 +23,7 @@ import type {
   PrivacyRuntimeProcessorRegistry,
   PrivacyTrustedClock,
 } from './ports.js';
+import { planWithdrawal } from './withdrawal.js';
 
 export class SyntheticPrivacyTrustedClock implements PrivacyTrustedClock {
   constructor(private readonly fixedUtcMs: string) {}
@@ -119,6 +120,35 @@ export class SyntheticPrivacyAuthorizationEvidenceLedger implements PrivacyAutho
     evidenceId: string,
   ): Promise<PrivacyWithdrawalReference | null> {
     return this.withdrawals.get(evidenceId) ?? null;
+  }
+
+  async appendEvidence(record: PrivacyEvidenceReference) {
+    if (this.evidence.has(record.evidenceId)) {
+      return 'conflict' as const;
+    }
+    this.evidence.set(record.evidenceId, record);
+    return 'accepted' as const;
+  }
+
+  async appendWithdrawal(record: PrivacyWithdrawalReference) {
+    const planned = planWithdrawal({
+      existing: this.withdrawals.get(record.evidenceId) ?? null,
+      withdrawalId: record.withdrawalId,
+      evidenceId: record.evidenceId,
+      operationId: record.operationId,
+      withdrawnAt: record.withdrawnAt,
+    });
+
+    if (planned.status === 'conflict') {
+      return 'conflict' as const;
+    }
+
+    if (planned.status === 'already_withdrawn') {
+      return 'already_withdrawn' as const;
+    }
+
+    this.withdrawals.set(record.evidenceId, planned.withdrawal);
+    return planned.status;
   }
 }
 

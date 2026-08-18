@@ -47,11 +47,22 @@ export interface PrivacyPurposeRegistry {
   ): Promise<PrivacyPurposeVersionReference | null>;
 }
 
+export type PrivacyEvidenceAppendResult = 'accepted' | 'conflict';
+
+export type PrivacyWithdrawalAppendResult =
+  'accepted' | 'idempotent_replay' | 'already_withdrawn' | 'conflict';
+
 export interface PrivacyAuthorizationEvidenceLedger {
   getEvidence(evidenceId: string): Promise<PrivacyEvidenceReference | null>;
   getAuthoritativeWithdrawal(
     evidenceId: string,
   ): Promise<PrivacyWithdrawalReference | null>;
+  appendEvidence(
+    record: PrivacyEvidenceReference,
+  ): Promise<PrivacyEvidenceAppendResult>;
+  appendWithdrawal(
+    record: PrivacyWithdrawalReference,
+  ): Promise<PrivacyWithdrawalAppendResult>;
 }
 
 export interface PrivacyRuntimeProcessorRegistry {
