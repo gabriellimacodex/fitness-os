@@ -7,7 +7,8 @@
 - Explicitly excluded: **PRD 25 — Pilot Release** (`PROPOSED`; needs separate
   authorization)
 - Date recorded: 2026-08-18
-- Baseline head when recorded: `789f407` (PRD 03 domain core on `main`)
+- Progress snapshot head: `65729d1` (PR #33 merged; see Progress below)
+- Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
 
@@ -17,16 +18,22 @@ Use this exact objective (or invoke `/goal` with a short pointer to this file):
 Deliver Fitness OS Pilot Release Candidate (PRD 24 COMPLETED + Gate D PASS) from current main, following docs/execution/GOAL_PILOT_RC.md, docs/execution/MASTER_EXECUTION_PLAN.md, docs/prds/PRD_REGISTRY.md, AGENTS.md, MULTI_AGENT_PROTOCOL.md, docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md, docs/execution/RELEASE_GATES.md, docs/execution/STOP_CONDITIONS.md, and docs/execution/REVIEWER_AGENT.md. Execute the dependency DAG wave-by-wave without inventing parallel product paths. Complete each APPROVED/IN_PROGRESS PRD with contracts → design → implementation → tests → Agent 90 → CI green → Gate A before dependents. PRD 03 Option A and PRD 21 Option A are binding. Do not start PRD 25. Do not merge with open BLOCKER/HIGH. Stop only on STOP_CONDITIONS; otherwise keep delivering. Human stops (HUMAN_PERCEPTION, LEGAL_PRIVACY, credentials, financial) pause only the blocked path and continue unrelated authorized work. Report AGENT HANDOFF after each mergeable slice. Done only when PRD 24 is COMPLETED, Gate D evidence exists on the exact head, known limitations are documented, and an independent verification can reproduce Gate D PASS — not a builder claim.
 ```
 
+Short form:
+
+```text
+/goal Execute docs/execution/GOAL_PILOT_RC.md to completion
+```
+
 ## Definition of done
 
 The goal is complete **only** when all of the following are true and
 independently verifiable:
 
-1. Registry shows PRDs **00–24** (except conditional PRD 22) in the states
-   required for Pilot RC: every unconditional dependency of PRD 24 is
-   `COMPLETED`.
+1. Registry shows every unconditional dependency of PRD 24
+   (`11, 13, 18, 19, 20, 21, 23` and their transitive required deps) as
+   `COMPLETED`. PRD 22 may remain non-integrated.
 2. PRD **24** is `COMPLETED` with a durable Gate D PASS record for the exact
-   candidate head.
+   candidate head under `docs/execution/gates/`.
 3. CI `quality` is green on that exact head.
 4. Agent 90 (or equivalent independent reviewer) has PASS with **0 BLOCKER**
    and **0 HIGH** open on the RC candidate.
@@ -47,6 +54,8 @@ integrated after its POC gate.
 - Weakening acceptance criteria, fabricating human-perception or legal
   approvals, inventing credentials, or patching rejected architecture
   candidates named in Option A records
+- Claiming perfect security or zero possible defects
+- Mandatory inclusion of PRD 22 in the baseline RC
 
 ## Authority and working rules
 
@@ -74,45 +83,47 @@ integrated after its POC gate.
   patch rejected schema candidate `df76f91`; real-data paths remain under
   `LEGAL_PRIVACY_DECISION_REQUIRED`.
 
-## Baseline already on `main` (do not redo)
+## Progress snapshot (do not redo completed work)
 
-| Area      | State                                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02 | `COMPLETED`                                                                                                                       |
-| PRD 03    | `IN_PROGRESS` — Option A data lane + domain core merged; API / ingest / Gate A still open                                         |
-| PRD 04    | `IN_PROGRESS` — mechanics merged; published content still needs human perception for Gate A content publication                   |
-| PRD 07    | `IN_PROGRESS` — contracts, domain invariants, synthetic API merged; session/claim/persistence and real-user activation still open |
-| PRD 21    | `BLOCKED` until Option A implementation wave starts (decision recorded)                                                           |
+| Area                 | State                                                                                                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                   |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                             |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                             |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                          |
+| PRD 07               | `IN_PROGRESS` — synthetic API + claim/mappings on `main` (#31, #32); real-user activation still stop-gated                                                                    |
+| PRD 21               | `IN_PROGRESS` — Option A foundation + policy/evidence reference contracts merged (#28, #33); next contract/API slices open; real-data under `LEGAL_PRIVACY_DECISION_REQUIRED` |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                      |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                     |
 
-Exact baseline commit when this goal was recorded: `789f407`.
+Open stop that blocks the Training Core chain: **PRD 04 content** needs human
+perception receipts before Gate A content publication and before PRD 05.
 
-## Execution sequence from baseline
+## Execution sequence from current progress
 
 Work the DAG; use safe wave parallelism only when ownership and contracts allow.
 
-### Wave 2 — finish before Training Core
+### Wave 2 — remaining
 
-1. **PRD 03** — API composition (read routes), persistence adapters wired to
-   Option A ledger, reviewed manifest ingestion, Gate A → `COMPLETED`.
-2. **PRD 04** — close remaining Gate A (including human-perception for
-   published content when that gate applies) → `COMPLETED`.
-3. Do not start PRD 05 until **both** 03 and 04 are `COMPLETED`.
+1. **PRD 04** — resume only after human perception receipts; close Gate A →
+   `COMPLETED`. Until then, keep the stop recorded and do not invent receipts.
+2. Do not start PRD 05 until **both** 03 and 04 are `COMPLETED`.
 
-### Wave 3 — after respective deps
+### Wave 3 — authorized in parallel where deps allow
 
-4. **PRD 05** Training Core (deps 02+03+04) through Gate A / external Training
-   Core gate as required.
-5. **PRD 07** continue authorized synthetic → production-ready onboarding
-   within stop boundaries; real users blocked by `LEGAL_PRIVACY` until cleared.
-6. **PRD 21** start Option A wave from current `main`; synthetic/policy-neutral
+3. **PRD 07** — continue authorized synthetic / policy-reference onboarding;
+   real users blocked by `LEGAL_PRIVACY` until cleared.
+4. **PRD 21** — continue Option A from current `main`; synthetic/policy-neutral
    mechanics first; real-data/production policy stay stop-gated.
+5. **PRD 05** Training Core — only after 03+04 `COMPLETED`; then Gate A /
+   external Training Core gate as required.
 
 ### Waves 4–12 — dependents only when deps are COMPLETED
 
-7. Follow registry dependencies for PRDs 06, 08–20, 23 (and 09–18 stack).
-8. External gates (Training Core, Body+Twin, Copilot, Release Candidate) must
+6. Follow registry dependencies for PRDs 06, 08–20, 23 (and 09–18 stack).
+7. External gates (Training Core, Body+Twin, Copilot, Release Candidate) must
    PASS or remain honestly `BLOCKED`/`PENDING` — never fake PASS.
-9. **PRD 24** — integrate unconditional deps; Gate D; document limitations;
+8. **PRD 24** — integrate unconditional deps; Gate D; document limitations;
    mark `COMPLETED`.
 
 ### Human / external pauses (expected; do not invent answers)
