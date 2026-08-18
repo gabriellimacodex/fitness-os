@@ -145,8 +145,8 @@ export function buildApp(
       path.startsWith('/movements/') ||
       path === '/exercises' ||
       path.startsWith('/exercises/') ||
-      path === '/taxonomy' ||
-      path.startsWith('/taxonomy/')
+      path === '/exercise-taxonomy' ||
+      path.startsWith('/exercise-taxonomy/')
     ) {
       reply.header('cache-control', 'no-store');
     }

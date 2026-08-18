@@ -5,7 +5,7 @@
   "manifestPath": "catalog/catalog-manifest.v1.json",
   "schemaVersion": "catalog-manifest.v1",
   "canonicalizationVersion": "exercise-catalog.v1",
-  "sourceCommit": "199671a797b49325e2cf165bc1ce84d7ef3a212b",
+  "sourceCommit": "789f4072a0e4eefc0d9ac6c9f2b8cbb4e212e9f7",
   "canonicalDigest": "eb2c64954a47b83bc46a2a191f218c12dcf5069486728bc225e760aed4f988da",
   "counts": {
     "modalityTerms": 1,
