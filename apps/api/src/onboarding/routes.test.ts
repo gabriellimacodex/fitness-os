@@ -6,6 +6,7 @@ import {
   onboardingAttemptIdSchema,
   onboardingOperationResponseSchema,
   retryTokenSchema,
+  studentInvitationListResponseSchema,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -89,6 +90,20 @@ describe('onboarding routes without trusted context', () => {
       url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555/abandon',
       payload: { retryToken: RETRY_TOKEN },
     });
+    const listInvitations = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/student-invitations',
+    });
+    const issueInvitation = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const revokeInvitation = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations/66666666-6666-4666-8666-666666666666/revoke',
+      payload: { retryToken: RETRY_TOKEN },
+    });
 
     for (const response of [
       current,
@@ -97,6 +112,9 @@ describe('onboarding routes without trusted context', () => {
       detail,
       resume,
       abandon,
+      listInvitations,
+      issueInvitation,
+      revokeInvitation,
     ]) {
       const body = apiErrorResponseSchema.parse(response.json());
 
@@ -698,6 +716,122 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
     expect(onboardingAttemptIdSchema.safeParse('not-a-uuid').success).toBe(
       false,
     );
+    await app.close();
+  });
+});
+
+describe('student invitation list/issue/revoke', () => {
+  it('issues, lists, and revokes coach-owned student invitations without leaking foreign ones', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, {
+      claimSecret: OTHER_SECRET,
+      purpose: 'student_onboarding',
+      targetCoachPrincipalKey: 'other-coach',
+    });
+    const { app } = buildSyntheticApp({
+      mappedRoles: ['coach'],
+      store,
+    });
+
+    const forbiddenStudent = buildSyntheticApp({
+      mappedRoles: ['student'],
+      principalKey: 'student-principal',
+      store,
+    });
+    const denied = await forbiddenStudent.app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue-denied'),
+      },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(apiErrorResponseSchema.parse(denied.json()).error.code).toBe(
+      'FORBIDDEN',
+    );
+    await forbiddenStudent.app.close();
+
+    const issued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue'),
+      },
+    });
+    const issuedBody = onboardingOperationResponseSchema.parse(issued.json());
+    expect(issuedBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      command: 'issue_student_invitation',
+      issued: { purpose: 'student_onboarding', state: 'issued' },
+    });
+    if (
+      !issuedBody.result ||
+      issuedBody.result.outcome !== 'command_succeeded' ||
+      !('issued' in issuedBody.result)
+    ) {
+      throw new Error('expected issued invitation');
+    }
+    const invitationId = issuedBody.result.issued.invitationId;
+    const claimSecret = issuedBody.result.issued.claimSecret;
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue'),
+      },
+    });
+    expect(replay.json()).toMatchObject({
+      operation: { state: 'operation_replayed' },
+      result: {
+        issued: { invitationId, claimSecret },
+      },
+    });
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/student-invitations',
+    });
+    const listBody = studentInvitationListResponseSchema.parse(listed.json());
+    expect(listBody.items).toEqual([
+      {
+        invitationId,
+        purpose: 'student_onboarding',
+        state: 'issued',
+      },
+    ]);
+    expect(listed.body).not.toContain(claimSecret);
+    expect(listed.body).not.toContain(OTHER_SECRET);
+
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${invitationId}/revoke`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-revoke'),
+      },
+    });
+    expect(revoked.json()).toMatchObject({
+      result: {
+        outcome: 'command_succeeded',
+        command: 'revoke_student_invitation',
+        invitation: {
+          invitationId,
+          purpose: 'student_onboarding',
+          state: 'revoked',
+        },
+      },
+    });
+    expect(revoked.body).not.toContain(claimSecret);
+
+    const foreignRevoke = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations/66666666-6666-4666-8666-666666666666/revoke',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-revoke-foreign'),
+      },
+    });
+    expect(foreignRevoke.statusCode).toBe(404);
+
     await app.close();
   });
 });

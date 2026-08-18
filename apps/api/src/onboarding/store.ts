@@ -40,7 +40,9 @@ export type OnboardingMutationNamespace =
   | 'resume_attempt'
   | 'abandon_attempt'
   | 'refresh_policy'
-  | 'claim_attempt';
+  | 'claim_attempt'
+  | 'issue_student_invitation'
+  | 'revoke_student_invitation';
 
 export interface StoredOperation {
   digest: string;
