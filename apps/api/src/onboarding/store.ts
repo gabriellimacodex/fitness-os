@@ -35,9 +35,12 @@ export interface StoredAttempt {
   principalKey: string;
 }
 
+export type OnboardingMutationNamespace =
+  'create_attempt' | 'refresh_policy' | 'claim_attempt';
+
 export interface StoredOperation {
   digest: string;
-  namespace: 'create_attempt';
+  namespace: OnboardingMutationNamespace;
   operationId: OnboardingOperationId;
   result: unknown;
   retryDigest: string;
@@ -46,6 +49,7 @@ export interface StoredOperation {
 export interface OnboardingStore {
   attempts: Map<string, StoredAttempt>;
   invitations: Map<string, StoredInvitation>;
+  mappings: Map<string, ProposedRole[]>;
   operations: Map<string, StoredOperation>;
   pepper: Buffer;
 }
@@ -54,9 +58,28 @@ export function createOnboardingStore(): OnboardingStore {
   return {
     attempts: new Map(),
     invitations: new Map(),
+    mappings: new Map(),
     operations: new Map(),
     pepper: randomBytes(32),
   };
+}
+
+export function mappedRolesFor(
+  store: OnboardingStore,
+  principalKey: string,
+): ProposedRole[] {
+  return [...(store.mappings.get(principalKey) ?? [])];
+}
+
+export function recordRoleMapping(
+  store: OnboardingStore,
+  principalKey: string,
+  role: ProposedRole,
+): void {
+  const existing = mappedRolesFor(store, principalKey);
+  if (!existing.includes(role)) {
+    store.mappings.set(principalKey, [...existing, role]);
+  }
 }
 
 export function digestClaimSecret(secret: string, pepper: Buffer): string {
@@ -101,7 +124,7 @@ export function mappingIdFor(
 
 export function operationBindingKey(
   principalKey: string,
-  namespace: StoredOperation['namespace'],
+  namespace: OnboardingMutationNamespace,
   retryDigest: string,
 ): string {
   return `${principalKey}:${namespace}:${retryDigest}`;
