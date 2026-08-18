@@ -586,3 +586,204 @@ export const privacyAuditEventReferenceSchema = z
 export type PrivacyAuditEventReference = z.infer<
   typeof privacyAuditEventReferenceSchema
 >;
+
+export const privacyProcessorIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyProcessorId'>();
+export type PrivacyProcessorId = z.infer<typeof privacyProcessorIdSchema>;
+
+export const privacyProcessorInventoryIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyProcessorInventoryId'>();
+export type PrivacyProcessorInventoryId = z.infer<
+  typeof privacyProcessorInventoryIdSchema
+>;
+
+/**
+ * Closed handler capabilities a processor may declare. Absent handlers are
+ * coverage failures — never silently treated as not_found or completed.
+ */
+export const privacyProcessorCapabilitySchema = z.enum([
+  'inventory',
+  'access',
+  'export',
+  'delete',
+  'retention',
+  'governance_lifecycle',
+]);
+export type PrivacyProcessorCapability = z.infer<
+  typeof privacyProcessorCapabilitySchema
+>;
+
+export const privacyProcessorCapabilitiesSchema = z
+  .array(privacyProcessorCapabilitySchema)
+  .max(16);
+
+/**
+ * Code-owned processor descriptor. No provider host, region, credential, or
+ * self-attested completeness flag — inventory match is evaluated externally.
+ */
+export const privacyProcessorDescriptorReferenceSchema = z
+  .object({
+    processorId: privacyProcessorIdSchema,
+    inventoryId: privacyProcessorInventoryIdSchema,
+    descriptorDigest: privacySha256DigestSchema,
+    inventoryVersionDigest: privacySha256DigestSchema,
+    allowedPurposeIds: z.array(privacyPurposeIdSchema).max(64),
+    allowedCategoryIds: z.array(privacyEngineeringCategoryIdSchema).max(64),
+    capabilities: privacyProcessorCapabilitiesSchema,
+    supportsSubjectLookup: z.boolean(),
+    codeOwner: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._:-]+$/),
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyProcessorDescriptorReference = z.infer<
+  typeof privacyProcessorDescriptorReferenceSchema
+>;
+
+export const canonicalizePrivacyProcessorDescriptorReference = (
+  input: PrivacyProcessorDescriptorReference,
+): PrivacyProcessorDescriptorReference => ({
+  ...input,
+  allowedCategoryIds: sortPrivacySetIdentifiers(input.allowedCategoryIds),
+  allowedPurposeIds: sortPrivacySetIdentifiers(input.allowedPurposeIds),
+  capabilities: sortPrivacySetIdentifiers(input.capabilities),
+});
+
+/**
+ * Safe readiness diagnostic codes only. No policy text, subject IDs, hosts,
+ * regions, credentials, or raw exceptions.
+ */
+export const privacyReadinessDiagnosticCodeSchema = z.enum([
+  'policy_missing',
+  'policy_synthetic',
+  'policy_unattributed',
+  'policy_integrity_invalid',
+  'policy_transition_unresolved',
+  'environment_mismatch',
+  'inventory_mismatch',
+  'processor_missing',
+  'handler_missing',
+  'migration_missing',
+  'audit_unavailable',
+  'governance_table_lifecycle_missing',
+  'exception_unapproved',
+  'exception_expired',
+  'hold_unresolved',
+  'lifecycle_authority_unavailable',
+  'lifecycle_authority_synthetic',
+  'recovery_unverified',
+  'identity_boundary_missing',
+  'legal_privacy_decision_required',
+  'active_stop_condition',
+  'contract_version_mismatch',
+  'canonicalization_version_mismatch',
+  'repository_unavailable',
+]);
+export type PrivacyReadinessDiagnosticCode = z.infer<
+  typeof privacyReadinessDiagnosticCodeSchema
+>;
+
+export const privacyReadinessComponentStateSchema = z.enum([
+  'ready',
+  'not_ready',
+  'unavailable',
+]);
+export type PrivacyReadinessComponentState = z.infer<
+  typeof privacyReadinessComponentStateSchema
+>;
+
+export const privacyReadinessComponentIdSchema = z.enum([
+  'contracts',
+  'migrations',
+  'repositories',
+  'audit_sink',
+  'expected_inventory',
+  'runtime_processors',
+  'governance_lifecycle',
+  'identity_boundary',
+  'policy_package',
+  'recovery',
+]);
+export type PrivacyReadinessComponentId = z.infer<
+  typeof privacyReadinessComponentIdSchema
+>;
+
+export const privacyReadinessComponentSchema = z
+  .object({
+    componentId: privacyReadinessComponentIdSchema,
+    state: privacyReadinessComponentStateSchema,
+    diagnosticCode: privacyReadinessDiagnosticCodeSchema.nullable(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.state === 'ready' && value.diagnosticCode !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ready components must not carry a diagnosticCode',
+        path: ['diagnosticCode'],
+      });
+    }
+    if (value.state !== 'ready' && value.diagnosticCode === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'non-ready components require a closed diagnosticCode',
+        path: ['diagnosticCode'],
+      });
+    }
+  });
+export type PrivacyReadinessComponent = z.infer<
+  typeof privacyReadinessComponentSchema
+>;
+
+/**
+ * Conjunctive readiness result. `mechanismReady` never means production
+ * activation. Current authorized compositions keep `productionReady: false`
+ * with `legal_privacy_decision_required` while that stop is active.
+ */
+export const privacyReadinessResultSchema = z
+  .object({
+    mechanismReady: z.boolean(),
+    productionReady: z.boolean(),
+    canonicalizationVersion: privacyCanonicalizationVersionSchema,
+    schemaDigest: privacySha256DigestSchema,
+    inventoryVersionDigest: privacySha256DigestSchema.nullable(),
+    components: z.array(privacyReadinessComponentSchema).max(32),
+    diagnosticCodes: z.array(privacyReadinessDiagnosticCodeSchema).max(64),
+    evaluatedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.mechanismReady &&
+      value.components.some((component) => component.state !== 'ready')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'mechanismReady requires every component to be ready',
+        path: ['mechanismReady'],
+      });
+    }
+    if (
+      value.productionReady &&
+      value.diagnosticCodes.includes('legal_privacy_decision_required')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'productionReady cannot be true while legal_privacy_decision_required is reported',
+        path: ['productionReady'],
+      });
+    }
+  });
+export type PrivacyReadinessResult = z.infer<
+  typeof privacyReadinessResultSchema
+>;
+
+export const canonicalizePrivacyReadinessDiagnosticCodes = (
+  codes: readonly PrivacyReadinessDiagnosticCode[],
+): PrivacyReadinessDiagnosticCode[] => sortPrivacySetIdentifiers([...codes]);

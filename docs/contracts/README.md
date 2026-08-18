@@ -117,20 +117,27 @@ is backend-only and must never appear on a public request or response schema.
 | Purpose version references             | `privacyPurposeVersionReferenceSchema` in `privacy-governance.ts`                                          | Purpose registry                  | Domain evaluation and tests                   | Frozen |
 | Subject request references             | `privacySubjectRequestReferenceSchema` in `privacy-governance.ts`                                          | Request coordinator               | Domain evaluation, ledger, and tests          | Frozen |
 | Audit event references                 | `privacyAuditEventReferenceSchema` in `privacy-governance.ts`                                              | Privacy audit sink                | Domain evaluation, ledger, and tests          | Frozen |
+| Processor descriptors                  | `privacyProcessorDescriptorReferenceSchema` in `privacy-governance.ts`                                     | Runtime processor registry        | Domain evaluation, readiness, and tests       | Frozen |
+| Privacy readiness                      | `privacyReadinessResultSchema` / diagnostic codes in `privacy-governance.ts`                               | Privacy readiness composition     | API readiness adapters and tests              | Frozen |
 
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
-request/audit locators and tagged data-use decisions: every declared operation
-kind has exactly one versioned canonical profile; `retention_preview` declares
-`/approvedExceptionIds` as a set-like path with UTF-8 bytewise sort before digest;
-`completed` and `partially_failed` lifecycle results require `proofId`, and
-`denied` rejects it. Actor context binds principal identity by digest and closed
-authority claims only — no raw token, student/coach ID, or legal role. Purpose
-versions bind allowed operations/categories without legal purpose text. Subject
-requests carry engineering type/state and verification digests only — not legal
-entitlement. Audit events use closed kinds/outcomes and reject free-text
-metadata. Policy/evidence/withdrawal schemas carry digests and IDs only — no
-legal copy or participant answers. Withdrawal is one-way (`withdrawn` only) and
-never reopens evidence. `DataUseDecision` is a tagged `allowed` | `denied` union
-with a closed deny taxonomy — never a boolean grant. Processor and readiness
-contracts remain for later coordinated freeze slices. No public Fastify routes or
-database migrations are authorized by this foundation.
+request/audit/processor locators, tagged data-use decisions, and fail-closed
+readiness: every declared operation kind has exactly one versioned canonical
+profile; `retention_preview` declares `/approvedExceptionIds` as a set-like path
+with UTF-8 bytewise sort before digest; `completed` and `partially_failed`
+lifecycle results require `proofId`, and `denied` rejects it. Actor context binds
+principal identity by digest and closed authority claims only — no raw token,
+student/coach ID, or legal role. Purpose versions bind allowed
+operations/categories without legal purpose text. Subject requests carry
+engineering type/state and verification digests only — not legal entitlement.
+Audit events use closed kinds/outcomes and reject free-text metadata. Processor
+descriptors declare capabilities/code owner without hosts, regions, or
+credentials. Readiness separates `mechanismReady` from `productionReady` and uses
+closed diagnostic codes only; compositions under
+`LEGAL_PRIVACY_DECISION_REQUIRED` keep `productionReady: false` with
+`legal_privacy_decision_required`. Policy/evidence/withdrawal schemas carry
+digests and IDs only — no legal copy or participant answers. Withdrawal is
+one-way (`withdrawn` only) and never reopens evidence. `DataUseDecision` is a
+tagged `allowed` | `denied` union with a closed deny taxonomy — never a boolean
+grant. No public Fastify routes or database migrations are authorized by this
+foundation.

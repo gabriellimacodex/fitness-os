@@ -17,10 +17,14 @@ import {
   privacyLifecycleProofIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
+  privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
+  privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
   privacySubjectRequestReferenceSchema,
   privacyWithdrawalReferenceSchema,
+  canonicalizePrivacyProcessorDescriptorReference,
+  canonicalizePrivacyReadinessDiagnosticCodes,
   retentionPreviewCanonicalInputSchema,
   sortPrivacySetIdentifiers,
 } from '../src/privacy-governance.js';
@@ -473,6 +477,119 @@ describe('subject request and audit event references', () => {
       privacyAuditEventReferenceSchema.safeParse({
         ...succeeded,
         stackTrace: 'Error: boom',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('processor descriptor and readiness contracts', () => {
+  it('accepts processor descriptors without provider hosts or credentials', () => {
+    const parsed = privacyProcessorDescriptorReferenceSchema.parse({
+      processorId: '99999999-9999-4999-8999-999999999999',
+      inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      descriptorDigest: '3'.repeat(64),
+      inventoryVersionDigest: '4'.repeat(64),
+      allowedPurposeIds: [
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      ],
+      allowedCategoryIds: [
+        '44444444-4444-4444-8444-444444444444',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+      capabilities: ['export', 'inventory', 'access'],
+      supportsSubjectLookup: true,
+      codeOwner: 'packages.domain.privacy',
+      synthetic: true,
+    });
+
+    const canonical = canonicalizePrivacyProcessorDescriptorReference(parsed);
+    expect(canonical.capabilities).toEqual(
+      sortPrivacySetIdentifiers(['access', 'export', 'inventory']),
+    );
+    expect(canonical.allowedPurposeIds).toEqual(
+      sortPrivacySetIdentifiers([
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      ]),
+    );
+
+    expect(
+      privacyProcessorDescriptorReferenceSchema.safeParse({
+        ...parsed,
+        host: 'db.internal',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorDescriptorReferenceSchema.safeParse({
+        ...parsed,
+        apiKey: 'secret',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorDescriptorReferenceSchema.safeParse({
+        ...parsed,
+        capabilities: ['not_applicable'],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('keeps productionReady false under legal_privacy_decision_required', () => {
+    const stopped = privacyReadinessResultSchema.parse({
+      mechanismReady: true,
+      productionReady: false,
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      schemaDigest: '5'.repeat(64),
+      inventoryVersionDigest: '6'.repeat(64),
+      components: [
+        {
+          componentId: 'contracts',
+          state: 'ready',
+          diagnosticCode: null,
+        },
+        {
+          componentId: 'policy_package',
+          state: 'ready',
+          diagnosticCode: null,
+        },
+      ],
+      diagnosticCodes: ['legal_privacy_decision_required'],
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+    });
+    expect(stopped.productionReady).toBe(false);
+    expect(
+      canonicalizePrivacyReadinessDiagnosticCodes(stopped.diagnosticCodes),
+    ).toEqual(['legal_privacy_decision_required']);
+
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        productionReady: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        mechanismReady: true,
+        components: [
+          {
+            componentId: 'audit_sink',
+            state: 'not_ready',
+            diagnosticCode: 'audit_unavailable',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        region: 'us-east-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        diagnosticCodes: ['sql_exception'],
       }).success,
     ).toBe(false);
   });
