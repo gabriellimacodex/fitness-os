@@ -43,6 +43,7 @@ import {
   mappingIdFor,
   newOperationId,
   nextOrdinalForRole,
+  mappedRolesFor,
   operationBindingKey,
   recordRoleMapping,
   type OnboardingMutationNamespace,
@@ -238,7 +239,12 @@ export function registerOnboardingRoutes(
 
     return currentOnboardingResponseSchema.parse({
       attempts: page.map((record) => summarizeAttempt(record.detail)),
-      mappings: context.mappedRoles.map((role) => ({
+      mappings: [
+        ...new Set([
+          ...context.mappedRoles,
+          ...mappedRolesFor(store, context.principalKey),
+        ]),
+      ].map((role) => ({
         mappingId: mappingIdFor(context.principalKey, role),
         role,
       })),
@@ -368,12 +374,19 @@ export function registerOnboardingRoutes(
       return commit({ outcome: 'invalid_or_unavailable' });
     }
 
-    if (context.mappedRoles.includes(invitation.proposedRole)) {
+    const alreadyMappedRoles = [
+      ...new Set([
+        ...context.mappedRoles,
+        ...mappedRolesFor(store, context.principalKey),
+      ]),
+    ];
+
+    if (alreadyMappedRoles.includes(invitation.proposedRole)) {
       return commit({ outcome: 'mapping_conflict' });
     }
 
     const eligibility = evaluateClaimEligibility({
-      alreadyMappedRoles: context.mappedRoles,
+      alreadyMappedRoles,
       invitationPurpose: invitation.purpose,
       proposedRole: invitation.proposedRole,
       targetCoachIsSelf:
