@@ -220,3 +220,63 @@ export const privacyAuditEvent = pgTable(
     index('privacy_audit_event_operation_id_idx').on(table.operationId),
   ],
 );
+
+/**
+ * Current pointer for a data-subject request. Transition history remains a
+ * later append-only slice per frozen contracts.
+ */
+export const privacySubjectRequest = pgTable(
+  'privacy_subject_request',
+  {
+    requestId: uuid('request_id').primaryKey(),
+    requestType: text('request_type').notNull(),
+    state: text('state').notNull(),
+    verificationRefDigest: text('verification_ref_digest'),
+    verificationSynthetic: boolean('verification_synthetic'),
+    policyVersionId: uuid('policy_version_id').notNull(),
+    inventoryVersionDigest: text('inventory_version_digest').notNull(),
+    correlationId: uuid('correlation_id').notNull(),
+    updatedAt: timestamp('updated_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.policyVersionId],
+      foreignColumns: [privacyPolicyPackageVersion.versionId],
+      name: 'privacy_subject_request_policy_version_id_fk',
+    }).onDelete('restrict'),
+    check(
+      'privacy_subject_request_type_check',
+      sql`${table.requestType} IN ('access', 'export', 'deletion')`,
+    ),
+    check(
+      'privacy_subject_request_state_check',
+      sql`${table.state} IN (
+        'received',
+        'verification_required',
+        'policy_blocked',
+        'ready',
+        'in_progress',
+        'partially_failed',
+        'completed',
+        'cancelled',
+        'denied'
+      )`,
+    ),
+    check(
+      'privacy_subject_request_inventory_version_digest_check',
+      sql`${table.inventoryVersionDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_subject_request_verification_pair_check',
+      sql`(
+        (${table.verificationRefDigest} IS NULL AND ${table.verificationSynthetic} IS NULL) OR
+        (${table.verificationRefDigest} ~ '^[a-f0-9]{64}$' AND ${table.verificationSynthetic} IS NOT NULL)
+      )`,
+    ),
+    index('privacy_subject_request_state_idx').on(table.state),
+    index('privacy_subject_request_updated_at_idx').on(table.updatedAt),
+  ],
+);

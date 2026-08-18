@@ -19,6 +19,7 @@ const REQUIRED_PRIVACY_CORE_MIGRATION_FILES = [
   '0001_prd03_exercise_catalog.sql',
   '0002_prd21_privacy_core.sql',
   '0003_prd21_privacy_policy_purpose_processor.sql',
+  '0004_prd21_privacy_subject_request.sql',
 ] as const;
 
 function hashMigrationFile(relativePath: string): string {
@@ -52,6 +53,7 @@ const REQUIRED_TABLES = [
   'privacy_authorization_evidence',
   'privacy_withdrawal',
   'privacy_audit_event',
+  'privacy_subject_request',
 ] as const;
 
 export async function checkPrivacyCoreDatabaseReadiness(

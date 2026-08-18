@@ -146,7 +146,7 @@ one-way (`withdrawn` only) and never reopens evidence. `DataUseDecision` is a
 tagged `allowed` | `denied` union with a closed deny taxonomy — never a boolean
 grant. No public Fastify production privacy routes are authorized by this
 foundation. Disposable PostgreSQL persistence for Option A policy/purpose/
-processor references plus evidence / withdrawal / audit ledgers may land in
-additive migrations under `packages/database` for synthetic test environments
-only; production policy activation remains stopped by
-`LEGAL_PRIVACY_DECISION_REQUIRED`.
+processor references, subject-request current pointers, and evidence /
+withdrawal / audit ledgers may land in additive migrations under
+`packages/database` for synthetic test environments only; production policy
+activation remains stopped by `LEGAL_PRIVACY_DECISION_REQUIRED`.
