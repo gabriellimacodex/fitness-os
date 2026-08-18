@@ -1,3 +1,4 @@
+import type { ExerciseKnowledgeReader } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
   healthResponseSchema,
@@ -13,6 +14,10 @@ import Fastify, {
 import { randomUUID } from 'node:crypto';
 
 import {
+  registerExerciseCatalogRoutes,
+  type ExerciseCatalogRouteDependencies,
+} from './exercise-catalog-routes.js';
+import {
   registerOnboardingRoutes,
   type ResolveOnboardingContext,
 } from './onboarding/routes.js';
@@ -24,6 +29,11 @@ export type ReadinessCheck = () => boolean | Promise<boolean>;
 export interface PlatformOptions {
   allowSyntheticOnboarding?: boolean;
   corsAllowedOrigins?: readonly string[];
+  exerciseCatalog?: {
+    reader: ExerciseKnowledgeReader;
+    isInvalidRequest?: ExerciseCatalogRouteDependencies['isInvalidRequest'];
+    isStorageUnavailable?: ExerciseCatalogRouteDependencies['isStorageUnavailable'];
+  };
   onboarding?: {
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
@@ -130,7 +140,14 @@ export function buildApp(
     const isClientError = isFastifyClientInputError(error, validationErrors);
     const path = request.url.split('?')[0] ?? '';
 
-    if (path === '/movements' || path.startsWith('/movements/')) {
+    if (
+      path === '/movements' ||
+      path.startsWith('/movements/') ||
+      path === '/exercises' ||
+      path.startsWith('/exercises/') ||
+      path === '/taxonomy' ||
+      path.startsWith('/taxonomy/')
+    ) {
       reply.header('cache-control', 'no-store');
     }
 
@@ -175,6 +192,16 @@ export function buildApp(
 
   registerMovementRoutes(app);
   registerOnboardingRoutes(app, platform.onboarding);
+
+  if (platform.exerciseCatalog !== undefined) {
+    registerExerciseCatalogRoutes(app, {
+      reader: platform.exerciseCatalog.reader,
+      isInvalidRequest:
+        platform.exerciseCatalog.isInvalidRequest ?? (() => false),
+      isStorageUnavailable:
+        platform.exerciseCatalog.isStorageUnavailable ?? (() => false),
+    });
+  }
 
   return app;
 }

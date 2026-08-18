@@ -315,3 +315,27 @@ describe('CORS policy', () => {
     await app.close();
   });
 });
+
+describe('exercise catalog platform composition', () => {
+  it('registers catalog routes when a reader is injected', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        exerciseCatalog: {
+          reader: {
+            listExercises: async () => ({ items: [], nextCursor: null }),
+            getCurrentExercise: async () => null,
+            getExerciseRevision: async () => null,
+            listTaxonomy: async () => ({ items: [], nextCursor: null }),
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({ method: 'GET', url: '/exercises' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ items: [], nextCursor: null });
+    await app.close();
+  });
+});
