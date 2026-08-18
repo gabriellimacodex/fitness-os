@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/cli.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fitness-os/database": "workspace:*",
     "@fitness-os/domain": "workspace:*",
     "@fitness-os/schemas": "workspace:*"
   }

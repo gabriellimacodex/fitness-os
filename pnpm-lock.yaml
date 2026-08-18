@@ -38,6 +38,9 @@ importers:
       '@fastify/cors':
         specifier: 11.3.0
         version: 11.3.0
+      '@fitness-os/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@fitness-os/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -54,6 +57,9 @@ importers:
 
   apps/catalog-ingest:
     dependencies:
+      '@fitness-os/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@fitness-os/domain':
         specifier: workspace:*
         version: link:../../packages/domain
