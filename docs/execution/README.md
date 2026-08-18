@@ -11,6 +11,7 @@ The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md)
 ## Control documents
 
 - [Master Execution Plan](MASTER_EXECUTION_PLAN.md) — capability DAG, dependencies, sequencing, and safe research lanes.
+- [Goal — Pilot Release Candidate](GOAL_PILOT_RC.md) — standing `/goal` meta through PRD 24 (excludes PRD 25).
 - [Autonomous Delivery Charter](AUTONOMOUS_DELIVERY_CHARTER.md) — standing authority, merge policy, correction loop, and completion rules.
 - [Stop Conditions](STOP_CONDITIONS.md) — the limited situations that require founder or human action.
 - [Release Gates](RELEASE_GATES.md) — PR, capability, external red-team, and Pilot Release Candidate gates.
