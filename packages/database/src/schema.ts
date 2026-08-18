@@ -28,6 +28,7 @@ export {
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyPurposeVersion,
+  privacySubjectRequest,
   privacyWithdrawal,
 } from './privacy/tables.js';
 

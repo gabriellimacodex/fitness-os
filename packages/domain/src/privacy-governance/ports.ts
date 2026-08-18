@@ -11,7 +11,10 @@ import type {
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
   PrivacyPurposeVersionReference,
+  PrivacySubjectRequestReference,
+  PrivacySubjectRequestState,
   PrivacySubjectScopeId,
+  PrivacyVerificationReference,
   PrivacyWithdrawalReference,
 } from '@fitness-os/schemas';
 
@@ -80,6 +83,46 @@ export interface PrivacyRuntimeProcessorRegistry {
   put(
     record: PrivacyProcessorDescriptorReference,
   ): Promise<PrivacyReferencePutResult>;
+}
+
+export type PrivacySubjectRequestApplyResult =
+  | {
+      status: 'advanced';
+      request: PrivacySubjectRequestReference;
+    }
+  | {
+      status: 'already_terminal';
+      request: PrivacySubjectRequestReference;
+    }
+  | {
+      status: 'invalid';
+      reason:
+        | 'illegal_transition'
+        | 'verification_required'
+        | 'synthetic_verification_in_production'
+        | 'terminal_state'
+        | 'not_found';
+    }
+  | {
+      status: 'conflict';
+    };
+
+/**
+ * Current-pointer repository for data-subject requests.
+ * Transition history remains a later append-only slice.
+ */
+export interface PrivacySubjectRequestRepository {
+  get(requestId: string): Promise<PrivacySubjectRequestReference | null>;
+  put(
+    record: PrivacySubjectRequestReference,
+  ): Promise<PrivacyReferencePutResult>;
+  applyTransition(input: {
+    requestId: string;
+    next: PrivacySubjectRequestState;
+    updatedAt: string;
+    verification?: PrivacyVerificationReference | null;
+    productionMode?: boolean;
+  }): Promise<PrivacySubjectRequestApplyResult>;
 }
 
 export interface PrivacyDataUsePorts {

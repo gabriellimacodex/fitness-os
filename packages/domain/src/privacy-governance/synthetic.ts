@@ -10,6 +10,7 @@ import {
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyPurposeVersionReference,
+  type PrivacySubjectRequestReference,
   type PrivacyWithdrawalReference,
 } from '@fitness-os/schemas';
 
@@ -21,8 +22,10 @@ import type {
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
+  PrivacySubjectRequestRepository,
   PrivacyTrustedClock,
 } from './ports.js';
+import { transitionSubjectRequest } from './request.js';
 import { planWithdrawal } from './withdrawal.js';
 
 export class SyntheticPrivacyTrustedClock implements PrivacyTrustedClock {
@@ -190,6 +193,49 @@ export class SyntheticPrivacyRuntimeProcessorRegistry implements PrivacyRuntimeP
     }
     this.byId.set(record.processorId, record);
     return 'accepted' as const;
+  }
+}
+
+export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectRequestRepository {
+  private readonly byId = new Map<string, PrivacySubjectRequestReference>();
+
+  async get(requestId: string) {
+    return this.byId.get(requestId) ?? null;
+  }
+
+  async put(record: PrivacySubjectRequestReference) {
+    if (this.byId.has(record.requestId)) {
+      return 'conflict' as const;
+    }
+    this.byId.set(record.requestId, record);
+    return 'accepted' as const;
+  }
+
+  async applyTransition(input: {
+    requestId: string;
+    next: PrivacySubjectRequestReference['state'];
+    updatedAt: string;
+    verification?: PrivacySubjectRequestReference['verification'];
+    productionMode?: boolean;
+  }) {
+    const current = this.byId.get(input.requestId);
+    if (current === undefined) {
+      return { reason: 'not_found' as const, status: 'invalid' as const };
+    }
+
+    const result = transitionSubjectRequest({
+      request: current,
+      next: input.next,
+      updatedAt: input.updatedAt,
+      verification: input.verification,
+      productionMode: input.productionMode,
+    });
+
+    if (result.status === 'advanced') {
+      this.byId.set(result.request.requestId, result.request);
+    }
+
+    return result;
   }
 }
 

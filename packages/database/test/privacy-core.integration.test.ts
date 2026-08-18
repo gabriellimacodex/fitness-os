@@ -17,6 +17,8 @@ import {
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
+  privacySubjectRequestIdSchema,
+  privacySubjectRequestReferenceSchema,
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
@@ -31,6 +33,7 @@ import {
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRuntimeProcessorRegistry,
+  createPostgresPrivacySubjectRequestRepository,
 } from '../src/privacy/index.js';
 import { requireDisposableDatabaseUrl } from './postgres.js';
 
@@ -99,6 +102,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
     let processors: ReturnType<
       typeof createPostgresPrivacyRuntimeProcessorRegistry
     >;
+    let subjectRequests: ReturnType<
+      typeof createPostgresPrivacySubjectRequestRepository
+    >;
 
     beforeAll(async () => {
       connection = createPostgresConnection(requireDisposableDatabaseUrl());
@@ -108,6 +114,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       policies = createPostgresPrivacyPolicyPackageRepository(connection);
       purposes = createPostgresPrivacyPurposeRegistry(connection);
       processors = createPostgresPrivacyRuntimeProcessorRegistry(connection);
+      subjectRequests =
+        createPostgresPrivacySubjectRequestRepository(connection);
       await connection.db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
       await connection.db.execute(sql`DROP SCHEMA public CASCADE`);
       await connection.db.execute(sql`CREATE SCHEMA public`);
@@ -116,7 +124,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -281,6 +289,65 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       expect(allowed.status).toBe('evaluated');
       expect(allowed.decision.outcome).toBe('allowed');
+    });
+
+    it('persists subject-request current pointer and applies domain transitions', async () => {
+      await policies.put(policy);
+
+      const request = privacySubjectRequestReferenceSchema.parse({
+        requestId: privacySubjectRequestIdSchema.parse(
+          '66666666-6666-4666-8666-666666666666',
+        ),
+        requestType: 'export',
+        state: 'verification_required',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      });
+
+      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
+      await expect(subjectRequests.put(request)).resolves.toBe('conflict');
+      await expect(subjectRequests.get(request.requestId)).resolves.toEqual(
+        request,
+      );
+
+      const blocked = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T12:01:00.000Z',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: true,
+      });
+      expect(blocked).toMatchObject({
+        status: 'invalid',
+        reason: 'synthetic_verification_in_production',
+      });
+
+      const advanced = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T12:02:00.000Z',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      });
+      expect(advanced.status).toBe('advanced');
+      if (advanced.status !== 'advanced') {
+        throw new Error('expected advanced');
+      }
+      expect(advanced.request.state).toBe('ready');
+      await expect(subjectRequests.get(request.requestId)).resolves.toEqual(
+        advanced.request,
+      );
     });
   },
 );

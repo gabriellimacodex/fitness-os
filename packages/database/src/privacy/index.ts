@@ -4,6 +4,7 @@ export {
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyPurposeVersion,
+  privacySubjectRequest,
   privacyWithdrawal,
 } from './tables.js';
 export {
@@ -16,6 +17,7 @@ export {
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRuntimeProcessorRegistry,
 } from './registries.js';
+export { createPostgresPrivacySubjectRequestRepository } from './subject-request.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
   requiredPrivacyCoreMigrationHashes,

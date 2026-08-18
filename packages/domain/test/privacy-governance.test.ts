@@ -24,6 +24,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacySubjectRequestRepository,
   transitionSubjectRequest,
 } from '../src/privacy-governance/index.js';
 
@@ -253,6 +254,42 @@ describe('withdrawal planning', () => {
       withdrawnAt: '2026-08-18T12:06:00.000Z',
     });
     expect(second.status).toBe('already_withdrawn');
+  });
+});
+
+describe('synthetic subject request repository', () => {
+  it('puts and applies transitions against the current pointer', async () => {
+    const repo = new SyntheticPrivacySubjectRequestRepository();
+    const request = privacySubjectRequestReferenceSchema.parse({
+      requestId: privacySubjectRequestIdSchema.parse(
+        '66666666-6666-4666-8666-666666666666',
+      ),
+      requestType: 'export',
+      state: 'verification_required',
+      verification: null,
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: '1'.repeat(64),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      updatedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+    await expect(repo.put(request)).resolves.toBe('accepted');
+    const advanced = await repo.applyTransition({
+      requestId: request.requestId,
+      next: 'ready',
+      updatedAt: '2026-08-18T12:01:00.000Z',
+      verification: {
+        verificationRefDigest: '2'.repeat(64),
+        synthetic: true,
+      },
+      productionMode: false,
+    });
+    expect(advanced.status).toBe('advanced');
+    await expect(repo.get(request.requestId)).resolves.toMatchObject({
+      state: 'ready',
+    });
   });
 });
 

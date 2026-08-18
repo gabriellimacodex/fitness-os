@@ -11,6 +11,8 @@ export type {
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
   PrivacyRuntimeProcessorRegistry,
+  PrivacySubjectRequestApplyResult,
+  PrivacySubjectRequestRepository,
   PrivacyTrustedClock,
   PrivacyWithdrawalAppendResult,
 } from './ports.js';
@@ -33,6 +35,7 @@ export {
   SyntheticPrivacyPolicyPackageRepository,
   SyntheticPrivacyPurposeRegistry,
   SyntheticPrivacyRuntimeProcessorRegistry,
+  SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
 } from './synthetic.js';
 export {
