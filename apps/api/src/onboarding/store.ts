@@ -36,7 +36,11 @@ export interface StoredAttempt {
 }
 
 export type OnboardingMutationNamespace =
-  'create_attempt' | 'refresh_policy' | 'claim_attempt';
+  | 'create_attempt'
+  | 'resume_attempt'
+  | 'abandon_attempt'
+  | 'refresh_policy'
+  | 'claim_attempt';
 
 export interface StoredOperation {
   digest: string;

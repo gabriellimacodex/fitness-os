@@ -13,6 +13,7 @@ import {
   attemptDetailSchema,
   attemptLocatorSchema,
   attemptSummarySchema,
+  abandonAttemptRequestSchema,
   claimAttemptRequestSchema,
   createAttemptRequestSchema,
   currentOnboardingResponseSchema,
@@ -23,6 +24,7 @@ import {
   onboardingPolicyInteractionIdSchema,
   onboardingPolicyPackageIdSchema,
   policyRefreshRequestSchema,
+  resumeAttemptRequestSchema,
   type ApiErrorCode,
   type AttemptDetail,
 } from '@fitness-os/schemas';
@@ -463,6 +465,209 @@ export function registerOnboardingRoutes(
 
     return attemptDetailSchema.parse(attempt);
   });
+
+  app.post(
+    '/v1/onboarding/attempts/:attemptId/resume',
+    async (request, reply) => {
+      const params = attemptLocatorSchema.safeParse(request.params);
+      const body = resumeAttemptRequestSchema.safeParse(request.body);
+
+      if (!params.success || !body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const context = await requireContext(request, reply);
+      if (context === null) {
+        return;
+      }
+
+      const digest = semanticDigest({
+        attemptId: params.data.attemptId,
+        authority: context.principalKey,
+        namespace: 'resume_attempt',
+      });
+      const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+      const bindingKey = operationBindingKey(
+        context.principalKey,
+        'resume_attempt',
+        retryDigest,
+      );
+      const existingOperation = store.operations.get(bindingKey);
+
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'resume_attempt',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'resume_attempt',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const commit = (result: unknown) => {
+        const operationId = newOperationId();
+        store.operations.set(bindingKey, {
+          digest,
+          namespace: 'resume_attempt',
+          operationId,
+          result,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'resume_attempt',
+          operationId,
+          result,
+          state: 'operation_committed',
+        });
+      };
+
+      const record = store.attempts.get(params.data.attemptId);
+      if (
+        record === undefined ||
+        record.principalKey !== context.principalKey
+      ) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      if (!isNonterminal(record.detail.lifecycle)) {
+        return commit({
+          attempt: record.detail,
+          outcome: 'already_terminal',
+        });
+      }
+
+      return commit({
+        attempt: record.detail,
+        outcome: 'current_state',
+      });
+    },
+  );
+
+  app.post(
+    '/v1/onboarding/attempts/:attemptId/abandon',
+    async (request, reply) => {
+      const params = attemptLocatorSchema.safeParse(request.params);
+      const body = abandonAttemptRequestSchema.safeParse(request.body);
+
+      if (!params.success || !body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const context = await requireContext(request, reply);
+      if (context === null) {
+        return;
+      }
+
+      const digest = semanticDigest({
+        attemptId: params.data.attemptId,
+        authority: context.principalKey,
+        namespace: 'abandon_attempt',
+      });
+      const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+      const bindingKey = operationBindingKey(
+        context.principalKey,
+        'abandon_attempt',
+        retryDigest,
+      );
+      const existingOperation = store.operations.get(bindingKey);
+
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'abandon_attempt',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'abandon_attempt',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const commit = (result: unknown) => {
+        const operationId = newOperationId();
+        store.operations.set(bindingKey, {
+          digest,
+          namespace: 'abandon_attempt',
+          operationId,
+          result,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'abandon_attempt',
+          operationId,
+          result,
+          state: 'operation_committed',
+        });
+      };
+
+      const record = store.attempts.get(params.data.attemptId);
+      if (
+        record === undefined ||
+        record.principalKey !== context.principalKey
+      ) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      if (!isNonterminal(record.detail.lifecycle)) {
+        return commit({
+          attempt: record.detail,
+          outcome: 'already_terminal',
+        });
+      }
+
+      const abandoned = transitionAttempt(
+        record.detail,
+        'terminal',
+        'abandoned',
+      );
+      if (abandoned.status !== 'advanced') {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      store.attempts.set(record.detail.attemptId, {
+        ...record,
+        detail: abandoned.attempt,
+      });
+
+      return commit({
+        attempt: abandoned.attempt,
+        command: 'attempt',
+        outcome: 'command_succeeded',
+      });
+    },
+  );
 
   app.post(
     '/v1/onboarding/attempts/:attemptId/policy-refresh',
