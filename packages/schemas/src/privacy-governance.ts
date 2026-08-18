@@ -229,3 +229,149 @@ export const privacyEvidenceReferenceSchema = z
 export type PrivacyEvidenceReference = z.infer<
   typeof privacyEvidenceReferenceSchema
 >;
+
+const privacySha256DigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const privacyTrustedUtcMsSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+export const privacyWithdrawalIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyWithdrawalId'>();
+export type PrivacyWithdrawalId = z.infer<typeof privacyWithdrawalIdSchema>;
+
+export const privacyOperationIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyOperationId'>();
+export type PrivacyOperationId = z.infer<typeof privacyOperationIdSchema>;
+
+export const privacyCorrelationIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyCorrelationId'>();
+export type PrivacyCorrelationId = z.infer<typeof privacyCorrelationIdSchema>;
+
+export const privacySubjectScopeIdSchema = z
+  .uuidv4()
+  .brand<'PrivacySubjectScopeId'>();
+export type PrivacySubjectScopeId = z.infer<typeof privacySubjectScopeIdSchema>;
+
+export const privacyPurposeVersionIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyPurposeVersionId'>();
+export type PrivacyPurposeVersionId = z.infer<
+  typeof privacyPurposeVersionIdSchema
+>;
+
+export const privacyEngineeringCategoryIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyEngineeringCategoryId'>();
+export type PrivacyEngineeringCategoryId = z.infer<
+  typeof privacyEngineeringCategoryIdSchema
+>;
+
+/**
+ * One-way withdrawal event against append-only authorization evidence.
+ * State is only `withdrawn`; the original evidence row is never edited or
+ * reopened by this contract.
+ */
+export const privacyWithdrawalStateSchema = z.literal('withdrawn');
+export type PrivacyWithdrawalState = z.infer<
+  typeof privacyWithdrawalStateSchema
+>;
+
+export const privacyWithdrawalProcessingOutcomeSchema = z.enum([
+  'accepted',
+  'idempotent_replay',
+]);
+export type PrivacyWithdrawalProcessingOutcome = z.infer<
+  typeof privacyWithdrawalProcessingOutcomeSchema
+>;
+
+export const privacyWithdrawalReferenceSchema = z
+  .object({
+    withdrawalId: privacyWithdrawalIdSchema,
+    evidenceId: privacyEvidenceIdSchema,
+    state: privacyWithdrawalStateSchema,
+    withdrawnAt: privacyTrustedUtcMsSchema,
+    operationId: privacyOperationIdSchema,
+    processingOutcome: privacyWithdrawalProcessingOutcomeSchema,
+  })
+  .strict();
+export type PrivacyWithdrawalReference = z.infer<
+  typeof privacyWithdrawalReferenceSchema
+>;
+
+/**
+ * Closed engineering deny taxonomy for DataUseDecision.
+ * These are diagnosis codes, not legal conclusions or public copy.
+ */
+export const privacyDataUseDenyReasonSchema = z.enum([
+  'actor_context_missing',
+  'actor_context_invalid',
+  'actor_context_synthetic_in_production',
+  'actor_context_lacking_authority',
+  'subject_scope_missing',
+  'subject_scope_invalid',
+  'subject_scope_unmappable',
+  'purpose_unknown',
+  'purpose_inactive',
+  'purpose_version_mismatched',
+  'purpose_transition_unresolved',
+  'policy_missing',
+  'policy_inactive',
+  'policy_synthetic_in_production',
+  'policy_integrity_invalid',
+  'policy_unattributed',
+  'policy_not_effective',
+  'policy_downgraded',
+  'policy_environment_mismatched',
+  'operation_outside_purpose_binding',
+  'category_outside_purpose_binding',
+  'evidence_missing',
+  'evidence_mismatched',
+  'evidence_invalid',
+  'evidence_expired',
+  'evidence_withdrawn',
+  'processor_absent',
+  'processor_undeclared',
+  'processor_descriptor_mismatched',
+  'processor_handler_missing',
+  'audit_unavailable',
+  'dependency_unavailable',
+]);
+export type PrivacyDataUseDenyReason = z.infer<
+  typeof privacyDataUseDenyReasonSchema
+>;
+
+/**
+ * Tagged data-use evaluation result. Never a boolean grant; an allowed
+ * decision is request-local evidence of evaluation, not a reusable credential.
+ */
+export const privacyDataUseDecisionSchema = z.discriminatedUnion('outcome', [
+  z
+    .object({
+      outcome: z.literal('allowed'),
+      subjectScopeId: privacySubjectScopeIdSchema,
+      actorContextDigest: privacySha256DigestSchema,
+      purposeVersionId: privacyPurposeVersionIdSchema,
+      operationKind: privacyOperationKindSchema,
+      engineeringCategoryId: privacyEngineeringCategoryIdSchema,
+      processorDescriptorVersionDigest: privacySha256DigestSchema,
+      policyVersionId: privacyPolicyVersionIdSchema,
+      policyDigest: privacySha256DigestSchema,
+      evaluatedAt: privacyTrustedUtcMsSchema,
+      correlationId: privacyCorrelationIdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal('denied'),
+      reasonCode: privacyDataUseDenyReasonSchema,
+      evaluatedAt: privacyTrustedUtcMsSchema,
+      correlationId: privacyCorrelationIdSchema,
+    })
+    .strict(),
+]);
+export type PrivacyDataUseDecision = z.infer<
+  typeof privacyDataUseDecisionSchema
+>;
