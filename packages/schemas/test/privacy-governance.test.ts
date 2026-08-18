@@ -7,8 +7,10 @@ import {
   getPrivacyCanonicalProfile,
   governanceLifecycleResultSchema,
   privacyCanonicalizationVersionSchema,
+  privacyEvidenceReferenceSchema,
   privacyLifecycleProofIdSchema,
   privacyOperationKindSchema,
+  privacyPolicyPackageReferenceSchema,
   privacyRetentionExceptionIdSchema,
   retentionPreviewCanonicalInputSchema,
   sortPrivacySetIdentifiers,
@@ -133,5 +135,41 @@ describe('retention_preview approvedExceptionIds set canonicalization', () => {
     expect(left.approvedExceptionIds).toEqual(
       sortPrivacySetIdentifiers([exceptionA, exceptionB, exceptionC]),
     );
+  });
+});
+
+describe('policy and evidence reference contracts', () => {
+  it('accepts reference-only policy package metadata without legal copy fields', () => {
+    const parsed = privacyPolicyPackageReferenceSchema.parse({
+      packageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      versionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      contentDigest: 'a'.repeat(64),
+      synthetic: true,
+    });
+    expect(parsed.synthetic).toBe(true);
+    expect(
+      privacyPolicyPackageReferenceSchema.safeParse({
+        ...parsed,
+        noticeText: 'forbidden',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts integrity-bound evidence locators without raw participant answers', () => {
+    const parsed = privacyEvidenceReferenceSchema.parse({
+      evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      purposeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      contentDigest: 'b'.repeat(64),
+      recordedAt: '2026-08-18T00:00:00.000Z',
+    });
+    expect(parsed.contentDigest).toHaveLength(64);
+    expect(
+      privacyEvidenceReferenceSchema.safeParse({
+        ...parsed,
+        consentAnswer: true,
+      }).success,
+    ).toBe(false);
   });
 });
