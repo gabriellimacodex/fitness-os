@@ -6,6 +6,7 @@ import type {
   PrivacyDataUseDecision,
   PrivacyEngineeringCategoryId,
   PrivacyEvidenceReference,
+  PrivacyExpectedProcessorInventory,
   PrivacyOperationId,
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
@@ -86,6 +87,14 @@ export interface PrivacyRuntimeProcessorRegistry {
   put(
     record: PrivacyProcessorDescriptorReference,
   ): Promise<PrivacyReferencePutResult>;
+}
+
+/**
+ * Reviewed expected inventory port. Implementations load metadata artifacts
+ * only — never hosts, credentials, or legal policy text.
+ */
+export interface PrivacyExpectedProcessorInventoryPort {
+  getInventory(): Promise<PrivacyExpectedProcessorInventory>;
 }
 
 export type PrivacySubjectRequestApplyResult =

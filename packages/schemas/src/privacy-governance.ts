@@ -693,6 +693,197 @@ export const canonicalizePrivacyProcessorDescriptorReference = (
   capabilities: sortPrivacySetIdentifiers(input.capabilities),
 });
 
+export const privacyProcessorInventorySchemaVersionSchema = z.literal(
+  'privacy.processor-inventory.v1',
+);
+export type PrivacyProcessorInventorySchemaVersion = z.infer<
+  typeof privacyProcessorInventorySchemaVersionSchema
+>;
+
+export const privacyProcessorStorageKindSchema = z.enum([
+  'postgresql',
+  'structured_log',
+  'in_memory_synthetic',
+  'object_store',
+  'queue',
+  'cache',
+  'export_store',
+  'backup',
+  'derived_store',
+]);
+export type PrivacyProcessorStorageKind = z.infer<
+  typeof privacyProcessorStorageKindSchema
+>;
+
+export const privacySubjectLookupStrategySchema = z.enum([
+  'none',
+  'synthetic_scope_id',
+  'prd07_identity_mapping_required',
+]);
+export type PrivacySubjectLookupStrategy = z.infer<
+  typeof privacySubjectLookupStrategySchema
+>;
+
+/**
+ * Governance table / record families that inventory coverage must map.
+ * Closed set for Option A disposable persistence plus planned families.
+ */
+export const privacyGovernanceRecordFamilySchema = z.enum([
+  'privacy_policy_package_version',
+  'privacy_purpose_version',
+  'privacy_processor_registration',
+  'privacy_authorization_evidence',
+  'privacy_withdrawal',
+  'privacy_audit_event',
+  'privacy_subject_request',
+  'privacy_subject_request_transition',
+  'privacy_retention_rule',
+  'privacy_retention_preview',
+  'privacy_retention_work',
+  'privacy_processor_step',
+  'privacy_export_metadata',
+  'privacy_lifecycle_proof',
+]);
+export type PrivacyGovernanceRecordFamily = z.infer<
+  typeof privacyGovernanceRecordFamilySchema
+>;
+
+/**
+ * Lifecycle disposition for a record family. Generic keep-forever values are
+ * rejected by construction.
+ */
+export const privacyRecordFamilyLifecycleActionSchema = z.enum([
+  'delete',
+  'irreversible_transform',
+  'exception_reviewed',
+  'retain_until_reviewed',
+]);
+export type PrivacyRecordFamilyLifecycleAction = z.infer<
+  typeof privacyRecordFamilyLifecycleActionSchema
+>;
+
+export const privacyUnsupportedCapabilityRationaleSchema = z.enum([
+  'not_in_scope_for_candidate',
+  'requires_legal_privacy_decision',
+  'requires_external_credential',
+  'requires_financial_commitment',
+  'deferred_to_later_prd21_slice',
+]);
+export type PrivacyUnsupportedCapabilityRationale = z.infer<
+  typeof privacyUnsupportedCapabilityRationaleSchema
+>;
+
+export const privacyExpectedProcessorInventoryEntrySchema = z
+  .object({
+    processorId: privacyProcessorIdSchema,
+    registrationVersion: z.number().int().positive().max(10_000),
+    inventoryId: privacyProcessorInventoryIdSchema,
+    descriptorDigest: privacySha256DigestSchema,
+    codeOwner: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._:-]+$/),
+    adapterPackage: z
+      .string()
+      .min(1)
+      .max(256)
+      .regex(/^[A-Za-z0-9@/._-]+$/),
+    storageKind: privacyProcessorStorageKindSchema,
+    allowedPurposeIds: z.array(privacyPurposeIdSchema).max(64),
+    allowedCategoryIds: z.array(privacyEngineeringCategoryIdSchema).max(64),
+    subjectLookupStrategy: privacySubjectLookupStrategySchema,
+    supportedCapabilities: privacyProcessorCapabilitiesSchema,
+    unsupportedCapabilities: z
+      .array(
+        z
+          .object({
+            capability: privacyProcessorCapabilitySchema,
+            rationale: privacyUnsupportedCapabilityRationaleSchema,
+          })
+          .strict(),
+      )
+      .max(16),
+    recordFamilies: z
+      .array(
+        z
+          .object({
+            family: privacyGovernanceRecordFamilySchema,
+            lifecycleAction: privacyRecordFamilyLifecycleActionSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(64),
+    environmentApplicability: z.enum([
+      'synthetic_only',
+      'disposable_test',
+      'production_blocked_by_legal_privacy',
+    ]),
+    requiredReadiness: z.enum(['mechanism_only', 'production']),
+    synthetic: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const supported = new Set(value.supportedCapabilities);
+    for (const unsupported of value.unsupportedCapabilities) {
+      if (supported.has(unsupported.capability)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'capability cannot be both supported and unsupported',
+          path: ['unsupportedCapabilities'],
+        });
+      }
+    }
+  });
+export type PrivacyExpectedProcessorInventoryEntry = z.infer<
+  typeof privacyExpectedProcessorInventoryEntrySchema
+>;
+
+/**
+ * Reviewed expected processor inventory artifact. Metadata only — no hosts,
+ * regions, credentials, connection strings, subject locators, or legal text.
+ */
+export const privacyExpectedProcessorInventorySchema = z
+  .object({
+    schemaVersion: privacyProcessorInventorySchemaVersionSchema,
+    inventoryId: privacyProcessorInventoryIdSchema,
+    inventoryVersionDigest: privacySha256DigestSchema,
+    canonicalizationVersion: privacyCanonicalizationVersionSchema,
+    sourceCommit: z.string().regex(/^[a-f0-9]{7,40}$/),
+    processors: z.array(privacyExpectedProcessorInventoryEntrySchema).max(128),
+  })
+  .strict();
+export type PrivacyExpectedProcessorInventory = z.infer<
+  typeof privacyExpectedProcessorInventorySchema
+>;
+
+export const canonicalizePrivacyExpectedProcessorInventory = (
+  input: PrivacyExpectedProcessorInventory,
+): PrivacyExpectedProcessorInventory => ({
+  ...input,
+  processors: [...input.processors]
+    .map((processor) => ({
+      ...processor,
+      allowedCategoryIds: sortPrivacySetIdentifiers(
+        processor.allowedCategoryIds,
+      ),
+      allowedPurposeIds: sortPrivacySetIdentifiers(processor.allowedPurposeIds),
+      supportedCapabilities: sortPrivacySetIdentifiers(
+        processor.supportedCapabilities,
+      ),
+      unsupportedCapabilities: [...processor.unsupportedCapabilities].sort(
+        (left, right) =>
+          left.capability.localeCompare(right.capability) ||
+          left.rationale.localeCompare(right.rationale),
+      ),
+      recordFamilies: [...processor.recordFamilies].sort((left, right) =>
+        left.family.localeCompare(right.family),
+      ),
+    }))
+    .sort((left, right) => left.processorId.localeCompare(right.processorId)),
+});
+
 /**
  * Safe readiness diagnostic codes only. No policy text, subject IDs, hosts,
  * regions, credentials, or raw exceptions.

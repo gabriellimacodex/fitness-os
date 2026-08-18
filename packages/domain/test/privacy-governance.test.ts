@@ -3,6 +3,7 @@ import {
   privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyPolicyVersionIdSchema,
@@ -25,6 +26,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacySubjectRequestRepository,
   transitionSubjectRequest,
 } from '../src/privacy-governance/index.js';
@@ -255,6 +257,56 @@ describe('withdrawal planning', () => {
       withdrawnAt: '2026-08-18T12:06:00.000Z',
     });
     expect(second.status).toBe('already_withdrawn');
+  });
+});
+
+describe('synthetic expected processor inventory', () => {
+  it('returns a canonicalized metadata-only inventory', async () => {
+    const inventory = privacyExpectedProcessorInventorySchema.parse({
+      schemaVersion: 'privacy.processor-inventory.v1',
+      inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      inventoryVersionDigest: '1'.repeat(64),
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      sourceCommit: 'ad3f3e2',
+      processors: [
+        {
+          processorId: '99999999-9999-4999-8999-999999999999',
+          registrationVersion: 1,
+          inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          descriptorDigest: 'c'.repeat(64),
+          codeOwner: 'packages.domain.privacy',
+          adapterPackage: '@fitness-os/domain',
+          storageKind: 'in_memory_synthetic',
+          allowedPurposeIds: [purpose.purposeId],
+          allowedCategoryIds: purpose.allowedCategoryIds,
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: ['inventory', 'access'],
+          unsupportedCapabilities: [
+            {
+              capability: 'delete',
+              rationale: 'deferred_to_later_prd21_slice',
+            },
+          ],
+          recordFamilies: [
+            {
+              family: 'privacy_audit_event',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          environmentApplicability: 'synthetic_only',
+          requiredReadiness: 'mechanism_only',
+          synthetic: true,
+        },
+      ],
+    });
+
+    const port = new SyntheticPrivacyExpectedProcessorInventory(inventory);
+    const loaded = await port.getInventory();
+    expect(loaded.processors[0]?.supportedCapabilities).toEqual([
+      'access',
+      'inventory',
+    ]);
+    expect(loaded.processors[0]?.synthetic).toBe(true);
   });
 });
 

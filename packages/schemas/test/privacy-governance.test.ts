@@ -1,9 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
   PRIVACY_CANONICAL_PROFILES,
   PRIVACY_OPERATION_KINDS,
   canonicalizePrivacyAuthorityClaims,
+  canonicalizePrivacyExpectedProcessorInventory,
   canonicalizePrivacyPurposeVersionReference,
   canonicalizeRetentionPreviewApprovedExceptionIds,
   getPrivacyCanonicalProfile,
@@ -14,6 +19,7 @@ import {
   privacyDataUseDecisionSchema,
   privacyDataUseDenyReasonSchema,
   privacyEvidenceReferenceSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyLifecycleProofIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
@@ -512,6 +518,89 @@ describe('subject request and audit event references', () => {
         stackTrace: 'Error: boom',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('expected processor inventory contracts', () => {
+  it('parses the packaged synthetic inventory fixture without secrets', () => {
+    const fixturePath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '../fixtures/privacy/processor-inventory.v1.json',
+    );
+    const raw = JSON.parse(readFileSync(fixturePath, 'utf8')) as unknown;
+    const parsed = privacyExpectedProcessorInventorySchema.parse(raw);
+    expect(parsed.schemaVersion).toBe('privacy.processor-inventory.v1');
+    expect(parsed.processors).toHaveLength(1);
+    expect(parsed.processors[0]?.synthetic).toBe(true);
+    expect(parsed.processors[0]?.environmentApplicability).toBe(
+      'synthetic_only',
+    );
+    expect(
+      privacyExpectedProcessorInventorySchema.safeParse({
+        ...parsed,
+        connectionString: 'postgresql://secret',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyExpectedProcessorInventorySchema.safeParse({
+        ...parsed,
+        processors: [
+          {
+            ...parsed.processors[0],
+            supportedCapabilities: ['access'],
+            unsupportedCapabilities: [
+              { capability: 'access', rationale: 'not_in_scope_for_candidate' },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('canonicalizes processors and nested sets by stable sort', () => {
+    const fixturePath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '../fixtures/privacy/processor-inventory.v1.json',
+    );
+    const parsed = privacyExpectedProcessorInventorySchema.parse(
+      JSON.parse(readFileSync(fixturePath, 'utf8')) as unknown,
+    );
+    const shuffled = {
+      ...parsed,
+      processors: [
+        {
+          ...parsed.processors[0]!,
+          allowedPurposeIds: [
+            'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          ].reverse() as never,
+          supportedCapabilities: ['inventory', 'access'] as never,
+        },
+      ],
+    };
+    const canonical = canonicalizePrivacyExpectedProcessorInventory(
+      privacyExpectedProcessorInventorySchema.parse({
+        ...shuffled,
+        processors: [
+          {
+            ...shuffled.processors[0],
+            allowedPurposeIds: [
+              'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+              'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            ],
+            allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+          },
+        ],
+      }),
+    );
+    expect(canonical.processors[0]?.supportedCapabilities).toEqual([
+      'access',
+      'inventory',
+    ]);
+    expect(canonical.processors[0]?.allowedPurposeIds).toEqual([
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+    ]);
   });
 });
 

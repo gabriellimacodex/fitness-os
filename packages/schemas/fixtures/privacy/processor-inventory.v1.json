@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "privacy.processor-inventory.v1",
+  "inventoryId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "inventoryVersionDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "canonicalizationVersion": "privacy-governance.canonical.v1",
+  "sourceCommit": "ad3f3e2",
+  "processors": [
+    {
+      "processorId": "99999999-9999-4999-8999-999999999999",
+      "registrationVersion": 1,
+      "inventoryId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "descriptorDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "codeOwner": "packages.domain.privacy",
+      "adapterPackage": "@fitness-os/domain",
+      "storageKind": "in_memory_synthetic",
+      "allowedPurposeIds": ["dddddddd-dddd-4ddd-8ddd-dddddddddddd"],
+      "allowedCategoryIds": ["44444444-4444-4444-8444-444444444444"],
+      "subjectLookupStrategy": "synthetic_scope_id",
+      "supportedCapabilities": ["access", "inventory"],
+      "unsupportedCapabilities": [
+        {
+          "capability": "delete",
+          "rationale": "deferred_to_later_prd21_slice"
+        },
+        {
+          "capability": "export",
+          "rationale": "deferred_to_later_prd21_slice"
+        },
+        {
+          "capability": "retention",
+          "rationale": "requires_legal_privacy_decision"
+        },
+        {
+          "capability": "governance_lifecycle",
+          "rationale": "requires_legal_privacy_decision"
+        }
+      ],
+      "recordFamilies": [
+        {
+          "family": "privacy_policy_package_version",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_purpose_version",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_processor_registration",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_authorization_evidence",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_withdrawal",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_audit_event",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_subject_request",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_subject_request_transition",
+          "lifecycleAction": "retain_until_reviewed"
+        }
+      ],
+      "environmentApplicability": "synthetic_only",
+      "requiredReadiness": "mechanism_only",
+      "synthetic": true
+    }
+  ]
+}
