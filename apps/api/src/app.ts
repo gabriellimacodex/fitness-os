@@ -23,11 +23,16 @@ import {
 } from './onboarding/routes.js';
 import type { OnboardingStore } from './onboarding/store.js';
 import { registerMovementRoutes } from './movement-routes.js';
+import {
+  registerPrivacySyntheticRoutes,
+  type PrivacySyntheticOptions,
+} from './privacy/routes.js';
 
 export type ReadinessCheck = () => boolean | Promise<boolean>;
 
 export interface PlatformOptions {
   allowSyntheticOnboarding?: boolean;
+  allowSyntheticPrivacy?: boolean;
   corsAllowedOrigins?: readonly string[];
   exerciseCatalog?: {
     reader: ExerciseKnowledgeReader;
@@ -38,6 +43,7 @@ export interface PlatformOptions {
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
   };
+  privacy?: PrivacySyntheticOptions;
   readinessCheck?: ReadinessCheck;
 }
 
@@ -100,6 +106,15 @@ export function buildApp(
   ) {
     throw new Error(
       'Synthetic onboarding composition requires an explicit test seam',
+    );
+  }
+
+  if (
+    platform.privacy !== undefined &&
+    platform.allowSyntheticPrivacy !== true
+  ) {
+    throw new Error(
+      'Synthetic privacy composition requires an explicit test seam',
     );
   }
 
@@ -192,6 +207,10 @@ export function buildApp(
 
   registerMovementRoutes(app);
   registerOnboardingRoutes(app, platform.onboarding);
+
+  if (platform.allowSyntheticPrivacy === true) {
+    registerPrivacySyntheticRoutes(app, platform.privacy ?? {});
+  }
 
   if (platform.exerciseCatalog !== undefined) {
     registerExerciseCatalogRoutes(app, {
