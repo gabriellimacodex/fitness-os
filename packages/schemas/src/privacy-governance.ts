@@ -862,10 +862,20 @@ export type PrivacySyntheticDataUseEvaluateResponse = z.infer<
  * Disposable synthetic API for subject-request transitions behind
  * allowSyntheticPrivacy. Not a production public privacy route.
  */
+/**
+ * Disposable synthetic API that seeds/applies subject-request transitions
+ * through the repository port (pointer + append-only history).
+ */
 export const privacySyntheticSubjectRequestTransitionRequestSchema = z
   .object({
     request: privacySubjectRequestReferenceSchema,
     next: privacySubjectRequestStateSchema,
+    transitionId: privacySubjectRequestTransitionIdSchema,
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    reasonCode: privacySubjectRequestTransitionReasonSchema
+      .nullable()
+      .optional(),
     verification: privacyVerificationReferenceSchema.nullable().optional(),
     productionMode: z.boolean(),
   })
@@ -876,16 +886,18 @@ export type PrivacySyntheticSubjectRequestTransitionRequest = z.infer<
 
 export const privacySyntheticSubjectRequestTransitionResponseSchema = z
   .object({
-    status: z.enum(['advanced', 'already_terminal', 'invalid']),
+    status: z.enum(['advanced', 'already_terminal', 'invalid', 'conflict']),
     reason: z
       .enum([
         'illegal_transition',
         'verification_required',
         'synthetic_verification_in_production',
         'terminal_state',
+        'not_found',
       ])
       .optional(),
     request: privacySubjectRequestReferenceSchema.optional(),
+    transition: privacySubjectRequestTransitionReferenceSchema.optional(),
   })
   .strict();
 export type PrivacySyntheticSubjectRequestTransitionResponse = z.infer<

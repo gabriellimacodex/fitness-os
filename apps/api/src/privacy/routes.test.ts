@@ -11,9 +11,11 @@ import {
   privacyReadinessResultSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
+import { SyntheticPrivacySubjectRequestRepository } from '@fitness-os/domain';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -256,8 +258,35 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
     updatedAt: '2026-08-18T11:00:00.000Z',
   });
 
-  it('advances to ready with verification outside productionMode', async () => {
-    const app = buildSyntheticPrivacyApp();
+  const transitionIds = {
+    first: privacySubjectRequestTransitionIdSchema.parse(
+      'a1111111-1111-4111-8111-111111111111',
+    ),
+    second: privacySubjectRequestTransitionIdSchema.parse(
+      'c3333333-3333-4333-8333-333333333333',
+    ),
+  };
+  const operationIds = {
+    first: privacyOperationIdSchema.parse(
+      'b2222222-2222-4222-8222-222222222222',
+    ),
+    second: privacyOperationIdSchema.parse(
+      'd4444444-4444-4444-8444-444444444444',
+    ),
+  };
+
+  it('advances through the repository and returns append-only history', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests,
+        },
+      },
+    );
 
     const response = await app.inject({
       method: 'POST',
@@ -265,6 +294,10 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
       payload: {
         request: baseRequest,
         next: 'ready',
+        transitionId: transitionIds.first,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'verification_accepted',
         verification: {
           verificationRefDigest: '2'.repeat(64),
           synthetic: true,
@@ -278,7 +311,15 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
     expect(response.json()).toMatchObject({
       status: 'advanced',
       request: { state: 'ready' },
+      transition: {
+        previousState: 'verification_required',
+        nextState: 'ready',
+        reasonCode: 'verification_accepted',
+      },
     });
+    await expect(
+      subjectRequests.listTransitions(baseRequest.requestId),
+    ).resolves.toHaveLength(1);
 
     await app.close();
   });
@@ -292,6 +333,9 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
       payload: {
         request: baseRequest,
         next: 'ready',
+        transitionId: transitionIds.first,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
         verification: {
           verificationRefDigest: '2'.repeat(64),
           synthetic: true,
@@ -305,6 +349,65 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
       status: 'invalid',
       reason: 'synthetic_verification_in_production',
     });
+
+    await app.close();
+  });
+
+  it('returns conflict when operationId is reused', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests,
+        },
+      },
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: baseRequest,
+        next: 'ready',
+        transitionId: transitionIds.first,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      },
+    });
+
+    const conflict = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: {
+          ...baseRequest,
+          state: 'ready',
+          verification: {
+            verificationRefDigest: '2'.repeat(64),
+            synthetic: true,
+          },
+          updatedAt: '2026-08-18T12:00:00.000Z',
+        },
+        next: 'in_progress',
+        transitionId: transitionIds.second,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      },
+    });
+
+    expect(conflict.statusCode).toBe(200);
+    expect(conflict.json()).toEqual({ status: 'conflict' });
 
     await app.close();
   });
