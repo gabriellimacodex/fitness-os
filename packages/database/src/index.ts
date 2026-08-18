@@ -15,6 +15,8 @@ export {
   catalogOperations,
   checkCatalogDatabaseReadiness,
   commitCatalogOperation,
+  createExerciseCatalogCuration,
+  createExerciseCatalogReader,
   digestLedgerJson,
   exerciseLifecycleEvents,
   exerciseReferenceCandidates,

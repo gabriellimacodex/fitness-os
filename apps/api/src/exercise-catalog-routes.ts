@@ -29,12 +29,14 @@ const sendError = (
   statusCode: 400 | 404 | 500 | 503,
   code: ApiErrorCode,
   message: string,
-) =>
-  reply.code(statusCode).send(
+) => {
+  reply.header('cache-control', 'no-store');
+  return reply.code(statusCode).send(
     apiErrorResponseSchema.parse({
       error: { code, message, requestId: request.id },
     }),
   );
+};
 
 const isClassified = (
   classifier: (error: unknown) => boolean,

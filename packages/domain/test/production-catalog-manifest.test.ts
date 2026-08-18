@@ -42,7 +42,7 @@ describe('production catalog manifest', () => {
       manifestPath: 'catalog/catalog-manifest.v1.json',
       schemaVersion: manifest.schemaVersion,
       canonicalizationVersion: CATALOG_CANONICALIZATION_VERSION,
-      sourceCommit: '199671a797b49325e2cf165bc1ce84d7ef3a212b',
+      sourceCommit: '789f4072a0e4eefc0d9ac6c9f2b8cbb4e212e9f7',
       canonicalDigest: hashManifestIngestionOperation(manifest),
       counts: {
         modalityTerms: 1,

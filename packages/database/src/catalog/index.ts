@@ -1,4 +1,6 @@
 export { canonicalizeLedgerJson, digestLedgerJson } from './canonical-json.js';
+export { createExerciseCatalogCuration } from './curation.js';
+export { createExerciseCatalogReader } from './reader.js';
 export {
   activeLedgerKey,
   ledgerKeyRingEpoch,
