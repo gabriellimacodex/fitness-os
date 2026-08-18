@@ -27,6 +27,7 @@ import {
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
+  privacySyntheticSubjectRequestTransitionResponseSchema,
   privacySyntheticWithdrawalPlanRequestSchema,
   privacyWithdrawalReferenceSchema,
   canonicalizePrivacyProcessorDescriptorReference,
@@ -680,38 +681,69 @@ describe('processor descriptor and readiness contracts', () => {
   });
 
   it('freezes synthetic subject-request and withdrawal plan seam contracts', () => {
+    const validTransitionRequest = {
+      request: {
+        requestId: '66666666-6666-4666-8666-666666666666',
+        requestType: 'export' as const,
+        state: 'verification_required' as const,
+        verification: null,
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      },
+      next: 'ready' as const,
+      transitionId: 'a1111111-1111-4111-8111-111111111111',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      reasonCode: 'verification_accepted' as const,
+      verification: {
+        verificationRefDigest: '2'.repeat(64),
+        synthetic: true,
+      },
+      productionMode: false,
+    };
     expect(
-      privacySyntheticSubjectRequestTransitionRequestSchema.safeParse({
+      privacySyntheticSubjectRequestTransitionRequestSchema.parse(
+        validTransitionRequest,
+      ).transitionId,
+    ).toBe(validTransitionRequest.transitionId);
+    expect(
+      privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+        status: 'advanced',
         request: {
-          requestId: '66666666-6666-4666-8666-666666666666',
-          requestType: 'export',
-          state: 'verification_required',
-          verification: null,
-          policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-          inventoryVersionDigest: '1'.repeat(64),
-          correlationId: '55555555-5555-4555-8555-555555555555',
+          ...validTransitionRequest.request,
+          state: 'ready',
+          verification: validTransitionRequest.verification,
           updatedAt: '2026-08-18T12:00:00.000Z',
         },
-        next: 'ready',
-        transitionId: 'a1111111-1111-4111-8111-111111111111',
-        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-        correlationId: '55555555-5555-4555-8555-555555555555',
-        productionMode: false,
+        transition: {
+          transitionId: validTransitionRequest.transitionId,
+          requestId: validTransitionRequest.request.requestId,
+          previousState: 'verification_required',
+          nextState: 'ready',
+          operationId: validTransitionRequest.operationId,
+          correlationId: validTransitionRequest.correlationId,
+          reasonCode: 'verification_accepted',
+          verificationRefDigest: '2'.repeat(64),
+          recordedAt: '2026-08-18T12:00:00.000Z',
+        },
+      }).status,
+    ).toBe('advanced');
+    expect(
+      privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+        status: 'conflict',
+      }).status,
+    ).toBe('conflict');
+    expect(
+      privacySyntheticSubjectRequestTransitionRequestSchema.safeParse({
+        ...validTransitionRequest,
         legalEntitlement: true,
       }).success,
     ).toBe(false);
     expect(
       privacySyntheticSubjectRequestTransitionRequestSchema.safeParse({
-        request: {
-          requestId: '66666666-6666-4666-8666-666666666666',
-          requestType: 'export',
-          state: 'verification_required',
-          verification: null,
-          policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-          inventoryVersionDigest: '1'.repeat(64),
-          correlationId: '55555555-5555-4555-8555-555555555555',
-          updatedAt: '2026-08-18T12:00:00.000Z',
-        },
+        request: validTransitionRequest.request,
         next: 'ready',
         productionMode: false,
       }).success,

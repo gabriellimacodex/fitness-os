@@ -859,12 +859,9 @@ export type PrivacySyntheticDataUseEvaluateResponse = z.infer<
 >;
 
 /**
- * Disposable synthetic API for subject-request transitions behind
- * allowSyntheticPrivacy. Not a production public privacy route.
- */
-/**
  * Disposable synthetic API that seeds/applies subject-request transitions
- * through the repository port (pointer + append-only history).
+ * through the repository port (pointer + append-only history) behind
+ * allowSyntheticPrivacy. Not a production public privacy route.
  */
 export const privacySyntheticSubjectRequestTransitionRequestSchema = z
   .object({

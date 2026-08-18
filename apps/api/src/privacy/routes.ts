@@ -165,12 +165,9 @@ export function registerPrivacySyntheticRoutes(
 
       const existing = await subjectRequests.get(body.data.request.requestId);
       if (existing === null) {
-        const seeded = await subjectRequests.put(body.data.request);
-        if (seeded === 'conflict') {
-          return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
-            status: 'conflict',
-          });
-        }
+        // Concurrent seed may lose the race; proceed to applyTransition on the
+        // winner rather than mapping "already exists" as a transition conflict.
+        await subjectRequests.put(body.data.request);
       }
 
       const result = await subjectRequests.applyTransition({

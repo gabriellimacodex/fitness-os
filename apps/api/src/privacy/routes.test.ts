@@ -353,6 +353,88 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
     await app.close();
   });
 
+  it('continues to applyTransition when seed put loses a create race', async () => {
+    const pointer = { ...baseRequest };
+    let gets = 0;
+    const subjectRequests = {
+      get: async () => {
+        gets += 1;
+        return gets === 1 ? null : pointer;
+      },
+      put: async () => 'conflict' as const,
+      listTransitions: async () => [],
+      applyTransition: async (input: {
+        requestId: string;
+        next: 'ready';
+        transitionId: string;
+        operationId: string;
+      }) => {
+        const advanced = {
+          ...pointer,
+          state: 'ready' as const,
+          verification: {
+            verificationRefDigest: '2'.repeat(64),
+            synthetic: true,
+          },
+          updatedAt: '2026-08-18T12:00:00.000Z',
+        };
+        return {
+          status: 'advanced' as const,
+          request: advanced,
+          transition: {
+            transitionId: input.transitionId,
+            requestId: input.requestId,
+            previousState: 'verification_required' as const,
+            nextState: 'ready' as const,
+            operationId: input.operationId,
+            correlationId: baseRequest.correlationId,
+            reasonCode: 'verification_accepted' as const,
+            verificationRefDigest: '2'.repeat(64),
+            recordedAt: '2026-08-18T12:00:00.000Z',
+          },
+        };
+      },
+    };
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: baseRequest,
+        next: 'ready',
+        transitionId: transitionIds.first,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'advanced',
+      request: { state: 'ready' },
+      transition: { nextState: 'ready' },
+    });
+
+    await app.close();
+  });
+
   it('returns conflict when operationId is reused', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
     const app = buildApp(
