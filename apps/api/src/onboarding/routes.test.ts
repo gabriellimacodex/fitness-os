@@ -684,3 +684,57 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
     await app.close();
   });
 });
+
+describe('policy-refresh and claim', () => {
+  it('refreshes synthetic policy then completes a claim', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    expect(createdBody.result).toMatchObject({ outcome: 'command_succeeded' });
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    const refreshed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-policy') },
+    });
+    const refreshedBody = onboardingOperationResponseSchema.parse(
+      refreshed.json(),
+    );
+    expect(refreshedBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: { lifecycle: 'ready_to_claim' },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim'),
+      },
+    });
+    const claimedBody = onboardingOperationResponseSchema.parse(claimed.json());
+    expect(claimedBody.result).toMatchObject({
+      outcome: 'completed',
+      role: 'student',
+    });
+    expect(claimed.body).not.toContain(CLAIM_SECRET);
+
+    await app.close();
+  });
+});

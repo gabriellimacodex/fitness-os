@@ -1,8 +1,11 @@
+import { createHash, randomUUID } from 'node:crypto';
+
 import {
   canAllocateAttempt,
   evaluateClaimEligibility,
   inspectInvitationState,
   isNonterminal,
+  transitionAttempt,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -10,11 +13,16 @@ import {
   attemptDetailSchema,
   attemptLocatorSchema,
   attemptSummarySchema,
+  claimAttemptRequestSchema,
   createAttemptRequestSchema,
   currentOnboardingResponseSchema,
   inspectInvitationRequestSchema,
+  onboardingCompletionIdSchema,
   onboardingCurrentQuerySchema,
   onboardingOperationResponseSchema,
+  onboardingPolicyInteractionIdSchema,
+  onboardingPolicyPackageIdSchema,
+  policyRefreshRequestSchema,
   type ApiErrorCode,
   type AttemptDetail,
 } from '@fitness-os/schemas';
@@ -36,6 +44,8 @@ import {
   newOperationId,
   nextOrdinalForRole,
   operationBindingKey,
+  recordRoleMapping,
+  type OnboardingMutationNamespace,
   type OnboardingStore,
   type StoredAttempt,
 } from './store.js';
@@ -87,17 +97,28 @@ function invitationReference(store: OnboardingStore, secret: string): string {
   return invitation?.invitationId ?? digestClaimSecret(secret, store.pepper);
 }
 
-function semanticDigest(input: {
-  authority: string;
-  invitationRef: string;
-  namespace: 'inspect_invitation' | 'create_attempt';
-}): string {
+function syntheticPolicyHandoff() {
+  const packageId = onboardingPolicyPackageIdSchema.parse(randomUUID());
+  const interactionId = onboardingPolicyInteractionIdSchema.parse(randomUUID());
+  return {
+    evidenceId: null,
+    integrityDigest: createHash('sha256')
+      .update(`synthetic-policy:${packageId}:${interactionId}`, 'utf8')
+      .digest('hex'),
+    interactionId,
+    packageId,
+    packageVersion: 1,
+    status: 'ready' as const,
+  };
+}
+
+function semanticDigest(input: Record<string, string>): string {
   return digestUtf8JsonSha256V1(input);
 }
 
 function operationEnvelope(input: {
   digest: string;
-  namespace: 'inspect_invitation' | 'create_attempt';
+  namespace: 'inspect_invitation' | OnboardingMutationNamespace;
   operationId: string;
   result: unknown;
   state:
@@ -429,4 +450,237 @@ export function registerOnboardingRoutes(
 
     return attemptDetailSchema.parse(attempt);
   });
+
+  app.post(
+    '/v1/onboarding/attempts/:attemptId/policy-refresh',
+    async (request, reply) => {
+      const params = attemptLocatorSchema.safeParse(request.params);
+      const body = policyRefreshRequestSchema.safeParse(request.body);
+
+      if (!params.success || !body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const context = await requireContext(request, reply);
+      if (context === null) {
+        return;
+      }
+
+      const digest = semanticDigest({
+        attemptId: params.data.attemptId,
+        authority: context.principalKey,
+        namespace: 'refresh_policy',
+      });
+      const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+      const bindingKey = operationBindingKey(
+        context.principalKey,
+        'refresh_policy',
+        retryDigest,
+      );
+      const existingOperation = store.operations.get(bindingKey);
+
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'refresh_policy',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'refresh_policy',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const record = store.attempts.get(params.data.attemptId);
+      if (
+        record === undefined ||
+        record.principalKey !== context.principalKey
+      ) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      const commit = (result: unknown) => {
+        const operationId = newOperationId();
+        store.operations.set(bindingKey, {
+          digest,
+          namespace: 'refresh_policy',
+          operationId,
+          result,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'refresh_policy',
+          operationId,
+          result,
+          state: 'operation_committed',
+        });
+      };
+
+      if (record.detail.lifecycle === 'ready_to_claim') {
+        return commit({
+          attempt: record.detail,
+          command: 'attempt',
+          outcome: 'command_succeeded',
+        });
+      }
+
+      const advanced = transitionAttempt(record.detail, 'ready_to_claim');
+      if (advanced.status !== 'advanced') {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      const updated = attemptDetailSchema.parse({
+        ...advanced.attempt,
+        policy: syntheticPolicyHandoff(),
+      });
+      store.attempts.set(record.detail.attemptId, {
+        ...record,
+        detail: updated,
+      });
+
+      return commit({
+        attempt: updated,
+        command: 'attempt',
+        outcome: 'command_succeeded',
+      });
+    },
+  );
+
+  app.post(
+    '/v1/onboarding/attempts/:attemptId/claim',
+    async (request, reply) => {
+      const params = attemptLocatorSchema.safeParse(request.params);
+      const body = claimAttemptRequestSchema.safeParse(request.body);
+
+      if (!params.success || !body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const context = await requireContext(request, reply);
+      if (context === null) {
+        return;
+      }
+
+      const digest = semanticDigest({
+        attemptId: params.data.attemptId,
+        authority: context.principalKey,
+        invitationRef: invitationReference(store, body.data.claimSecret),
+        namespace: 'claim_attempt',
+      });
+      const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+      const bindingKey = operationBindingKey(
+        context.principalKey,
+        'claim_attempt',
+        retryDigest,
+      );
+      const existingOperation = store.operations.get(bindingKey);
+
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'claim_attempt',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'claim_attempt',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const commit = (result: unknown) => {
+        const operationId = newOperationId();
+        store.operations.set(bindingKey, {
+          digest,
+          namespace: 'claim_attempt',
+          operationId,
+          result,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'claim_attempt',
+          operationId,
+          result,
+          state: 'operation_committed',
+        });
+      };
+
+      const record = store.attempts.get(params.data.attemptId);
+      if (
+        record === undefined ||
+        record.principalKey !== context.principalKey
+      ) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      if (record.detail.lifecycle !== 'ready_to_claim') {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      const invitation = findInvitationBySecret(store, body.data.claimSecret);
+      if (
+        invitation === undefined ||
+        invitation.invitationId !== record.detail.invitationId ||
+        inspectInvitationState(invitation.state) !== 'issued'
+      ) {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      const completed = transitionAttempt(record.detail, 'completed');
+      if (completed.status !== 'advanced') {
+        return commit({ outcome: 'invalid_or_unavailable' });
+      }
+
+      invitation.state = 'claimed';
+      store.invitations.set(invitation.invitationId, invitation);
+      store.attempts.set(record.detail.attemptId, {
+        ...record,
+        detail: completed.attempt,
+      });
+      recordRoleMapping(
+        store,
+        context.principalKey,
+        record.detail.proposedRole,
+      );
+
+      return commit({
+        completionId: onboardingCompletionIdSchema.parse(randomUUID()),
+        mappingId: mappingIdFor(
+          context.principalKey,
+          record.detail.proposedRole,
+        ),
+        outcome: 'completed',
+        role: record.detail.proposedRole,
+      });
+    },
+  );
 }
