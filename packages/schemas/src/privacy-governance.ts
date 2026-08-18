@@ -510,8 +510,8 @@ export type PrivacyVerificationReference = z.infer<
 >;
 
 /**
- * Data-subject request current pointer. Transition history stays in a later
- * append-only slice; this freezes the request identity and pinned versions.
+ * Data-subject request current pointer. Append-only transition history is a
+ * separate reference; this freezes the request identity and pinned versions.
  */
 export const privacySubjectRequestReferenceSchema = z
   .object({

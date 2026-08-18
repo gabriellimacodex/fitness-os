@@ -204,6 +204,8 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     string,
     PrivacySubjectRequestTransitionReference[]
   >();
+  private readonly transitionIds = new Set<string>();
+  private readonly operationIds = new Set<string>();
 
   async get(requestId: string) {
     return this.byId.get(requestId) ?? null;
@@ -232,6 +234,13 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     verification?: PrivacySubjectRequestReference['verification'];
     productionMode?: boolean;
   }) {
+    if (
+      this.transitionIds.has(input.transitionId) ||
+      this.operationIds.has(input.operationId)
+    ) {
+      return { status: 'conflict' as const };
+    }
+
     const current = this.byId.get(input.requestId);
     if (current === undefined) {
       return { reason: 'not_found' as const, status: 'invalid' as const };
@@ -266,6 +275,8 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     const history = this.transitions.get(current.requestId) ?? [];
     history.push(transition);
     this.transitions.set(current.requestId, history);
+    this.transitionIds.add(transition.transitionId);
+    this.operationIds.add(transition.operationId);
 
     return { ...result, transition };
   }

@@ -222,8 +222,8 @@ export const privacyAuditEvent = pgTable(
 );
 
 /**
- * Current pointer for a data-subject request. Transition history remains a
- * later append-only slice per frozen contracts.
+ * Current pointer for a data-subject request. Append-only transition history
+ * lives in `privacy_subject_request_transition`.
  */
 export const privacySubjectRequest = pgTable(
   'privacy_subject_request',

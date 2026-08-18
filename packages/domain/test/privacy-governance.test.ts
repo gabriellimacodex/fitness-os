@@ -312,6 +312,25 @@ describe('synthetic subject request repository', () => {
     await expect(repo.get(request.requestId)).resolves.toMatchObject({
       state: 'ready',
     });
+
+    await expect(
+      repo.applyTransition({
+        requestId: request.requestId,
+        next: 'in_progress',
+        updatedAt: '2026-08-18T12:02:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'c3333333-3333-4333-8333-333333333333',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        reasonCode: 'forward',
+        productionMode: false,
+      }),
+    ).resolves.toEqual({ status: 'conflict' });
   });
 });
 

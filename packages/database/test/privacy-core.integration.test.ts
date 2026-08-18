@@ -396,5 +396,83 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       });
       expect(conflict).toEqual({ status: 'conflict' });
     });
+
+    it('serializes concurrent transitions so only one advances the pointer', async () => {
+      await policies.put(policy);
+
+      const request = privacySubjectRequestReferenceSchema.parse({
+        requestId: privacySubjectRequestIdSchema.parse(
+          '77777777-7777-4777-8777-777777777777',
+        ),
+        requestType: 'export',
+        state: 'ready',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      });
+      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
+
+      const results = await Promise.all([
+        subjectRequests.applyTransition({
+          requestId: request.requestId,
+          next: 'in_progress',
+          updatedAt: '2026-08-18T12:04:00.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'd4444444-4444-4444-8444-444444444444',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'e5555555-5555-4555-8555-555555555555',
+          ),
+          correlationId: privacyCorrelationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          reasonCode: 'forward',
+          productionMode: false,
+        }),
+        subjectRequests.applyTransition({
+          requestId: request.requestId,
+          next: 'in_progress',
+          updatedAt: '2026-08-18T12:04:01.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'f6666666-6666-4666-8666-666666666666',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'a7777777-7777-4777-8777-777777777777',
+          ),
+          correlationId: privacyCorrelationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          reasonCode: 'forward',
+          productionMode: false,
+        }),
+      ]);
+
+      const statuses = results.map((result) => result.status).sort();
+      expect(statuses).toEqual(['advanced', 'invalid']);
+
+      const advanced = results.find((result) => result.status === 'advanced');
+      const rejected = results.find((result) => result.status === 'invalid');
+      if (advanced === undefined || advanced.status !== 'advanced') {
+        throw new Error('expected one advanced transition');
+      }
+      expect(rejected).toMatchObject({
+        status: 'invalid',
+        reason: 'illegal_transition',
+      });
+
+      await expect(subjectRequests.get(request.requestId)).resolves.toEqual(
+        advanced.request,
+      );
+      const history = await subjectRequests.listTransitions(request.requestId);
+      expect(history).toEqual([advanced.transition]);
+      expect(history.every((row) => row.previousState === 'ready')).toBe(true);
+    });
   },
 );

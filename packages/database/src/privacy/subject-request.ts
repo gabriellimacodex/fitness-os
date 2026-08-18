@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type {
   PrivacyReferencePutResult,
   PrivacySubjectRequestApplyResult,
@@ -143,50 +143,60 @@ export function createPostgresPrivacySubjectRequestRepository(
       verification?: PrivacyVerificationReference | null;
       productionMode?: boolean;
     }): Promise<PrivacySubjectRequestApplyResult> => {
-      const [row] = await connection.db
-        .select()
-        .from(privacySubjectRequest)
-        .where(eq(privacySubjectRequest.requestId, input.requestId))
-        .limit(1);
-
-      if (!row) {
-        return { reason: 'not_found', status: 'invalid' };
-      }
-
-      const current = toReference(row);
-      const result = transitionSubjectRequest({
-        request: current,
-        next: input.next,
-        updatedAt: input.updatedAt,
-        verification: input.verification,
-        productionMode: input.productionMode,
-      });
-
-      if (result.status !== 'advanced') {
-        return result;
-      }
-
-      const transition = privacySubjectRequestTransitionReferenceSchema.parse({
-        transitionId: input.transitionId,
-        requestId: current.requestId,
-        previousState: current.state,
-        nextState: result.request.state,
-        operationId: input.operationId,
-        correlationId: input.correlationId,
-        reasonCode: input.reasonCode ?? null,
-        verificationRefDigest:
-          result.request.verification?.verificationRefDigest ?? null,
-        recordedAt: input.updatedAt,
-      });
-
       try {
-        await connection.db.transaction(async (tx) => {
-          await tx
+        return await connection.db.transaction(async (tx) => {
+          const [row] = await tx
+            .select()
+            .from(privacySubjectRequest)
+            .where(eq(privacySubjectRequest.requestId, input.requestId))
+            .for('update');
+
+          if (!row) {
+            return { reason: 'not_found' as const, status: 'invalid' as const };
+          }
+
+          const current = toReference(row);
+          const result = transitionSubjectRequest({
+            request: current,
+            next: input.next,
+            updatedAt: input.updatedAt,
+            verification: input.verification,
+            productionMode: input.productionMode,
+          });
+
+          if (result.status !== 'advanced') {
+            return result;
+          }
+
+          const transition =
+            privacySubjectRequestTransitionReferenceSchema.parse({
+              transitionId: input.transitionId,
+              requestId: current.requestId,
+              previousState: current.state,
+              nextState: result.request.state,
+              operationId: input.operationId,
+              correlationId: input.correlationId,
+              reasonCode: input.reasonCode ?? null,
+              verificationRefDigest:
+                result.request.verification?.verificationRefDigest ?? null,
+              recordedAt: input.updatedAt,
+            });
+
+          const updated = await tx
             .update(privacySubjectRequest)
             .set(toRow(result.request))
             .where(
-              eq(privacySubjectRequest.requestId, result.request.requestId),
-            );
+              and(
+                eq(privacySubjectRequest.requestId, result.request.requestId),
+                eq(privacySubjectRequest.state, current.state),
+              ),
+            )
+            .returning({ requestId: privacySubjectRequest.requestId });
+
+          if (updated.length === 0) {
+            return { status: 'conflict' as const };
+          }
+
           await tx.insert(privacySubjectRequestTransition).values({
             transitionId: transition.transitionId,
             requestId: transition.requestId,
@@ -198,6 +208,12 @@ export function createPostgresPrivacySubjectRequestRepository(
             verificationRefDigest: transition.verificationRefDigest,
             recordedAt: transition.recordedAt,
           });
+
+          return {
+            request: result.request,
+            status: 'advanced' as const,
+            transition,
+          };
         });
       } catch (error) {
         if (
@@ -211,8 +227,6 @@ export function createPostgresPrivacySubjectRequestRepository(
         }
         throw error;
       }
-
-      return { request: result.request, status: 'advanced', transition };
     },
   };
 }
