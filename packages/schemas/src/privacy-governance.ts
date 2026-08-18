@@ -173,3 +173,59 @@ export const governanceLifecycleResultSchema = z.discriminatedUnion('outcome', [
 export type GovernanceLifecycleResult = z.infer<
   typeof governanceLifecycleResultSchema
 >;
+
+export const privacyPolicyPackageIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyPolicyPackageId'>();
+export type PrivacyPolicyPackageId = z.infer<
+  typeof privacyPolicyPackageIdSchema
+>;
+
+export const privacyPolicyVersionIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyPolicyVersionId'>();
+export type PrivacyPolicyVersionId = z.infer<
+  typeof privacyPolicyVersionIdSchema
+>;
+
+export const privacyEvidenceIdSchema = z.uuidv4().brand<'PrivacyEvidenceId'>();
+export type PrivacyEvidenceId = z.infer<typeof privacyEvidenceIdSchema>;
+
+export const privacyPurposeIdSchema = z.uuidv4().brand<'PrivacyPurposeId'>();
+export type PrivacyPurposeId = z.infer<typeof privacyPurposeIdSchema>;
+
+/**
+ * Reference-only policy package metadata. Carries no legal copy, notice text,
+ * or participant answers — those remain outside PRD 21 executable contracts.
+ */
+export const privacyPolicyPackageReferenceSchema = z
+  .object({
+    packageId: privacyPolicyPackageIdSchema,
+    versionId: privacyPolicyVersionIdSchema,
+    canonicalizationVersion: privacyCanonicalizationVersionSchema,
+    contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyPolicyPackageReference = z.infer<
+  typeof privacyPolicyPackageReferenceSchema
+>;
+
+/**
+ * Append-only authorization evidence locator. Decision payload is opaque and
+ * integrity-bound; raw consent answers are not represented here.
+ */
+export const privacyEvidenceReferenceSchema = z
+  .object({
+    evidenceId: privacyEvidenceIdSchema,
+    purposeId: privacyPurposeIdSchema,
+    policyVersionId: privacyPolicyVersionIdSchema,
+    contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    recordedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+  })
+  .strict();
+export type PrivacyEvidenceReference = z.infer<
+  typeof privacyEvidenceReferenceSchema
+>;
