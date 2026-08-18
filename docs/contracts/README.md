@@ -101,3 +101,19 @@ and `StudentCoachLinkId`. Public browser requests accept only retry tokens and
 body-held claim secrets; they reject caller-owned operation IDs, digests,
 principal references, legal content, and raw evidence. `PrincipalReference`
 is backend-only and must never appear on a public request or response schema.
+
+### PRD 21 — Privacy & Data Governance
+
+| Contract group                         | Executable schemas                                                                                         | Provider                          | Consumers                                     | Status |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------- | ------ |
+| Operation kinds and canonical profiles | `privacyOperationKindSchema`, `PRIVACY_CANONICAL_PROFILES`, and profile helpers in `privacy-governance.ts` | Privacy domain / operation ledger | Domain canonicalization, ledger, and tests    | Frozen |
+| Retention preview set fragment         | `retentionPreviewCanonicalInputSchema` and set-sort helpers in `privacy-governance.ts`                     | Retention preview coordinator     | Domain digest/replay and contract tests       | Frozen |
+| Governance lifecycle proof binding     | `governanceLifecycleResultSchema` / `PrivacyLifecycleProofId` in `privacy-governance.ts`                   | Governance lifecycle processor    | Public results, ledger, reconciliation, tests | Frozen |
+
+Option A foundation only: every declared operation kind has exactly one versioned
+canonical profile; `retention_preview` declares `/approvedExceptionIds` as a
+set-like path with UTF-8 bytewise sort before digest; `completed` and
+`partially_failed` lifecycle results require `proofId`, and `denied` rejects it.
+Broader PRD 21 identity, policy, evidence, request, audit, and readiness contracts
+remain for later coordinated freeze slices. No public Fastify routes or database
+migrations are authorized by this foundation.
