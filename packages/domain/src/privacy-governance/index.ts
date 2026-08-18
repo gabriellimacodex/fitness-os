@@ -9,6 +9,7 @@ export type {
   PrivacyIdFactory,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
+  PrivacyReferencePutResult,
   PrivacyRuntimeProcessorRegistry,
   PrivacyTrustedClock,
   PrivacyWithdrawalAppendResult,

@@ -1,8 +1,10 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   foreignKey,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -11,10 +13,105 @@ import {
 } from 'drizzle-orm/pg-core';
 
 /**
- * PRD 21 Option A disposable-core persistence.
- * Append-only ordinary-app ledgers for evidence, withdrawal, and audit.
- * No policy text, credentials, or free-text metadata columns.
+ * PRD 21 Option A disposable persistence.
+ * Reference-only policy/purpose/processor rows plus append-only evidence,
+ * withdrawal, and audit ledgers. No policy text, credentials, or free-text
+ * metadata columns.
  */
+
+export const privacyPolicyPackageVersion = pgTable(
+  'privacy_policy_package_version',
+  {
+    versionId: uuid('version_id').primaryKey(),
+    packageId: uuid('package_id').notNull(),
+    canonicalizationVersion: text('canonicalization_version').notNull(),
+    contentDigest: text('content_digest').notNull(),
+    synthetic: boolean('synthetic').notNull(),
+  },
+  (table) => [
+    check(
+      'privacy_policy_package_version_canonicalization_check',
+      sql`${table.canonicalizationVersion} = 'privacy-governance.canonical.v1'`,
+    ),
+    check(
+      'privacy_policy_package_version_content_digest_check',
+      sql`${table.contentDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    index('privacy_policy_package_version_package_id_idx').on(table.packageId),
+  ],
+);
+
+export const privacyPurposeVersion = pgTable(
+  'privacy_purpose_version',
+  {
+    purposeVersionId: uuid('purpose_version_id').primaryKey(),
+    purposeId: uuid('purpose_id').notNull(),
+    policyVersionId: uuid('policy_version_id').notNull(),
+    allowedOperationKinds: jsonb('allowed_operation_kinds')
+      .$type<string[]>()
+      .notNull(),
+    allowedCategoryIds: jsonb('allowed_category_ids')
+      .$type<string[]>()
+      .notNull(),
+    evidenceRequired: boolean('evidence_required').notNull(),
+    activationState: text('activation_state').notNull(),
+    contentDigest: text('content_digest').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.policyVersionId],
+      foreignColumns: [privacyPolicyPackageVersion.versionId],
+      name: 'privacy_purpose_version_policy_version_id_fk',
+    }).onDelete('restrict'),
+    check(
+      'privacy_purpose_version_activation_state_check',
+      sql`${table.activationState} IN ('active', 'inactive', 'superseded')`,
+    ),
+    check(
+      'privacy_purpose_version_content_digest_check',
+      sql`${table.contentDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    uniqueIndex('privacy_purpose_version_one_active')
+      .on(table.purposeId)
+      .where(sql`${table.activationState} = 'active'`),
+    index('privacy_purpose_version_purpose_id_idx').on(table.purposeId),
+  ],
+);
+
+export const privacyProcessorRegistration = pgTable(
+  'privacy_processor_registration',
+  {
+    processorId: uuid('processor_id').primaryKey(),
+    inventoryId: uuid('inventory_id').notNull(),
+    descriptorDigest: text('descriptor_digest').notNull(),
+    inventoryVersionDigest: text('inventory_version_digest').notNull(),
+    allowedPurposeIds: jsonb('allowed_purpose_ids').$type<string[]>().notNull(),
+    allowedCategoryIds: jsonb('allowed_category_ids')
+      .$type<string[]>()
+      .notNull(),
+    capabilities: jsonb('capabilities').$type<string[]>().notNull(),
+    supportsSubjectLookup: boolean('supports_subject_lookup').notNull(),
+    codeOwner: text('code_owner').notNull(),
+    synthetic: boolean('synthetic').notNull(),
+  },
+  (table) => [
+    check(
+      'privacy_processor_registration_descriptor_digest_check',
+      sql`${table.descriptorDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_processor_registration_inventory_version_digest_check',
+      sql`${table.inventoryVersionDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_processor_registration_code_owner_check',
+      sql`${table.codeOwner} ~ '^[A-Za-z0-9._:-]+$' AND char_length(${table.codeOwner}) BETWEEN 1 AND 128`,
+    ),
+    index('privacy_processor_registration_inventory_id_idx').on(
+      table.inventoryId,
+    ),
+  ],
+);
 
 export const privacyAuthorizationEvidence = pgTable(
   'privacy_authorization_evidence',

@@ -25,6 +25,9 @@ export {
 export {
   privacyAuditEvent,
   privacyAuthorizationEvidence,
+  privacyPolicyPackageVersion,
+  privacyProcessorRegistration,
+  privacyPurposeVersion,
   privacyWithdrawal,
 } from './privacy/tables.js';
 

@@ -28,6 +28,9 @@ import {
   checkPrivacyCoreDatabaseReadiness,
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
+  createPostgresPrivacyPolicyPackageRepository,
+  createPostgresPrivacyPurposeRegistry,
+  createPostgresPrivacyRuntimeProcessorRegistry,
 } from '../src/privacy/index.js';
 import { requireDisposableDatabaseUrl } from './postgres.js';
 
@@ -89,12 +92,22 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       typeof createPostgresPrivacyAuthorizationEvidenceLedger
     >;
     let auditSink: ReturnType<typeof createPostgresPrivacyAuditSink>;
+    let policies: ReturnType<
+      typeof createPostgresPrivacyPolicyPackageRepository
+    >;
+    let purposes: ReturnType<typeof createPostgresPrivacyPurposeRegistry>;
+    let processors: ReturnType<
+      typeof createPostgresPrivacyRuntimeProcessorRegistry
+    >;
 
     beforeAll(async () => {
       connection = createPostgresConnection(requireDisposableDatabaseUrl());
       evidenceLedger =
         createPostgresPrivacyAuthorizationEvidenceLedger(connection);
       auditSink = createPostgresPrivacyAuditSink(connection);
+      policies = createPostgresPrivacyPolicyPackageRepository(connection);
+      purposes = createPostgresPrivacyPurposeRegistry(connection);
+      processors = createPostgresPrivacyRuntimeProcessorRegistry(connection);
       await connection.db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
       await connection.db.execute(sql`DROP SCHEMA public CASCADE`);
       await connection.db.execute(sql`CREATE SCHEMA public`);
@@ -103,7 +116,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence`,
+        sql`TRUNCATE privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -214,6 +227,60 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         recordedAt: '2026-08-18T12:01:00.000Z',
       });
       await expect(auditSink.append(manualAudit)).resolves.toBe('accepted');
+    });
+
+    it('stores policy/purpose/processor references and evaluates fully on PG ports', async () => {
+      await expect(policies.put(policy)).resolves.toBe('accepted');
+      await expect(policies.put(policy)).resolves.toBe('conflict');
+      await expect(policies.getActive(policy.versionId)).resolves.toEqual(
+        policy,
+      );
+
+      await expect(purposes.put(purpose)).resolves.toBe('accepted');
+      await expect(
+        purposes.getVersion(purpose.purposeVersionId),
+      ).resolves.toEqual(purpose);
+
+      await expect(processors.put(processor)).resolves.toBe('accepted');
+      await expect(
+        processors.getDescriptor(processor.processorId),
+      ).resolves.toEqual(processor);
+
+      await evidenceLedger.appendEvidence(evidence);
+
+      const synthetic = createSyntheticPrivacyDataUsePorts({
+        fixedUtcMs: '2026-08-18T12:00:00.000Z',
+      });
+
+      const allowed = await evaluateDataUse(
+        {
+          clock: synthetic.clock,
+          ids: synthetic.ids,
+          policies,
+          purposes,
+          processors,
+          evidence: evidenceLedger,
+          audit: auditSink,
+        },
+        {
+          actor,
+          purposeVersionId: purpose.purposeVersionId,
+          policyVersionId: policy.versionId,
+          operationKind: 'data_use_evaluation',
+          engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+            '44444444-4444-4444-8444-444444444444',
+          ),
+          processorId: processor.processorId,
+          evidenceId: evidence.evidenceId,
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          productionMode: false,
+        },
+      );
+
+      expect(allowed.status).toBe('evaluated');
+      expect(allowed.decision.outcome).toBe('allowed');
     });
   },
 );

@@ -22,6 +22,13 @@
       "when": 1787078439130,
       "tag": "0002_prd21_privacy_core",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787079399453,
+      "tag": "0003_prd21_privacy_policy_purpose_processor",
+      "breakpoints": true
     }
   ]
 }

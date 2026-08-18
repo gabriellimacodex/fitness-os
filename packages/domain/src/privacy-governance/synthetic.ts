@@ -79,6 +79,14 @@ export class SyntheticPrivacyPolicyPackageRepository implements PrivacyPolicyPac
   ): Promise<PrivacyPolicyPackageReference | null> {
     return this.byVersion.get(versionId) ?? null;
   }
+
+  async put(record: PrivacyPolicyPackageReference) {
+    if (this.byVersion.has(record.versionId)) {
+      return 'conflict' as const;
+    }
+    this.byVersion.set(record.versionId, record);
+    return 'accepted' as const;
+  }
 }
 
 export class SyntheticPrivacyPurposeRegistry implements PrivacyPurposeRegistry {
@@ -95,6 +103,14 @@ export class SyntheticPrivacyPurposeRegistry implements PrivacyPurposeRegistry {
     purposeVersionId: string,
   ): Promise<PrivacyPurposeVersionReference | null> {
     return this.byVersion.get(purposeVersionId) ?? null;
+  }
+
+  async put(record: PrivacyPurposeVersionReference) {
+    if (this.byVersion.has(record.purposeVersionId)) {
+      return 'conflict' as const;
+    }
+    this.byVersion.set(record.purposeVersionId, record);
+    return 'accepted' as const;
   }
 }
 
@@ -166,6 +182,14 @@ export class SyntheticPrivacyRuntimeProcessorRegistry implements PrivacyRuntimeP
     processorId: string,
   ): Promise<PrivacyProcessorDescriptorReference | null> {
     return this.byId.get(processorId) ?? null;
+  }
+
+  async put(record: PrivacyProcessorDescriptorReference) {
+    if (this.byId.has(record.processorId)) {
+      return 'conflict' as const;
+    }
+    this.byId.set(record.processorId, record);
+    return 'accepted' as const;
   }
 }
 
