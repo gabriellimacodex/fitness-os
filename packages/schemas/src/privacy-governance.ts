@@ -457,3 +457,132 @@ export const canonicalizePrivacyPurposeVersionReference = (
   allowedCategoryIds: sortPrivacySetIdentifiers(input.allowedCategoryIds),
   allowedOperationKinds: sortPrivacySetIdentifiers(input.allowedOperationKinds),
 });
+
+export const privacySubjectRequestIdSchema = z
+  .uuidv4()
+  .brand<'PrivacySubjectRequestId'>();
+export type PrivacySubjectRequestId = z.infer<
+  typeof privacySubjectRequestIdSchema
+>;
+
+export const privacyAuditEventIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyAuditEventId'>();
+export type PrivacyAuditEventId = z.infer<typeof privacyAuditEventIdSchema>;
+
+/** Engineering request types only — not a legal entitlement decision. */
+export const privacySubjectRequestTypeSchema = z.enum([
+  'access',
+  'export',
+  'deletion',
+]);
+export type PrivacySubjectRequestType = z.infer<
+  typeof privacySubjectRequestTypeSchema
+>;
+
+export const privacySubjectRequestStateSchema = z.enum([
+  'received',
+  'verification_required',
+  'policy_blocked',
+  'ready',
+  'in_progress',
+  'partially_failed',
+  'completed',
+  'cancelled',
+  'denied',
+]);
+export type PrivacySubjectRequestState = z.infer<
+  typeof privacySubjectRequestStateSchema
+>;
+
+/**
+ * Non-sensitive verification locator. Synthetic markers are rejected by
+ * production readiness; no identity payload is carried here.
+ */
+export const privacyVerificationReferenceSchema = z
+  .object({
+    verificationRefDigest: privacySha256DigestSchema,
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyVerificationReference = z.infer<
+  typeof privacyVerificationReferenceSchema
+>;
+
+/**
+ * Data-subject request current pointer. Transition history stays in a later
+ * append-only slice; this freezes the request identity and pinned versions.
+ */
+export const privacySubjectRequestReferenceSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    requestType: privacySubjectRequestTypeSchema,
+    state: privacySubjectRequestStateSchema,
+    verification: privacyVerificationReferenceSchema.nullable(),
+    policyVersionId: privacyPolicyVersionIdSchema,
+    inventoryVersionDigest: privacySha256DigestSchema,
+    correlationId: privacyCorrelationIdSchema,
+    updatedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacySubjectRequestReference = z.infer<
+  typeof privacySubjectRequestReferenceSchema
+>;
+
+export const privacyAuditEventKindSchema = z.enum([
+  'data_use_evaluated',
+  'authorization_evidence_appended',
+  'authorization_withdrawn',
+  'subject_request_transitioned',
+  'processor_step_recorded',
+  'retention_preview_recorded',
+  'retention_execution_recorded',
+  'governance_lifecycle_recorded',
+]);
+export type PrivacyAuditEventKind = z.infer<typeof privacyAuditEventKindSchema>;
+
+export const privacyAuditOutcomeSchema = z.enum([
+  'succeeded',
+  'denied',
+  'failed',
+  'partial',
+]);
+export type PrivacyAuditOutcome = z.infer<typeof privacyAuditOutcomeSchema>;
+
+/**
+ * Append-only audit event with closed kind/outcome and minimal references.
+ * Rejects arbitrary metadata, free text, SQL, tokens, and subject payloads.
+ */
+export const privacyAuditEventReferenceSchema = z
+  .object({
+    auditEventId: privacyAuditEventIdSchema,
+    kind: privacyAuditEventKindSchema,
+    outcome: privacyAuditOutcomeSchema,
+    reasonCode: privacyDataUseDenyReasonSchema.nullable(),
+    policyVersionId: privacyPolicyVersionIdSchema.nullable(),
+    evidenceId: privacyEvidenceIdSchema.nullable(),
+    requestId: privacySubjectRequestIdSchema.nullable(),
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    recordedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.outcome === 'denied' && value.reasonCode === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'denied audit events require a closed reasonCode',
+        path: ['reasonCode'],
+      });
+    }
+    if (value.outcome === 'succeeded' && value.reasonCode !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'succeeded audit events must not carry reasonCode',
+        path: ['reasonCode'],
+      });
+    }
+  });
+export type PrivacyAuditEventReference = z.infer<
+  typeof privacyAuditEventReferenceSchema
+>;

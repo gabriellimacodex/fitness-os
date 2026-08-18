@@ -9,6 +9,7 @@ import {
   getPrivacyCanonicalProfile,
   governanceLifecycleResultSchema,
   privacyActorContextReferenceSchema,
+  privacyAuditEventReferenceSchema,
   privacyCanonicalizationVersionSchema,
   privacyDataUseDecisionSchema,
   privacyDataUseDenyReasonSchema,
@@ -18,6 +19,7 @@ import {
   privacyPolicyPackageReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyRetentionExceptionIdSchema,
+  privacySubjectRequestReferenceSchema,
   privacyWithdrawalReferenceSchema,
   retentionPreviewCanonicalInputSchema,
   sortPrivacySetIdentifiers,
@@ -378,6 +380,99 @@ describe('actor context and purpose version references', () => {
       privacyPurposeVersionReferenceSchema.safeParse({
         ...purpose,
         activationState: 'draft',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('subject request and audit event references', () => {
+  it('accepts request pointers without entitlement or identity payloads', () => {
+    const parsed = privacySubjectRequestReferenceSchema.parse({
+      requestId: '66666666-6666-4666-8666-666666666666',
+      requestType: 'export',
+      state: 'verification_required',
+      verification: {
+        verificationRefDigest: '1'.repeat(64),
+        synthetic: true,
+      },
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      inventoryVersionDigest: '2'.repeat(64),
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      updatedAt: '2026-08-18T12:00:00.000Z',
+    });
+    expect(parsed.state).toBe('verification_required');
+
+    expect(
+      privacySubjectRequestReferenceSchema.safeParse({
+        ...parsed,
+        email: 'user@example.com',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacySubjectRequestReferenceSchema.safeParse({
+        ...parsed,
+        requestType: 'rectification',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacySubjectRequestReferenceSchema.safeParse({
+        ...parsed,
+        state: 'legally_approved',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires closed audit kinds and denied reason codes without free-text metadata', () => {
+    const denied = privacyAuditEventReferenceSchema.parse({
+      auditEventId: '77777777-7777-4777-8777-777777777777',
+      kind: 'data_use_evaluated',
+      outcome: 'denied',
+      reasonCode: 'evidence_withdrawn',
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      requestId: null,
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      recordedAt: '2026-08-18T12:00:00.000Z',
+    });
+    expect(denied.outcome).toBe('denied');
+
+    const succeeded = privacyAuditEventReferenceSchema.parse({
+      auditEventId: '88888888-8888-4888-8888-888888888888',
+      kind: 'subject_request_transitioned',
+      outcome: 'succeeded',
+      reasonCode: null,
+      policyVersionId: null,
+      evidenceId: null,
+      requestId: '66666666-6666-4666-8666-666666666666',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      recordedAt: '2026-08-18T12:00:00.000Z',
+    });
+    expect(succeeded.kind).toBe('subject_request_transitioned');
+
+    expect(
+      privacyAuditEventReferenceSchema.safeParse({
+        ...denied,
+        reasonCode: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyAuditEventReferenceSchema.safeParse({
+        ...succeeded,
+        reasonCode: 'evidence_missing',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyAuditEventReferenceSchema.safeParse({
+        ...succeeded,
+        metadata: { sql: 'select 1' },
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyAuditEventReferenceSchema.safeParse({
+        ...succeeded,
+        stackTrace: 'Error: boom',
       }).success,
     ).toBe(false);
   });

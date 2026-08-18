@@ -115,18 +115,22 @@ is backend-only and must never appear on a public request or response schema.
 | Data-use decisions                     | `privacyDataUseDecisionSchema` / `privacyDataUseDenyReasonSchema` in `privacy-governance.ts`               | Data-use evaluator                | Domain evaluation and tests                   | Frozen |
 | Actor context references               | `privacyActorContextReferenceSchema` / `privacyAuthorityClaimSchema` in `privacy-governance.ts`            | Identity → privacy adapter        | Domain evaluation and tests                   | Frozen |
 | Purpose version references             | `privacyPurposeVersionReferenceSchema` in `privacy-governance.ts`                                          | Purpose registry                  | Domain evaluation and tests                   | Frozen |
+| Subject request references             | `privacySubjectRequestReferenceSchema` in `privacy-governance.ts`                                          | Request coordinator               | Domain evaluation, ledger, and tests          | Frozen |
+| Audit event references                 | `privacyAuditEventReferenceSchema` in `privacy-governance.ts`                                              | Privacy audit sink                | Domain evaluation, ledger, and tests          | Frozen |
 
-Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose
-locators and tagged data-use decisions: every declared operation kind has exactly
-one versioned canonical profile; `retention_preview` declares
+Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
+request/audit locators and tagged data-use decisions: every declared operation
+kind has exactly one versioned canonical profile; `retention_preview` declares
 `/approvedExceptionIds` as a set-like path with UTF-8 bytewise sort before digest;
 `completed` and `partially_failed` lifecycle results require `proofId`, and
 `denied` rejects it. Actor context binds principal identity by digest and closed
 authority claims only — no raw token, student/coach ID, or legal role. Purpose
-versions bind allowed operations/categories without legal purpose text.
-Policy/evidence/withdrawal schemas carry digests and IDs only — no legal copy or
-participant answers. Withdrawal is one-way (`withdrawn` only) and never reopens
-evidence. `DataUseDecision` is a tagged `allowed` | `denied` union with a closed
-deny taxonomy — never a boolean grant. Request, audit, processor, and readiness
+versions bind allowed operations/categories without legal purpose text. Subject
+requests carry engineering type/state and verification digests only — not legal
+entitlement. Audit events use closed kinds/outcomes and reject free-text
+metadata. Policy/evidence/withdrawal schemas carry digests and IDs only — no
+legal copy or participant answers. Withdrawal is one-way (`withdrawn` only) and
+never reopens evidence. `DataUseDecision` is a tagged `allowed` | `denied` union
+with a closed deny taxonomy — never a boolean grant. Processor and readiness
 contracts remain for later coordinated freeze slices. No public Fastify routes or
 database migrations are authorized by this foundation.
