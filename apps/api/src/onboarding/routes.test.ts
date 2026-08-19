@@ -1024,4 +1024,156 @@ describe('policy-refresh and claim', () => {
 
     await app.close();
   });
+
+  it('denies claim when OnboardingClaimRepository rejects the commit', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          claimRepository: {
+            commit: async () => ({
+              reason: 'mapping_conflict' as const,
+              status: 'denied' as const,
+            }),
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-policy') },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-deny'),
+      },
+    });
+    const claimedBody = onboardingOperationResponseSchema.parse(claimed.json());
+    expect(claimedBody.result).toMatchObject({
+      outcome: 'invalid_or_unavailable',
+    });
+    expect(store.mappings.get('principal-a') ?? []).toEqual([]);
+
+    await app.close();
+  });
+
+  it('records claim transitions through OnboardingTransitionSink', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const appended: Array<{
+      aggregate: string;
+      nextState: string;
+      previousState: string;
+    }> = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: {
+            append: async (record) => {
+              appended.push({
+                aggregate: record.aggregate,
+                nextState: record.nextState,
+                previousState: record.previousState,
+              });
+              return 'accepted';
+            },
+          },
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-policy-sink'),
+      },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-sink'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(claimed.json()).result,
+    ).toMatchObject({ outcome: 'completed', role: 'student' });
+    expect(appended).toEqual(
+      expect.arrayContaining([
+        {
+          aggregate: 'invitation',
+          nextState: 'claimed',
+          previousState: 'issued',
+        },
+        {
+          aggregate: 'attempt',
+          nextState: 'completed',
+          previousState: 'ready_to_claim',
+        },
+        {
+          aggregate: 'role_mapping',
+          nextState: 'student',
+          previousState: 'unmapped',
+        },
+      ]),
+    );
+
+    await app.close();
+  });
 });

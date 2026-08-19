@@ -40,12 +40,14 @@ export interface PlatformOptions {
     isStorageUnavailable?: ExerciseCatalogRouteDependencies['isStorageUnavailable'];
   };
   onboarding?: {
+    claimRepository?: import('@fitness-os/domain').OnboardingClaimRepository;
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
     policyGateway?: import('@fitness-os/domain').OnboardingPolicyGateway;
     readinessProbe?: import('@fitness-os/domain').OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
+    transitionSink?: import('@fitness-os/domain').OnboardingTransitionSink;
   };
   privacy?: PrivacySyntheticOptions;
   readinessCheck?: ReadinessCheck;
