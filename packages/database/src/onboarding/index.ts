@@ -21,6 +21,7 @@ export {
   type StoredOnboardingInvitation,
 } from './invitations.js';
 export {
+  asOnboardingOperationRepository,
   createPostgresOnboardingOperationRepository,
   type OnboardingMutationNamespace,
   type OnboardingOperationPutResult,

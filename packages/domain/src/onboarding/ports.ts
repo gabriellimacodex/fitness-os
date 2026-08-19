@@ -1,6 +1,7 @@
 import type {
   AttemptDetail,
   OnboardingInvitationId,
+  OnboardingOperationId,
   PrincipalRoleMappingId,
 } from '@fitness-os/schemas';
 
@@ -82,6 +83,44 @@ export interface OnboardingAttemptRepository {
     principalKey: string,
   ): Promise<readonly OnboardingAttemptRecord[]>;
   put(record: OnboardingAttemptRecord): Promise<OnboardingAttemptPutResult>;
+}
+
+export type OnboardingMutationNamespace =
+  | 'create_attempt'
+  | 'resume_attempt'
+  | 'abandon_attempt'
+  | 'refresh_policy'
+  | 'claim_attempt'
+  | 'issue_student_invitation'
+  | 'revoke_student_invitation';
+
+export type OnboardingOperationRecord = {
+  bindingKey: string;
+  createdAt: string;
+  digest: string;
+  namespace: OnboardingMutationNamespace;
+  operationId: OnboardingOperationId;
+  principalKey: string;
+  result: unknown;
+  retryDigest: string;
+};
+
+export type OnboardingOperationPutResult =
+  | { status: 'accepted'; operation: OnboardingOperationRecord }
+  | { status: 'replay'; operation: OnboardingOperationRecord }
+  | { status: 'conflict'; operation: OnboardingOperationRecord };
+
+/**
+ * Bind scoped retry tokens, store typed results, and resolve idempotent replay.
+ */
+export interface OnboardingOperationRepository {
+  getByBindingKey(
+    bindingKey: string,
+  ): Promise<OnboardingOperationRecord | null>;
+  getByOperationId(
+    operationId: string,
+  ): Promise<OnboardingOperationRecord | null>;
+  put(record: OnboardingOperationRecord): Promise<OnboardingOperationPutResult>;
 }
 
 export type PrincipalRoleMappingRecord = {
