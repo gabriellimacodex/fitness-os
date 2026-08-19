@@ -23,11 +23,13 @@ import {
   authoritativeEvidenceState,
   authorizeRetentionExecution,
   compareExpectedInventoryToRuntime,
+  composeSyntheticProcessorSimulation,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   transitionSubjectRequest,
 } from '../src/privacy-governance/index.js';
@@ -258,6 +260,137 @@ describe('withdrawal planning', () => {
       withdrawnAt: '2026-08-18T12:06:00.000Z',
     });
     expect(second.status).toBe('already_withdrawn');
+  });
+});
+
+describe('synthetic subject-data processor simulation', () => {
+  it('executes declared inventory/access and composes coverage match', async () => {
+    const syntheticProcessor = new SyntheticPrivacySubjectDataProcessor(
+      processor,
+      ['privacy_audit_event', 'privacy_subject_request'],
+    );
+    const inventoryResult = await syntheticProcessor.execute({
+      processorId: processor.processorId,
+      capability: 'inventory',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      ),
+      productionMode: false,
+    });
+    expect(inventoryResult.status).toBe('completed');
+    expect(inventoryResult.families).toHaveLength(2);
+
+    const accessResult = await syntheticProcessor.execute({
+      processorId: processor.processorId,
+      capability: 'access',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+      productionMode: false,
+    });
+    expect(accessResult.status).toBe('completed');
+    expect(accessResult.accessLocatorDigest).toMatch(/^[a-f0-9]{64}$/);
+
+    const denied = await syntheticProcessor.execute({
+      processorId: processor.processorId,
+      capability: 'delete',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      ),
+      productionMode: false,
+    });
+    expect(denied).toMatchObject({
+      status: 'denied',
+      reasonCode: 'capability_not_declared',
+    });
+
+    const productionDenied = await syntheticProcessor.execute({
+      processorId: processor.processorId,
+      capability: 'inventory',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      ),
+      productionMode: true,
+    });
+    expect(productionDenied).toMatchObject({
+      status: 'denied',
+      reasonCode: 'synthetic_processor_in_production',
+    });
+
+    const composed = composeSyntheticProcessorSimulation({
+      processors: [syntheticProcessor],
+    });
+    const expected = privacyExpectedProcessorInventorySchema.parse({
+      schemaVersion: 'privacy.processor-inventory.v1',
+      inventoryId: processor.inventoryId,
+      inventoryVersionDigest: processor.inventoryVersionDigest,
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      sourceCommit: '0b0db38',
+      processors: [
+        {
+          processorId: processor.processorId,
+          registrationVersion: 1,
+          inventoryId: processor.inventoryId,
+          descriptorDigest: processor.descriptorDigest,
+          codeOwner: processor.codeOwner,
+          adapterPackage: '@fitness-os/domain',
+          storageKind: 'in_memory_synthetic',
+          allowedPurposeIds: processor.allowedPurposeIds,
+          allowedCategoryIds: processor.allowedCategoryIds,
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: processor.capabilities,
+          unsupportedCapabilities: [
+            {
+              capability: 'delete',
+              rationale: 'deferred_to_later_prd21_slice',
+            },
+          ],
+          recordFamilies: [
+            {
+              family: 'privacy_audit_event',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+            {
+              family: 'privacy_subject_request',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          environmentApplicability: 'synthetic_only',
+          requiredReadiness: 'mechanism_only',
+          synthetic: true,
+        },
+      ],
+    });
+    expect(
+      compareExpectedInventoryToRuntime({
+        expected,
+        runtime: composed.runtimeDescriptors,
+      }),
+    ).toEqual({ status: 'matched' });
   });
 });
 

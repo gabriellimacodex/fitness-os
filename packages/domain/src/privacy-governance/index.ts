@@ -17,11 +17,16 @@ export type {
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
   PrivacyRuntimeProcessorRegistry,
+  PrivacySubjectDataProcessor,
   PrivacySubjectRequestApplyResult,
   PrivacySubjectRequestRepository,
   PrivacyTrustedClock,
   PrivacyWithdrawalAppendResult,
 } from './ports.js';
+export {
+  composeSyntheticProcessorSimulation,
+  SyntheticPrivacySubjectDataProcessor,
+} from './processor.js';
 export {
   isTerminalSubjectRequestState,
   transitionSubjectRequest,

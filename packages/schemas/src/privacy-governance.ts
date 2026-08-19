@@ -885,6 +885,88 @@ export const canonicalizePrivacyExpectedProcessorInventory = (
 });
 
 /**
+ * Synthetic SubjectDataProcessor command. Metadata/digests only — no subject
+ * payloads, SQL, hosts, or legal text.
+ */
+export const privacySyntheticProcessorCommandSchema = z
+  .object({
+    processorId: privacyProcessorIdSchema,
+    capability: privacyProcessorCapabilitySchema,
+    subjectScopeId: privacySubjectScopeIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    operationId: privacyOperationIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorCommand = z.infer<
+  typeof privacySyntheticProcessorCommandSchema
+>;
+
+export const privacySyntheticProcessorFamilyCoverageSchema = z
+  .object({
+    family: privacyGovernanceRecordFamilySchema,
+    recordCount: z.number().int().nonnegative().max(1_000_000),
+    coverageDigest: privacySha256DigestSchema,
+  })
+  .strict();
+export type PrivacySyntheticProcessorFamilyCoverage = z.infer<
+  typeof privacySyntheticProcessorFamilyCoverageSchema
+>;
+
+export const privacySyntheticProcessorResultSchema = z
+  .object({
+    status: z.enum(['completed', 'denied', 'unsupported']),
+    reasonCode: z
+      .enum([
+        'capability_not_declared',
+        'synthetic_processor_in_production',
+        'unsupported_capability',
+      ])
+      .nullable(),
+    capability: privacyProcessorCapabilitySchema,
+    families: z.array(privacySyntheticProcessorFamilyCoverageSchema).max(64),
+    accessLocatorDigest: privacySha256DigestSchema.nullable(),
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.status === 'completed' && value.reasonCode !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'completed processor results must not carry reasonCode',
+        path: ['reasonCode'],
+      });
+    }
+    if (value.status !== 'completed' && value.reasonCode === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'non-completed processor results require reasonCode',
+        path: ['reasonCode'],
+      });
+    }
+    if (value.status === 'completed' && value.capability === 'access') {
+      if (value.accessLocatorDigest === null) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'completed access results require accessLocatorDigest',
+          path: ['accessLocatorDigest'],
+        });
+      }
+    }
+    if (value.capability !== 'access' && value.accessLocatorDigest !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'non-access results must not carry accessLocatorDigest',
+        path: ['accessLocatorDigest'],
+      });
+    }
+  });
+export type PrivacySyntheticProcessorResult = z.infer<
+  typeof privacySyntheticProcessorResultSchema
+>;
+
+/**
  * Safe readiness diagnostic codes only. No policy text, subject IDs, hosts,
  * regions, credentials, or raw exceptions.
  */
