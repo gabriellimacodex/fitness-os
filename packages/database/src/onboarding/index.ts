@@ -5,6 +5,7 @@ export {
   onboardingRoleMapping,
 } from './tables.js';
 export {
+  asOnboardingAttemptRepository,
   createPostgresOnboardingAttemptRepository,
   type OnboardingAttemptPutResult,
   type OnboardingAttemptTransitionResult,

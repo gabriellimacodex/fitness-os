@@ -1,12 +1,12 @@
 import type { PostgresConnection } from '@fitness-os/database';
 import {
+  asOnboardingAttemptRepository,
   createPostgresOnboardingAttemptRepository,
   createPostgresOnboardingInvitationRepository,
   createPostgresOnboardingOperationRepository,
   asOnboardingInvitationRepository,
   asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
-  type PostgresOnboardingAttemptRepository,
   type PostgresOnboardingOperationRepository,
   type StoredOnboardingAttempt,
   type StoredOnboardingInvitation,
@@ -14,6 +14,7 @@ import {
   type StoredOnboardingRoleMapping,
 } from '@fitness-os/database';
 import type {
+  OnboardingAttemptRepository,
   OnboardingInvitationRepository,
   PrincipalRoleMappingRepository,
   ProposedRole,
@@ -29,7 +30,7 @@ import type {
 import { mappingIdFor, recordRoleMapping } from './store.js';
 
 export type OnboardingPgPersistence = {
-  attempts: PostgresOnboardingAttemptRepository;
+  attempts: OnboardingAttemptRepository;
   invitations: OnboardingInvitationRepository;
   mappings: PrincipalRoleMappingRepository;
   nowUtcMs: () => string;
@@ -41,7 +42,9 @@ export function createOnboardingPgPersistence(
   options: { nowUtcMs?: () => string } = {},
 ): OnboardingPgPersistence {
   return {
-    attempts: createPostgresOnboardingAttemptRepository(connection),
+    attempts: asOnboardingAttemptRepository(
+      createPostgresOnboardingAttemptRepository(connection),
+    ),
     invitations: asOnboardingInvitationRepository(
       createPostgresOnboardingInvitationRepository(connection),
     ),
