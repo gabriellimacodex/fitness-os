@@ -184,6 +184,39 @@ describe('onboarding routes without trusted context', () => {
     await app.close();
   });
 
+  it('denies when PrincipalReferenceDeriver rejects the binder subject', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          principalReference: {
+            derive: async () => ({
+              reason: 'unapproved_issuer' as const,
+              status: 'denied' as const,
+            }),
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/current',
+    });
+    expect(response.statusCode).toBe(401);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'UNAUTHENTICATED',
+    );
+    expect(response.body).not.toContain('unapproved_issuer');
+    await app.close();
+  });
+
   it('denies when PrincipalBindingRepository rejects the resolved principal', async () => {
     const app = buildApp(
       { logger: false },
