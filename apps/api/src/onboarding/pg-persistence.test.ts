@@ -1,3 +1,4 @@
+import { SyntheticPrincipalRoleMappingRepository } from '@fitness-os/domain';
 import { retryTokenSchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -288,6 +289,95 @@ describe('onboarding PG write-through seam', () => {
       result: { outcome: 'mapping_conflict' },
     });
 
+    await studentApp.close();
+  });
+
+  it('persists claim mapping through SyntheticPrincipalRoleMappingRepository', async () => {
+    const store = createOnboardingStore();
+    const mappings = new SyntheticPrincipalRoleMappingRepository();
+    const persistence = createRecordingPersistence();
+    persistence.mappings = mappings;
+
+    const coachApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          persistence: persistence as OnboardingPgPersistence,
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-synthetic-map',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const issued = await coachApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-domain-map-issue'),
+      },
+    });
+    expect(issued.statusCode).toBe(200);
+    const claimSecret = (
+      issued.json() as { result: { issued: { claimSecret: string } } }
+    ).result.issued.claimSecret;
+    await coachApp.close();
+
+    const principalKey = 'student-synthetic-map';
+    const studentApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          persistence: persistence as OnboardingPgPersistence,
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey,
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const created = await studentApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret,
+        retryToken: retryTokenSchema.parse('synthetic-retry-domain-map-create'),
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const attemptId = (
+      created.json() as { result: { attempt: { attemptId: string } } }
+    ).result.attempt.attemptId;
+    const refreshed = await studentApp.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-domain-map-policy'),
+      },
+    });
+    expect(refreshed.statusCode).toBe(200);
+    const claimed = await studentApp.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret,
+        retryToken: retryTokenSchema.parse('synthetic-retry-domain-map-claim'),
+      },
+    });
+    expect(claimed.statusCode).toBe(200);
+    const listed = await mappings.listByPrincipal(principalKey);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      principalKey,
+      role: 'student',
+      mappingId: mappingIdFor(principalKey, 'student'),
+    });
     await studentApp.close();
   });
 });
