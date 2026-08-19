@@ -474,5 +474,67 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(history).toEqual([advanced.transition]);
       expect(history.every((row) => row.previousState === 'ready')).toBe(true);
     });
+
+    it('rejects ad hoc UPDATE/DELETE on append-only privacy ledgers', async () => {
+      await policies.put(policy);
+      await expect(evidenceLedger.appendEvidence(evidence)).resolves.toBe(
+        'accepted',
+      );
+
+      const assertAppendOnlyRejected = async (operation: Promise<unknown>) => {
+        try {
+          await operation;
+          throw new Error('expected append-only rejection');
+        } catch (error) {
+          const text = [
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify(error),
+          ].join('\n');
+          expect(text).toMatch(
+            /42501|privacy_reject_append_only_mutation|fitness_os_privacy_append_only/,
+          );
+        }
+      };
+
+      await assertAppendOnlyRejected(
+        connection.db.execute(
+          sql`UPDATE privacy_authorization_evidence SET content_digest = ${'e'.repeat(64)} WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        ),
+      );
+      await assertAppendOnlyRejected(
+        connection.db.execute(
+          sql`DELETE FROM privacy_authorization_evidence WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        ),
+      );
+
+      const roleRows = await connection.db.execute<{ rolname: string }>(sql`
+        SELECT rolname FROM pg_roles WHERE rolname = 'fitness_os_privacy_ordinary'
+      `);
+      expect(roleRows.map((row) => row.rolname)).toEqual([
+        'fitness_os_privacy_ordinary',
+      ]);
+
+      const updatePriv = await connection.db.execute<{
+        has_update: boolean;
+      }>(sql`
+        SELECT has_table_privilege(
+          'fitness_os_privacy_ordinary',
+          'privacy_subject_request_transition',
+          'UPDATE'
+        ) AS has_update
+      `);
+      expect(updatePriv[0]?.has_update).toBe(false);
+
+      const insertPriv = await connection.db.execute<{
+        has_insert: boolean;
+      }>(sql`
+        SELECT has_table_privilege(
+          'fitness_os_privacy_ordinary',
+          'privacy_subject_request_transition',
+          'INSERT'
+        ) AS has_insert
+      `);
+      expect(insertPriv[0]?.has_insert).toBe(true);
+    });
   },
 );

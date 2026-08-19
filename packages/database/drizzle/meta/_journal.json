@@ -43,6 +43,13 @@
       "when": 1787081812768,
       "tag": "0005_prd21_privacy_subject_request_transition",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787085000000,
+      "tag": "0006_prd21_privacy_append_only_guards",
+      "breakpoints": true
     }
   ]
 }

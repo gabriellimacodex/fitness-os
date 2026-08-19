@@ -283,7 +283,7 @@ export const privacySubjectRequest = pgTable(
 
 /**
  * Append-only transition history for data-subject requests.
- * Ordinary application roles must not update or delete these rows.
+ * DB guards reject UPDATE/DELETE; ordinary role has SELECT/INSERT only.
  */
 export const privacySubjectRequestTransition = pgTable(
   'privacy_subject_request_transition',
