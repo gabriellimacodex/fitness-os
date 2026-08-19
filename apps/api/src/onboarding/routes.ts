@@ -11,12 +11,14 @@ import {
   SyntheticOnboardingPolicyGateway,
   SyntheticOnboardingReadinessProbe,
   SyntheticOnboardingTransitionSink,
+  SyntheticPrincipalBindingRepository,
   transitionAttempt,
   type IdentitySessionPort,
   type OnboardingClaimRepository,
   type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
   type OnboardingTransitionSink,
+  type PrincipalBindingRepository,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -205,6 +207,7 @@ export function registerOnboardingRoutes(
     identitySession?: IdentitySessionPort;
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
+    principalBinding?: PrincipalBindingRepository;
     readinessProbe?: OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
@@ -219,6 +222,8 @@ export function registerOnboardingRoutes(
     options.policyGateway ?? new SyntheticOnboardingPolicyGateway();
   const identitySession =
     options.identitySession ?? new SyntheticIdentitySessionPort();
+  const principalBinding =
+    options.principalBinding ?? new SyntheticPrincipalBindingRepository();
   const claimRepository =
     options.claimRepository ?? new SyntheticOnboardingClaimRepository();
   const transitionSink =
@@ -321,9 +326,26 @@ export function registerOnboardingRoutes(
       return null;
     }
 
+    const binding = await principalBinding.resolveOrEstablish({
+      nowUtcMs: new Date().toISOString(),
+      principalKey: resolved.context.principalKey,
+      productionMode: false,
+    });
+
+    if (binding.status === 'denied') {
+      await sendError(
+        request,
+        reply,
+        401,
+        'UNAUTHENTICATED',
+        'Authentication required',
+      );
+      return null;
+    }
+
     return {
       mappedRoles: resolved.context.mappedRoles,
-      principalKey: resolved.context.principalKey,
+      principalKey: binding.binding.principalKey,
       synthetic: resolved.context.synthetic,
     };
   };

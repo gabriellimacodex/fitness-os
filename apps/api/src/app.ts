@@ -44,6 +44,7 @@ export interface PlatformOptions {
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
     policyGateway?: import('@fitness-os/domain').OnboardingPolicyGateway;
+    principalBinding?: import('@fitness-os/domain').PrincipalBindingRepository;
     readinessProbe?: import('@fitness-os/domain').OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
