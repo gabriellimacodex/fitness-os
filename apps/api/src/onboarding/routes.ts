@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import {
   canAllocateAttempt,
@@ -6,8 +6,10 @@ import {
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
+  SyntheticOnboardingPolicyGateway,
   SyntheticOnboardingReadinessProbe,
   transitionAttempt,
+  type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
   type ProposedRole,
 } from '@fitness-os/domain';
@@ -28,8 +30,6 @@ import {
   onboardingCompletionIdSchema,
   onboardingCurrentQuerySchema,
   onboardingOperationResponseSchema,
-  onboardingPolicyInteractionIdSchema,
-  onboardingPolicyPackageIdSchema,
   policyRefreshRequestSchema,
   resumeAttemptRequestSchema,
   revokeStudentInvitationRequestSchema,
@@ -155,21 +155,6 @@ function newClaimSecret() {
   );
 }
 
-function syntheticPolicyHandoff() {
-  const packageId = onboardingPolicyPackageIdSchema.parse(randomUUID());
-  const interactionId = onboardingPolicyInteractionIdSchema.parse(randomUUID());
-  return {
-    evidenceId: null,
-    integrityDigest: createHash('sha256')
-      .update(`synthetic-policy:${packageId}:${interactionId}`, 'utf8')
-      .digest('hex'),
-    interactionId,
-    packageId,
-    packageVersion: 1,
-    status: 'ready' as const,
-  };
-}
-
 function semanticDigest(input: Record<string, string>): string {
   return digestUtf8JsonSha256V1(input);
 }
@@ -211,6 +196,7 @@ export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
     persistence?: OnboardingPgPersistence;
+    policyGateway?: OnboardingPolicyGateway;
     readinessProbe?: OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
@@ -220,6 +206,8 @@ export function registerOnboardingRoutes(
   const store = options.store ?? createOnboardingStore();
   const persistence = options.persistence;
   const resolveContext = options.resolveContext ?? (() => null);
+  const policyGateway =
+    options.policyGateway ?? new SyntheticOnboardingPolicyGateway();
   const readinessProbe =
     options.readinessProbe ??
     new SyntheticOnboardingReadinessProbe({
@@ -918,9 +906,17 @@ export function registerOnboardingRoutes(
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
+      const policyResult = await policyGateway.refresh({
+        attemptId: record.detail.attemptId,
+        productionMode: false,
+      });
+      if (policyResult.status !== 'started') {
+        return await commit({ outcome: 'invalid_or_unavailable' });
+      }
+
       const updated = attemptDetailSchema.parse({
         ...advanced.attempt,
-        policy: syntheticPolicyHandoff(),
+        policy: policyResult.handoff,
       });
       await rememberAttempt({
         ...record,
