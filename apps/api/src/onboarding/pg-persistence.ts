@@ -3,13 +3,18 @@ import {
   createPostgresOnboardingAttemptRepository,
   createPostgresOnboardingInvitationRepository,
   createPostgresOnboardingOperationRepository,
+  createPostgresOnboardingRoleMappingRepository,
   type PostgresOnboardingAttemptRepository,
   type PostgresOnboardingInvitationRepository,
   type PostgresOnboardingOperationRepository,
+  type PostgresOnboardingRoleMappingRepository,
   type StoredOnboardingAttempt,
   type StoredOnboardingInvitation,
   type StoredOnboardingOperation,
+  type StoredOnboardingRoleMapping,
 } from '@fitness-os/database';
+import type { ProposedRole } from '@fitness-os/domain';
+import type { PrincipalRoleMappingId } from '@fitness-os/schemas';
 
 import type {
   OnboardingStore,
@@ -17,10 +22,12 @@ import type {
   StoredInvitation,
   StoredOperation,
 } from './store.js';
+import { mappingIdFor, recordRoleMapping } from './store.js';
 
 export type OnboardingPgPersistence = {
   attempts: PostgresOnboardingAttemptRepository;
   invitations: PostgresOnboardingInvitationRepository;
+  mappings: PostgresOnboardingRoleMappingRepository;
   nowUtcMs: () => string;
   operations: PostgresOnboardingOperationRepository;
 };
@@ -32,6 +39,7 @@ export function createOnboardingPgPersistence(
   return {
     attempts: createPostgresOnboardingAttemptRepository(connection),
     invitations: createPostgresOnboardingInvitationRepository(connection),
+    mappings: createPostgresOnboardingRoleMappingRepository(connection),
     nowUtcMs: options.nowUtcMs ?? (() => new Date().toISOString()),
     operations: createPostgresOnboardingOperationRepository(connection),
   };
@@ -174,6 +182,27 @@ export async function persistOperation(
   });
 }
 
+export async function persistRoleMapping(
+  persistence: OnboardingPgPersistence,
+  input: {
+    mappingId?: PrincipalRoleMappingId;
+    principalKey: string;
+    role: ProposedRole;
+  },
+): Promise<void> {
+  const mappingId =
+    input.mappingId ?? mappingIdFor(input.principalKey, input.role);
+  const result = await persistence.mappings.put({
+    createdAt: persistence.nowUtcMs(),
+    mappingId,
+    principalKey: input.principalKey,
+    role: input.role,
+  });
+  if (result.status === 'conflict') {
+    throw new Error('onboarding role mapping persistence conflict');
+  }
+}
+
 export async function hydrateCoachInvitations(
   store: OnboardingStore,
   persistence: OnboardingPgPersistence,
@@ -195,6 +224,29 @@ export async function hydratePrincipalAttempts(
   for (const row of rows) {
     store.attempts.set(row.detail.attemptId, toApiAttempt(row));
   }
+}
+
+export async function hydratePrincipalMappings(
+  store: OnboardingStore,
+  persistence: OnboardingPgPersistence,
+  principalKey: string,
+): Promise<void> {
+  const rows = await persistence.mappings.listByPrincipal(principalKey);
+  for (const row of rows) {
+    recordRoleMapping(store, principalKey, row.role);
+  }
+}
+
+export function toApiRoleMapping(row: StoredOnboardingRoleMapping): {
+  mappingId: PrincipalRoleMappingId;
+  principalKey: string;
+  role: ProposedRole;
+} {
+  return {
+    mappingId: row.mappingId,
+    principalKey: row.principalKey,
+    role: row.role,
+  };
 }
 
 export async function loadOperation(

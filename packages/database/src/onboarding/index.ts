@@ -2,6 +2,7 @@ export {
   onboardingAttempt,
   onboardingInvitation,
   onboardingOperation,
+  onboardingRoleMapping,
 } from './tables.js';
 export {
   createPostgresOnboardingAttemptRepository,
@@ -24,3 +25,9 @@ export {
   type PostgresOnboardingOperationRepository,
   type StoredOnboardingOperation,
 } from './operations.js';
+export {
+  createPostgresOnboardingRoleMappingRepository,
+  type OnboardingRoleMappingPutResult,
+  type PostgresOnboardingRoleMappingRepository,
+  type StoredOnboardingRoleMapping,
+} from './mappings.js';

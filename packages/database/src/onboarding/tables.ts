@@ -135,6 +135,34 @@ export const onboardingAttempt = pgTable(
 );
 
 /**
+ * Disposable synthetic principal→role mapping after successful claim.
+ * mapping_id is the deterministic PrincipalRoleMappingId (API mappingIdFor).
+ */
+export const onboardingRoleMapping = pgTable(
+  'onboarding_role_mapping',
+  {
+    mappingId: uuid('mapping_id').primaryKey(),
+    principalKey: text('principal_key').notNull(),
+    role: text('role').notNull(),
+    createdAt: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    check(
+      'onboarding_role_mapping_role_check',
+      sql`${table.role} IN ('student', 'coach')`,
+    ),
+    uniqueIndex('onboarding_role_mapping_principal_role_unique').on(
+      table.principalKey,
+      table.role,
+    ),
+    index('onboarding_role_mapping_principal_key_idx').on(table.principalKey),
+  ],
+);
+
+/**
  * Disposable synthetic onboarding operation ledger for idempotent replay.
  * Retry tokens are never stored — only HMAC digests and opaque results.
  */
