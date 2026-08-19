@@ -3,17 +3,20 @@ import {
   createPostgresOnboardingAttemptRepository,
   createPostgresOnboardingInvitationRepository,
   createPostgresOnboardingOperationRepository,
+  asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
   type PostgresOnboardingAttemptRepository,
   type PostgresOnboardingInvitationRepository,
   type PostgresOnboardingOperationRepository,
-  type PostgresOnboardingRoleMappingRepository,
   type StoredOnboardingAttempt,
   type StoredOnboardingInvitation,
   type StoredOnboardingOperation,
   type StoredOnboardingRoleMapping,
 } from '@fitness-os/database';
-import type { ProposedRole } from '@fitness-os/domain';
+import type {
+  PrincipalRoleMappingRepository,
+  ProposedRole,
+} from '@fitness-os/domain';
 import type { PrincipalRoleMappingId } from '@fitness-os/schemas';
 
 import type {
@@ -27,7 +30,7 @@ import { mappingIdFor, recordRoleMapping } from './store.js';
 export type OnboardingPgPersistence = {
   attempts: PostgresOnboardingAttemptRepository;
   invitations: PostgresOnboardingInvitationRepository;
-  mappings: PostgresOnboardingRoleMappingRepository;
+  mappings: PrincipalRoleMappingRepository;
   nowUtcMs: () => string;
   operations: PostgresOnboardingOperationRepository;
 };
@@ -39,7 +42,9 @@ export function createOnboardingPgPersistence(
   return {
     attempts: createPostgresOnboardingAttemptRepository(connection),
     invitations: createPostgresOnboardingInvitationRepository(connection),
-    mappings: createPostgresOnboardingRoleMappingRepository(connection),
+    mappings: asPrincipalRoleMappingRepository(
+      createPostgresOnboardingRoleMappingRepository(connection),
+    ),
     nowUtcMs: options.nowUtcMs ?? (() => new Date().toISOString()),
     operations: createPostgresOnboardingOperationRepository(connection),
   };
