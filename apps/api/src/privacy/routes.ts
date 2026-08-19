@@ -4,8 +4,11 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
+  type PrivacyAuditSink,
+  type PrivacyAuthorizationEvidenceLedger,
   type PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
 import {
@@ -36,6 +39,16 @@ export interface PrivacySyntheticOptions {
    * repository shared for the lifetime of this route registration.
    */
   subjectRequests?: PrivacySubjectRequestRepository;
+  /**
+   * Optional disposable evidence ledger (e.g. Postgres). When omitted, the
+   * in-memory synthetic ledger is used and may be seeded from the request body.
+   */
+  evidence?: PrivacyAuthorizationEvidenceLedger;
+  /**
+   * Optional disposable audit sink. When omitted, the in-memory synthetic sink
+   * is used.
+   */
+  audit?: PrivacyAuditSink;
 }
 
 function sendError(
@@ -97,6 +110,8 @@ export function registerPrivacySyntheticRoutes(
   const fixedUtcMs = options.fixedUtcMs ?? '2026-08-18T12:00:00.000Z';
   const subjectRequests =
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
+  const injectedEvidence = options.evidence;
+  const injectedAudit = options.audit;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -121,13 +136,24 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const ports = createSyntheticPrivacyDataUsePorts({ fixedUtcMs });
-      ports.policies.seed(body.data.policy);
-      ports.purposes.seed(body.data.purpose);
-      ports.processors.seed(body.data.processor);
-      if (body.data.evidence !== null) {
-        ports.evidence.seedEvidence(body.data.evidence);
+      const syntheticPorts = createSyntheticPrivacyDataUsePorts({ fixedUtcMs });
+      syntheticPorts.policies.seed(body.data.policy);
+      syntheticPorts.purposes.seed(body.data.purpose);
+      syntheticPorts.processors.seed(body.data.processor);
+      if (
+        body.data.evidence !== null &&
+        injectedEvidence === undefined &&
+        syntheticPorts.evidence instanceof
+          SyntheticPrivacyAuthorizationEvidenceLedger
+      ) {
+        syntheticPorts.evidence.seedEvidence(body.data.evidence);
       }
+
+      const ports = {
+        ...syntheticPorts,
+        audit: injectedAudit ?? syntheticPorts.audit,
+        evidence: injectedEvidence ?? syntheticPorts.evidence,
+      };
 
       const result = await evaluateDataUse(ports, {
         actor: body.data.actor,
