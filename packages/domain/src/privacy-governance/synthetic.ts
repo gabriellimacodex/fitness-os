@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  canonicalizePrivacyExpectedProcessorInventory,
   privacyAuditEventIdSchema,
   privacyCorrelationIdSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyOperationIdSchema,
   privacySubjectScopeIdSchema,
   type PrivacyAuditEventReference,
   type PrivacyEvidenceReference,
+  type PrivacyExpectedProcessorInventory,
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyPurposeVersionReference,
@@ -20,6 +23,7 @@ import type {
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
   PrivacyDataUsePorts,
+  PrivacyExpectedProcessorInventoryPort,
   PrivacyIdFactory,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
@@ -170,6 +174,16 @@ export class SyntheticPrivacyAuthorizationEvidenceLedger implements PrivacyAutho
 
     this.withdrawals.set(record.evidenceId, planned.withdrawal);
     return planned.status;
+  }
+}
+
+export class SyntheticPrivacyExpectedProcessorInventory implements PrivacyExpectedProcessorInventoryPort {
+  constructor(private readonly inventory: PrivacyExpectedProcessorInventory) {
+    privacyExpectedProcessorInventorySchema.parse(inventory);
+  }
+
+  async getInventory() {
+    return canonicalizePrivacyExpectedProcessorInventory(this.inventory);
   }
 }
 
