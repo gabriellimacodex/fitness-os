@@ -20,6 +20,10 @@ export {
 } from './invitation.js';
 export type {
   InvitationPurpose,
+  OnboardingAttemptPutResult,
+  OnboardingAttemptRecord,
+  OnboardingAttemptRepository,
+  OnboardingAttemptTransitionResult,
   OnboardingInvitationPutResult,
   OnboardingInvitationRecord,
   OnboardingInvitationRepository,
@@ -28,5 +32,6 @@ export type {
   PrincipalRoleMappingRecord,
   PrincipalRoleMappingRepository,
 } from './ports.js';
+export { SyntheticOnboardingAttemptRepository } from './synthetic-attempts.js';
 export { SyntheticOnboardingInvitationRepository } from './synthetic-invitations.js';
 export { SyntheticPrincipalRoleMappingRepository } from './synthetic-mappings.js';

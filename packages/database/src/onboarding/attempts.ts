@@ -1,5 +1,9 @@
 import { and, eq } from 'drizzle-orm';
-import { isNonterminal, transitionAttempt } from '@fitness-os/domain';
+import {
+  isNonterminal,
+  transitionAttempt,
+  type OnboardingAttemptRepository,
+} from '@fitness-os/domain';
 import {
   attemptDetailSchema,
   attemptLifecycleSchema,
@@ -200,6 +204,13 @@ export function createPostgresOnboardingAttemptRepository(
 export type PostgresOnboardingAttemptRepository = ReturnType<
   typeof createPostgresOnboardingAttemptRepository
 >;
+
+/** Structural adapter: disposable PG repo satisfies the domain port. */
+export function asOnboardingAttemptRepository(
+  repository: PostgresOnboardingAttemptRepository,
+): OnboardingAttemptRepository {
+  return repository;
+}
 
 // Keep branded ID helpers available for callers assembling records.
 export { onboardingAttemptIdSchema, onboardingInvitationIdSchema };

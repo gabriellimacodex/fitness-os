@@ -1,4 +1,5 @@
 import type {
+  AttemptDetail,
   OnboardingInvitationId,
   PrincipalRoleMappingId,
 } from '@fitness-os/schemas';
@@ -48,6 +49,39 @@ export interface OnboardingInvitationRepository {
   put(
     record: OnboardingInvitationRecord,
   ): Promise<OnboardingInvitationPutResult>;
+}
+
+export type OnboardingAttemptRecord = {
+  createdAt: string;
+  detail: AttemptDetail;
+  principalKey: string;
+  updatedAt: string;
+};
+
+export type OnboardingAttemptPutResult = 'accepted' | 'conflict' | 'invalid';
+
+export type OnboardingAttemptTransitionResult =
+  | { status: 'advanced'; attempt: OnboardingAttemptRecord }
+  | { status: 'already_terminal'; attempt: OnboardingAttemptRecord }
+  | { status: 'invalid'; reason: 'not_found' | 'illegal_transition' }
+  | { status: 'conflict' };
+
+/**
+ * Create/select/read/transition attempts under exact-scope and fixed-cap rules
+ * enforced by callers.
+ */
+export interface OnboardingAttemptRepository {
+  applyTransition(input: {
+    attemptId: string;
+    next: AttemptDetail['lifecycle'];
+    terminalReason?: AttemptDetail['terminalReason'];
+    updatedAt: string;
+  }): Promise<OnboardingAttemptTransitionResult>;
+  get(attemptId: string): Promise<OnboardingAttemptRecord | null>;
+  listByPrincipal(
+    principalKey: string,
+  ): Promise<readonly OnboardingAttemptRecord[]>;
+  put(record: OnboardingAttemptRecord): Promise<OnboardingAttemptPutResult>;
 }
 
 export type PrincipalRoleMappingRecord = {
