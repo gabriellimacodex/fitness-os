@@ -50,6 +50,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         updatedAt: '2026-08-19T12:00:00.000Z',
       };
 
+      await expect(
+        invitations.put({ ...record, state: 'claimed' }),
+      ).resolves.toBe('invalid');
+      await expect(invitations.get(invitationId)).resolves.toBeNull();
+
       await expect(invitations.put(record)).resolves.toBe('accepted');
       await expect(invitations.put(record)).resolves.toBe('conflict');
       await expect(invitations.get(invitationId)).resolves.toEqual(record);
