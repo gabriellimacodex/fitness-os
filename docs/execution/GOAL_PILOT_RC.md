@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `a31b76b` (PR #81 merged; see Progress below)
+- Progress snapshot head: `27b9784` (PR #88 merged; see Progress below)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -92,7 +92,7 @@ integrated after its POC gate.
 | PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                     |
 | PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                     |
 | PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                  |
-| PRD 07               | `IN_PROGRESS` — synthetic/disposable through role-mapping `0010`, write-through/hydrate, and domain `PrincipalRoleMappingRepository` (#66/#80/#81) on `a31b76b`; real-user still `LEGAL_PRIVACY`                                      |
+| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + write-through + domain ports (invitation/attempt/operation/role-mapping) through #88 on `27b9784`; real-user still `LEGAL_PRIVACY`                                                 |
 | PRD 21               | `IN_PROGRESS` — Option A through #78 on `cac4d43` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY` |
 | PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                              |
 | PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                             |
