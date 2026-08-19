@@ -39,6 +39,18 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { digestUtf8JsonSha256V1 } from './canonical.js';
 import {
+  hydrateCoachInvitations,
+  hydratePrincipalAttempts,
+  loadAttempt,
+  loadInvitation,
+  loadInvitationByClaimDigest,
+  loadOperation,
+  persistAttempt,
+  persistInvitation,
+  persistOperation,
+  type OnboardingPgPersistence,
+} from './pg-persistence.js';
+import {
   compareAttemptOrder,
   createOnboardingStore,
   createStoredAttempt,
@@ -46,7 +58,6 @@ import {
   digestClaimSecret,
   digestRetryToken,
   encodeAttemptCursor,
-  findInvitationBySecret,
   getAttemptForPrincipal,
   isAfterCursor,
   mappingIdFor,
@@ -59,6 +70,8 @@ import {
   type OnboardingMutationNamespace,
   type OnboardingStore,
   type StoredAttempt,
+  type StoredInvitation,
+  type StoredOperation,
 } from './store.js';
 
 export interface OnboardingContext {
@@ -104,8 +117,13 @@ function summarizeAttempt(attempt: AttemptDetail) {
 }
 
 function invitationReference(store: OnboardingStore, secret: string): string {
-  const invitation = findInvitationBySecret(store, secret);
-  return invitation?.invitationId ?? digestClaimSecret(secret, store.pepper);
+  const digest = digestClaimSecret(secret, store.pepper);
+  for (const invitation of store.invitations.values()) {
+    if (invitation.claimDigest === digest) {
+      return invitation.invitationId;
+    }
+  }
+  return digest;
 }
 
 function effectiveMappedRoles(
@@ -188,12 +206,41 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    persistence?: OnboardingPgPersistence;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
   } = {},
 ): void {
   const store = options.store ?? createOnboardingStore();
+  const persistence = options.persistence;
   const resolveContext = options.resolveContext ?? (() => null);
+
+  const rememberOperation = async (
+    bindingKey: string,
+    principalKey: string,
+    operation: StoredOperation,
+  ): Promise<void> => {
+    store.operations.set(bindingKey, operation);
+    if (persistence !== undefined) {
+      await persistOperation(persistence, bindingKey, principalKey, operation);
+    }
+  };
+
+  const rememberInvitation = async (
+    invitation: StoredInvitation,
+  ): Promise<void> => {
+    store.invitations.set(invitation.invitationId, invitation);
+    if (persistence !== undefined) {
+      await persistInvitation(persistence, invitation);
+    }
+  };
+
+  const rememberAttempt = async (attempt: StoredAttempt): Promise<void> => {
+    store.attempts.set(attempt.detail.attemptId, attempt);
+    if (persistence !== undefined) {
+      await persistAttempt(persistence, attempt);
+    }
+  };
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -235,6 +282,10 @@ export function registerOnboardingRoutes(
     const context = await requireContext(request, reply);
     if (context === null) {
       return;
+    }
+
+    if (persistence !== undefined) {
+      await hydratePrincipalAttempts(store, persistence, context.principalKey);
     }
 
     let cursor:
@@ -299,7 +350,11 @@ export function registerOnboardingRoutes(
       return;
     }
 
-    const invitation = findInvitationBySecret(store, body.data.claimSecret);
+    const invitation = await loadInvitationByClaimDigest(
+      store,
+      persistence,
+      digestClaimSecret(body.data.claimSecret, store.pepper),
+    );
     const digest = semanticDigest({
       authority: context.principalKey,
       invitationRef: invitationReference(store, body.data.claimSecret),
@@ -359,7 +414,11 @@ export function registerOnboardingRoutes(
       'create_attempt',
       retryDigest,
     );
-    const existingOperation = store.operations.get(bindingKey);
+    const existingOperation = await loadOperation(
+      store,
+      persistence,
+      bindingKey,
+    );
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {
@@ -381,11 +440,15 @@ export function registerOnboardingRoutes(
       });
     }
 
-    const invitation = findInvitationBySecret(store, body.data.claimSecret);
+    const invitation = await loadInvitationByClaimDigest(
+      store,
+      persistence,
+      digestClaimSecret(body.data.claimSecret, store.pepper),
+    );
 
-    const commit = (result: unknown) => {
+    const commit = async (result: unknown) => {
       const operationId = newOperationId();
-      store.operations.set(bindingKey, {
+      await rememberOperation(bindingKey, context.principalKey, {
         digest,
         namespace: 'create_attempt',
         operationId,
@@ -406,7 +469,7 @@ export function registerOnboardingRoutes(
       invitation === undefined ||
       inspectInvitationState(invitation.state) !== 'issued'
     ) {
-      return commit({ outcome: 'invalid_or_unavailable' });
+      return await commit({ outcome: 'invalid_or_unavailable' });
     }
 
     const alreadyMappedRoles = [
@@ -417,7 +480,7 @@ export function registerOnboardingRoutes(
     ];
 
     if (alreadyMappedRoles.includes(invitation.proposedRole)) {
-      return commit({ outcome: 'mapping_conflict' });
+      return await commit({ outcome: 'mapping_conflict' });
     }
 
     const eligibility = evaluateClaimEligibility({
@@ -430,7 +493,7 @@ export function registerOnboardingRoutes(
     });
 
     if (eligibility.status === 'hard_disabled') {
-      return commit({ outcome: 'invalid_or_unavailable' });
+      return await commit({ outcome: 'invalid_or_unavailable' });
     }
 
     const activeForRole = attemptsForPrincipalRole(
@@ -440,7 +503,7 @@ export function registerOnboardingRoutes(
     );
 
     if (!canAllocateAttempt(activeForRole.length)) {
-      return commit({
+      return await commit({
         attempts: activeForRole.map((record) =>
           summarizeAttempt(record.detail),
         ),
@@ -453,7 +516,7 @@ export function registerOnboardingRoutes(
     );
 
     if (existing !== undefined) {
-      return commit({
+      return await commit({
         attempt: existing.detail,
         command: 'attempt',
         outcome: 'command_succeeded',
@@ -465,9 +528,9 @@ export function registerOnboardingRoutes(
       nextOrdinalForRole(store, context.principalKey, invitation.proposedRole),
       context.principalKey,
     );
-    store.attempts.set(record.detail.attemptId, record);
+    await rememberAttempt(record);
 
-    return commit({
+    return await commit({
       attempt: record.detail,
       command: 'attempt',
       outcome: 'command_succeeded',
@@ -525,7 +588,11 @@ export function registerOnboardingRoutes(
         'resume_attempt',
         retryDigest,
       );
-      const existingOperation = store.operations.get(bindingKey);
+      const existingOperation = await loadOperation(
+        store,
+        persistence,
+        bindingKey,
+      );
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -547,9 +614,9 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const commit = (result: unknown) => {
+      const commit = async (result: unknown) => {
         const operationId = newOperationId();
-        store.operations.set(bindingKey, {
+        await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'resume_attempt',
           operationId,
@@ -565,7 +632,11 @@ export function registerOnboardingRoutes(
         });
       };
 
-      const record = store.attempts.get(params.data.attemptId);
+      const record = await loadAttempt(
+        store,
+        persistence,
+        params.data.attemptId,
+      );
       if (
         record === undefined ||
         record.principalKey !== context.principalKey
@@ -580,13 +651,13 @@ export function registerOnboardingRoutes(
       }
 
       if (!isNonterminal(record.detail.lifecycle)) {
-        return commit({
+        return await commit({
           attempt: record.detail,
           outcome: 'already_terminal',
         });
       }
 
-      return commit({
+      return await commit({
         attempt: record.detail,
         outcome: 'current_state',
       });
@@ -619,7 +690,11 @@ export function registerOnboardingRoutes(
         'abandon_attempt',
         retryDigest,
       );
-      const existingOperation = store.operations.get(bindingKey);
+      const existingOperation = await loadOperation(
+        store,
+        persistence,
+        bindingKey,
+      );
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -641,9 +716,9 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const commit = (result: unknown) => {
+      const commit = async (result: unknown) => {
         const operationId = newOperationId();
-        store.operations.set(bindingKey, {
+        await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'abandon_attempt',
           operationId,
@@ -659,7 +734,11 @@ export function registerOnboardingRoutes(
         });
       };
 
-      const record = store.attempts.get(params.data.attemptId);
+      const record = await loadAttempt(
+        store,
+        persistence,
+        params.data.attemptId,
+      );
       if (
         record === undefined ||
         record.principalKey !== context.principalKey
@@ -674,7 +753,7 @@ export function registerOnboardingRoutes(
       }
 
       if (!isNonterminal(record.detail.lifecycle)) {
-        return commit({
+        return await commit({
           attempt: record.detail,
           outcome: 'already_terminal',
         });
@@ -686,15 +765,15 @@ export function registerOnboardingRoutes(
         'abandoned',
       );
       if (abandoned.status !== 'advanced') {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
-      store.attempts.set(record.detail.attemptId, {
+      await rememberAttempt({
         ...record,
         detail: abandoned.attempt,
       });
 
-      return commit({
+      return await commit({
         attempt: abandoned.attempt,
         command: 'attempt',
         outcome: 'command_succeeded',
@@ -728,7 +807,11 @@ export function registerOnboardingRoutes(
         'refresh_policy',
         retryDigest,
       );
-      const existingOperation = store.operations.get(bindingKey);
+      const existingOperation = await loadOperation(
+        store,
+        persistence,
+        bindingKey,
+      );
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -750,7 +833,11 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const record = store.attempts.get(params.data.attemptId);
+      const record = await loadAttempt(
+        store,
+        persistence,
+        params.data.attemptId,
+      );
       if (
         record === undefined ||
         record.principalKey !== context.principalKey
@@ -764,9 +851,9 @@ export function registerOnboardingRoutes(
         );
       }
 
-      const commit = (result: unknown) => {
+      const commit = async (result: unknown) => {
         const operationId = newOperationId();
-        store.operations.set(bindingKey, {
+        await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'refresh_policy',
           operationId,
@@ -783,7 +870,7 @@ export function registerOnboardingRoutes(
       };
 
       if (record.detail.lifecycle === 'ready_to_claim') {
-        return commit({
+        return await commit({
           attempt: record.detail,
           command: 'attempt',
           outcome: 'command_succeeded',
@@ -792,19 +879,19 @@ export function registerOnboardingRoutes(
 
       const advanced = transitionAttempt(record.detail, 'ready_to_claim');
       if (advanced.status !== 'advanced') {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
       const updated = attemptDetailSchema.parse({
         ...advanced.attempt,
         policy: syntheticPolicyHandoff(),
       });
-      store.attempts.set(record.detail.attemptId, {
+      await rememberAttempt({
         ...record,
         detail: updated,
       });
 
-      return commit({
+      return await commit({
         attempt: updated,
         command: 'attempt',
         outcome: 'command_succeeded',
@@ -839,7 +926,11 @@ export function registerOnboardingRoutes(
         'claim_attempt',
         retryDigest,
       );
-      const existingOperation = store.operations.get(bindingKey);
+      const existingOperation = await loadOperation(
+        store,
+        persistence,
+        bindingKey,
+      );
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -861,9 +952,9 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const commit = (result: unknown) => {
+      const commit = async (result: unknown) => {
         const operationId = newOperationId();
-        store.operations.set(bindingKey, {
+        await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'claim_attempt',
           operationId,
@@ -879,7 +970,11 @@ export function registerOnboardingRoutes(
         });
       };
 
-      const record = store.attempts.get(params.data.attemptId);
+      const record = await loadAttempt(
+        store,
+        persistence,
+        params.data.attemptId,
+      );
       if (
         record === undefined ||
         record.principalKey !== context.principalKey
@@ -894,26 +989,30 @@ export function registerOnboardingRoutes(
       }
 
       if (record.detail.lifecycle !== 'ready_to_claim') {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
-      const invitation = findInvitationBySecret(store, body.data.claimSecret);
+      const invitation = await loadInvitationByClaimDigest(
+        store,
+        persistence,
+        digestClaimSecret(body.data.claimSecret, store.pepper),
+      );
       if (
         invitation === undefined ||
         invitation.invitationId !== record.detail.invitationId ||
         inspectInvitationState(invitation.state) !== 'issued'
       ) {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
       const completed = transitionAttempt(record.detail, 'completed');
       if (completed.status !== 'advanced') {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
       invitation.state = 'claimed';
-      store.invitations.set(invitation.invitationId, invitation);
-      store.attempts.set(record.detail.attemptId, {
+      await rememberInvitation(invitation);
+      await rememberAttempt({
         ...record,
         detail: completed.attempt,
       });
@@ -923,7 +1022,7 @@ export function registerOnboardingRoutes(
         record.detail.proposedRole,
       );
 
-      return commit({
+      return await commit({
         completionId: onboardingCompletionIdSchema.parse(randomUUID()),
         mappingId: mappingIdFor(
           context.principalKey,
@@ -949,6 +1048,10 @@ export function registerOnboardingRoutes(
 
     if (!hasCoachMapping(store, context)) {
       return sendError(request, reply, 403, 'FORBIDDEN', 'Forbidden');
+    }
+
+    if (persistence !== undefined) {
+      await hydrateCoachInvitations(store, persistence, context.principalKey);
     }
 
     const items = [...store.invitations.values()]
@@ -1000,7 +1103,11 @@ export function registerOnboardingRoutes(
       'issue_student_invitation',
       retryDigest,
     );
-    const existingOperation = store.operations.get(bindingKey);
+    const existingOperation = await loadOperation(
+      store,
+      persistence,
+      bindingKey,
+    );
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {
@@ -1024,7 +1131,7 @@ export function registerOnboardingRoutes(
 
     const claimSecret = newClaimSecret();
     const invitationId = newInvitationId();
-    store.invitations.set(invitationId, {
+    await rememberInvitation({
       claimDigest: digestClaimSecret(claimSecret, store.pepper),
       invitationId,
       proposedRole: 'student',
@@ -1045,7 +1152,7 @@ export function registerOnboardingRoutes(
     };
 
     const operationId = newOperationId();
-    store.operations.set(bindingKey, {
+    await rememberOperation(bindingKey, context.principalKey, {
       digest,
       namespace: 'issue_student_invitation',
       operationId,
@@ -1092,7 +1199,11 @@ export function registerOnboardingRoutes(
         'revoke_student_invitation',
         retryDigest,
       );
-      const existingOperation = store.operations.get(bindingKey);
+      const existingOperation = await loadOperation(
+        store,
+        persistence,
+        bindingKey,
+      );
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -1114,9 +1225,9 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const commit = (result: unknown) => {
+      const commit = async (result: unknown) => {
         const operationId = newOperationId();
-        store.operations.set(bindingKey, {
+        await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'revoke_student_invitation',
           operationId,
@@ -1132,7 +1243,11 @@ export function registerOnboardingRoutes(
         });
       };
 
-      const invitation = store.invitations.get(params.data.invitationId);
+      const invitation = await loadInvitation(
+        store,
+        persistence,
+        params.data.invitationId,
+      );
       if (
         invitation === undefined ||
         invitation.purpose !== 'student_onboarding' ||
@@ -1149,7 +1264,7 @@ export function registerOnboardingRoutes(
 
       const revoked = revokeInvitation(invitation.state);
       if (revoked.status === 'already_terminal') {
-        return commit({
+        return await commit({
           command: 'revoke_student_invitation',
           invitation: {
             invitationId: invitation.invitationId,
@@ -1161,13 +1276,13 @@ export function registerOnboardingRoutes(
       }
 
       if (revoked.status !== 'advanced') {
-        return commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
       invitation.state = revoked.state;
-      store.invitations.set(invitation.invitationId, invitation);
+      await rememberInvitation(invitation);
 
-      return commit({
+      return await commit({
         command: 'revoke_student_invitation',
         invitation: {
           invitationId: invitation.invitationId,

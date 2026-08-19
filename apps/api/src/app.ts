@@ -40,6 +40,7 @@ export interface PlatformOptions {
     isStorageUnavailable?: ExerciseCatalogRouteDependencies['isStorageUnavailable'];
   };
   onboarding?: {
+    persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
   };
