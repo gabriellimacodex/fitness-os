@@ -155,6 +155,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         persistence.evidence.getEvidence(evidence.evidenceId),
       ).resolves.toEqual(evidence);
 
+      const auditRows = await connection.db.execute<{
+        kind: string;
+        outcome: string;
+      }>(sql`
+        SELECT kind, outcome
+        FROM privacy_audit_event
+        ORDER BY recorded_at
+      `);
+      expect(auditRows).toEqual([
+        { kind: 'data_use_evaluated', outcome: 'succeeded' },
+      ]);
+
       await app.close();
     });
   },
