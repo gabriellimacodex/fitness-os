@@ -152,6 +152,38 @@ describe('onboarding routes without trusted context', () => {
     await app.close();
   });
 
+  it('denies when IdentitySessionPort rejects the binder context', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          identitySession: {
+            resolve: async () => ({
+              reason: 'synthetic_in_production' as const,
+              status: 'denied' as const,
+            }),
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/current',
+    });
+    expect(response.statusCode).toBe(401);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'UNAUTHENTICATED',
+    );
+    await app.close();
+  });
+
   it('does not expose a public synthetic login surface', async () => {
     const app = buildApp({ logger: false });
 
