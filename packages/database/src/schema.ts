@@ -33,6 +33,8 @@ export {
   privacyWithdrawal,
 } from './privacy/tables.js';
 
+export { onboardingInvitation } from './onboarding/tables.js';
+
 export const students = pgTable('students', {
   id: uuid('id').primaryKey(),
   createdAt: timestamp('created_at', {
