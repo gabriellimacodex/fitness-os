@@ -7,12 +7,16 @@ import {
   isNonterminal,
   revokeInvitation,
   SyntheticIdentitySessionPort,
+  SyntheticOnboardingClaimRepository,
   SyntheticOnboardingPolicyGateway,
   SyntheticOnboardingReadinessProbe,
+  SyntheticOnboardingTransitionSink,
   transitionAttempt,
   type IdentitySessionPort,
+  type OnboardingClaimRepository,
   type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
+  type OnboardingTransitionSink,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -197,6 +201,7 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    claimRepository?: OnboardingClaimRepository;
     identitySession?: IdentitySessionPort;
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
@@ -204,6 +209,7 @@ export function registerOnboardingRoutes(
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
     syntheticReadiness?: boolean;
+    transitionSink?: OnboardingTransitionSink;
   } = {},
 ): void {
   const store = options.store ?? createOnboardingStore();
@@ -213,6 +219,10 @@ export function registerOnboardingRoutes(
     options.policyGateway ?? new SyntheticOnboardingPolicyGateway();
   const identitySession =
     options.identitySession ?? new SyntheticIdentitySessionPort();
+  const claimRepository =
+    options.claimRepository ?? new SyntheticOnboardingClaimRepository();
+  const transitionSink =
+    options.transitionSink ?? new SyntheticOnboardingTransitionSink();
   const readinessProbe =
     options.readinessProbe ??
     new SyntheticOnboardingReadinessProbe({
@@ -1072,12 +1082,46 @@ export function registerOnboardingRoutes(
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
+      const recordedAt = new Date().toISOString();
+      const mappingId = mappingIdFor(
+        context.principalKey,
+        record.detail.proposedRole,
+      );
+      const claimResult = await claimRepository.commit({
+        attempt: {
+          createdAt: record.createdAt,
+          detail: record.detail,
+          principalKey: record.principalKey,
+          updatedAt: recordedAt,
+        },
+        invitation: {
+          claimDigest: invitation.claimDigest,
+          invitationId: invitation.invitationId,
+          proposedRole: invitation.proposedRole,
+          purpose: invitation.purpose,
+          state: invitation.state,
+          targetCoachPrincipalKey: invitation.targetCoachPrincipalKey,
+          updatedAt: recordedAt,
+        },
+        mapping: {
+          createdAt: recordedAt,
+          mappingId,
+          principalKey: context.principalKey,
+          role: record.detail.proposedRole,
+        },
+        productionMode: false,
+      });
+
+      if (claimResult.status !== 'committed') {
+        return await commit({ outcome: 'invalid_or_unavailable' });
+      }
+
       const completed = transitionAttempt(record.detail, 'completed');
       if (completed.status !== 'advanced') {
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
-      invitation.state = 'claimed';
+      invitation.state = claimResult.invitation.state;
       await rememberInvitation(invitation);
       await rememberAttempt({
         ...record,
@@ -1088,14 +1132,55 @@ export function registerOnboardingRoutes(
         record.detail.proposedRole,
       );
 
-      return await commit({
+      const operationId = newOperationId();
+      await transitionSink.append({
+        aggregate: 'invitation',
+        aggregateId: invitation.invitationId,
+        nextState: claimResult.invitation.state,
+        operationId,
+        previousState: 'issued',
+        reason: 'claim_attempt',
+        recordedAt,
+      });
+      await transitionSink.append({
+        aggregate: 'attempt',
+        aggregateId: record.detail.attemptId,
+        nextState: completed.attempt.lifecycle,
+        operationId,
+        previousState: 'ready_to_claim',
+        reason: 'claim_attempt',
+        recordedAt,
+      });
+      await transitionSink.append({
+        aggregate: 'role_mapping',
+        aggregateId: mappingId,
+        nextState: record.detail.proposedRole,
+        operationId,
+        previousState: 'unmapped',
+        reason: 'claim_attempt',
+        recordedAt,
+      });
+
+      const result = {
         completionId: onboardingCompletionIdSchema.parse(randomUUID()),
-        mappingId: mappingIdFor(
-          context.principalKey,
-          record.detail.proposedRole,
-        ),
-        outcome: 'completed',
+        mappingId,
+        outcome: 'completed' as const,
         role: record.detail.proposedRole,
+      };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'claim_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+
+      return operationEnvelope({
+        digest,
+        namespace: 'claim_attempt',
+        operationId,
+        result,
+        state: 'operation_committed',
       });
     },
   );
