@@ -39,6 +39,11 @@ export type {
 } from './ports.js';
 export { FixedTrustedClock, SystemTrustedClock } from './ports.js';
 export {
+  HmacInvitationSecretVerifier,
+  type InvitationSecretVerification,
+  type InvitationSecretVerifier,
+} from './secret-verifier.js';
+export {
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
   type OnboardingIdFactory,
