@@ -67,3 +67,11 @@ export {
   type PrivacyCoreReadinessResult,
   type PostgresPrivacyAuthorizationEvidenceLedger,
 } from './privacy/index.js';
+export {
+  createPostgresOnboardingInvitationRepository,
+  onboardingInvitation,
+  type OnboardingInvitationPutResult,
+  type OnboardingInvitationTransitionResult,
+  type PostgresOnboardingInvitationRepository,
+  type StoredOnboardingInvitation,
+} from './onboarding/index.js';

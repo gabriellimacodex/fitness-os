@@ -50,6 +50,13 @@
       "when": 1787085000000,
       "tag": "0006_prd21_privacy_append_only_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787112160833,
+      "tag": "0007_prd07_onboarding_invitation",
+      "breakpoints": true
     }
   ]
 }
