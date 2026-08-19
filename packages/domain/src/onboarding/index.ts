@@ -50,6 +50,11 @@ export {
   type OnboardingSecretFactory,
 } from './factories.js';
 export {
+  SyntheticOnboardingTransitionSink,
+  type OnboardingTransitionRecord,
+  type OnboardingTransitionSink,
+} from './transition-sink.js';
+export {
   SyntheticIdentitySessionPort,
   type IdentitySessionPort,
   type IdentitySessionResolution,
