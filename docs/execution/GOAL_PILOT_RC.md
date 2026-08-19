@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `f32fe9e` (PR #104 merged; see Progress below)
+- Progress snapshot head: `81c828f` (PR #106 merged; PR #107 OPEN ready — see Progress)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -16,7 +16,7 @@
 Use this exact objective (or invoke `/goal` with a short pointer to this file):
 
 ```text
-Deliver Fitness OS Pilot Release Candidate (PRD 24 COMPLETED + Gate D PASS) from current main, following docs/execution/GOAL_PILOT_RC.md, docs/execution/MASTER_EXECUTION_PLAN.md, docs/prds/PRD_REGISTRY.md, AGENTS.md, MULTI_AGENT_PROTOCOL.md, docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md, docs/execution/RELEASE_GATES.md, docs/execution/STOP_CONDITIONS.md, and docs/execution/REVIEWER_AGENT.md. Execute the dependency DAG wave-by-wave without inventing parallel product paths. Complete each APPROVED/IN_PROGRESS PRD with contracts → design → implementation → tests → Agent 90 → CI green → Gate A before dependents. PRD 03 Option A and PRD 21 Option A are binding. Do not start PRD 25. Do not merge with open BLOCKER/HIGH. Stop only on STOP_CONDITIONS; otherwise keep delivering. Human stops (HUMAN_PERCEPTION, LEGAL_PRIVACY, credentials, financial) pause only the blocked path and continue unrelated authorized work. Report AGENT HANDOFF after each mergeable slice. Done only when PRD 24 is COMPLETED, Gate D evidence exists on the exact head, known limitations are documented, and an independent verification can reproduce Gate D PASS — not a builder claim.
+Deliver Fitness OS Pilot Release Candidate (PRD 24 COMPLETED + Gate D PASS) from current main, following docs/execution/GOAL_PILOT_RC.md, docs/execution/MASTER_EXECUTION_PLAN.md, docs/prds/PRD_REGISTRY.md, AGENTS.md, MULTI_AGENT_PROTOCOL.md, docs/execution/AUTONOMOUS_DELIVERY_CHARTER.md, docs/execution/RELEASE_GATES.md, docs/execution/STOP_CONDITIONS.md, and docs/execution/REVIEWER_AGENT.md. Execute the Master Execution Plan dependency DAG wave-by-wave (Waves 0–12 to PRD 24; Wave 13 / PRD 25 out of scope). Do not invent parallel product paths. Complete each APPROVED/IN_PROGRESS PRD with contracts → design → implementation → tests → Agent 90 → CI green → Gate A before dependents. Honor Wave 2 shared-path serialization (schema barrels, Drizzle metadata, migrations, API registration). PRD 03 Option A and PRD 21 Option A are binding. PRD 22 Form Intelligence is optional for baseline RC and must not block PRD 24 unless explicitly integrated after its POC gate. Do not start PRD 25. Do not merge with open BLOCKER/HIGH. Stop only on STOP_CONDITIONS; otherwise keep delivering. Human stops (HUMAN_PERCEPTION, LEGAL_PRIVACY, credentials, financial, founder decision, technology validation, architecture decision) pause only the blocked path and continue unrelated authorized work. Report AGENT HANDOFF after each mergeable slice. Done only when every unconditional PRD 24 dependency is COMPLETED, PRD 24 is COMPLETED, a durable Gate D PASS record exists on the exact candidate head under docs/execution/gates/, CI quality is green on that head, Agent 90 (or equivalent) PASS has 0 BLOCKER/0 HIGH, known limitations are documented without perfect-security or zero-defect claims, and an independent verification can reproduce Gate D PASS — not a builder claim.
 ```
 
 Short form:
@@ -34,7 +34,10 @@ independently verifiable:
    (`11, 13, 18, 19, 20, 21, 23` and their transitive required deps) as
    `COMPLETED`. PRD 22 may remain non-integrated.
 2. PRD **24** is `COMPLETED` with a durable Gate D PASS record for the exact
-   candidate head under `docs/execution/gates/`.
+   candidate head under `docs/execution/gates/` satisfying `RELEASE_GATES.md`
+   Gate D (Gates A–C as applicable; CI green; unit/integration/E2E; security;
+   authorization; migrations; failure/retry; production build; deployment;
+   smoke; rollback/recovery documented; known limitations documented).
 3. CI `quality` is green on that exact head.
 4. Agent 90 (or equivalent independent reviewer) has PASS with **0 BLOCKER**
    and **0 HIGH** open on the RC candidate.
@@ -86,16 +89,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                           |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                     |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                     |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                  |
-| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + full TD 007 domain-owned ports table (through #104) on `f32fe9e`; real-user still `LEGAL_PRIVACY`                                                                                  |
-| PRD 21               | `IN_PROGRESS` — Option A through #78 on `cac4d43` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY` |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                              |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                             |
+| Area                 | State                                                                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                                             |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                       |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                       |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                    |
+| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 domain ports through #104; IdentitySessionPort wired into resolveContext (#106 on `81c828f`); HTTP deny inject PR **#107 OPEN** (head `4d832f9`, Agent 90 R2 PASS, CI green, MERGEABLE)       |
+| PRD 21               | `IN_PROGRESS` — Option A through #78+ on `main` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`                     |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                               |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
@@ -105,7 +108,30 @@ Open stop that blocks production privacy / real-user onboarding: **LEGAL_PRIVACY
 
 Disposable migrations already on `main` (do not regenerate): `0001` catalog;
 `0002`–`0006` + `0011` privacy; `0007`–`0010` onboarding invitation/attempt/operation/role-mapping.
-Next Wave 3 authorized work: further PRD 07/21 synthetic/disposable mechanics without inventing Gate A PASS or registry COMPLETED under active stops.
+
+Immediate next authorized Wave 3 work (after merging #107 if still open):
+
+1. Wire `OnboardingClaimRepository` / `OnboardingTransitionSink` into the claim path.
+2. Continue remaining PRD 07/21 synthetic/disposable mechanics without inventing
+   Gate A PASS or registry `COMPLETED` under active stops.
+
+## Master Execution Plan — wave map (canonical)
+
+| Wave | Work                                                                 | Constraint summary                                      |
+| ---- | -------------------------------------------------------------------- | ------------------------------------------------------- |
+| 0–1  | 00 Bootstrap; 01 Platform                                            | Done                                                    |
+| 2    | 02 Domain; 03 Catalog; 04 Movement                                   | 03 done; 04 HUMAN_PERCEPTION pause; serialize shared paths |
+| 3    | 05 Training Core; 07 Onboarding; 21 Privacy                          | 05 blocked on 04; 07/21 synthetic authorized            |
+| 4    | 06 UX; 08 Body Scan; 15 Evidence; 20 Notifications                   | After own deps + contract freezes                       |
+| 5    | 09 Body Intelligence; 19 PWA Hardening                               | Capability validation / no native scope                 |
+| 6    | 10 Snapshot; 16 Copilot                                              | Evidence-grounded; human-in-the-loop                    |
+| 7    | 11 Twin; 14 Progress Photos                                          | After 10; privacy/perception gates                      |
+| 8–9  | 12 Character Sheet; 13 Evolution                                     | After twin / snapshot+sheet                             |
+| 10   | 17 Adaptive; 23 Observability                                        | Professional approval where consequential               |
+| 11   | 18 Coach Workspace                                                   | Integration-heavy                                       |
+| POC  | 22 Form Intelligence                                                 | Isolated; optional for baseline RC                      |
+| 12   | **24 Release Candidate**                                             | Gate D on exact head — **goal target**                  |
+| 13   | 25 Pilot Release                                                     | **Out of scope** until separate authorization           |
 
 ## Execution sequence from current progress
 
@@ -119,8 +145,8 @@ Work the DAG; use safe wave parallelism only when ownership and contracts allow.
 
 ### Wave 3 — authorized in parallel where deps allow
 
-3. **PRD 07** — continue authorized synthetic / disposable onboarding beyond
-   `0010` only if gaps remain; keep real-user activation blocked by
+3. **PRD 07** — merge #107 if still open; then claim-path composition
+   (`ClaimRepository` / `TransitionSink`); keep real-user activation blocked by
    `LEGAL_PRIVACY` until cleared.
 4. **PRD 21** — continue Option A from current `main`:
    - keep destructive/lifecycle paths denied under `LEGAL_PRIVACY`;
