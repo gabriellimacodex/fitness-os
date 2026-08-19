@@ -5,10 +5,8 @@ import {
   onboardingPolicyInteractionIdSchema,
   onboardingPolicyPackageIdSchema,
   policyHandoffSchema,
+  type PolicyHandoff,
 } from '@fitness-os/schemas';
-import type { z } from 'zod';
-
-type PolicyHandoff = z.infer<typeof policyHandoffSchema>;
 
 export type OnboardingPolicyGatewayStartResult =
   | { status: 'started'; handoff: PolicyHandoff }
