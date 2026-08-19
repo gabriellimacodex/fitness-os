@@ -19,8 +19,14 @@ export {
   type InvitationState,
 } from './invitation.js';
 export type {
+  InvitationPurpose,
+  OnboardingInvitationPutResult,
+  OnboardingInvitationRecord,
+  OnboardingInvitationRepository,
+  OnboardingInvitationTransitionResult,
   PrincipalRoleMappingPutResult,
   PrincipalRoleMappingRecord,
   PrincipalRoleMappingRepository,
 } from './ports.js';
+export { SyntheticOnboardingInvitationRepository } from './synthetic-invitations.js';
 export { SyntheticPrincipalRoleMappingRepository } from './synthetic-mappings.js';

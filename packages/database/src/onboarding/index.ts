@@ -12,6 +12,7 @@ export {
   type StoredOnboardingAttempt,
 } from './attempts.js';
 export {
+  asOnboardingInvitationRepository,
   createPostgresOnboardingInvitationRepository,
   type OnboardingInvitationPutResult,
   type OnboardingInvitationTransitionResult,

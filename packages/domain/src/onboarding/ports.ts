@@ -1,6 +1,54 @@
-import type { PrincipalRoleMappingId } from '@fitness-os/schemas';
+import type {
+  OnboardingInvitationId,
+  PrincipalRoleMappingId,
+} from '@fitness-os/schemas';
 
 import type { ProposedRole } from './claim.js';
+import type { InvitationState } from './invitation.js';
+
+export type InvitationPurpose = 'coach_bootstrap' | 'student_onboarding';
+
+export type OnboardingInvitationRecord = {
+  claimDigest: string;
+  invitationId: OnboardingInvitationId;
+  proposedRole: ProposedRole;
+  purpose: InvitationPurpose;
+  state: InvitationState;
+  targetCoachPrincipalKey: string | null;
+  updatedAt: string;
+};
+
+export type OnboardingInvitationPutResult = 'accepted' | 'conflict' | 'invalid';
+
+export type OnboardingInvitationTransitionResult =
+  | { status: 'advanced'; invitation: OnboardingInvitationRecord }
+  | { status: 'already_terminal'; invitation: OnboardingInvitationRecord }
+  | { status: 'invalid'; reason: 'not_found' | 'illegal_transition' }
+  | { status: 'conflict' };
+
+/**
+ * Issue, inspect, and transition invitations through closed outcomes.
+ */
+export interface OnboardingInvitationRepository {
+  applyClaim(input: {
+    invitationId: string;
+    updatedAt: string;
+  }): Promise<OnboardingInvitationTransitionResult>;
+  applyRevoke(input: {
+    invitationId: string;
+    updatedAt: string;
+  }): Promise<OnboardingInvitationTransitionResult>;
+  get(invitationId: string): Promise<OnboardingInvitationRecord | null>;
+  getByClaimDigest(
+    claimDigest: string,
+  ): Promise<OnboardingInvitationRecord | null>;
+  listByTargetCoach(
+    targetCoachPrincipalKey: string,
+  ): Promise<readonly OnboardingInvitationRecord[]>;
+  put(
+    record: OnboardingInvitationRecord,
+  ): Promise<OnboardingInvitationPutResult>;
+}
 
 export type PrincipalRoleMappingRecord = {
   createdAt: string;
