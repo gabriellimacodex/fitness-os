@@ -40,7 +40,10 @@ export interface PlatformOptions {
     isStorageUnavailable?: ExerciseCatalogRouteDependencies['isStorageUnavailable'];
   };
   onboarding?: {
+    identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
+    policyGateway?: import('@fitness-os/domain').OnboardingPolicyGateway;
+    readinessProbe?: import('@fitness-os/domain').OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
   };
