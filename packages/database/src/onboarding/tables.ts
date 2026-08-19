@@ -133,3 +133,49 @@ export const onboardingAttempt = pgTable(
     index('onboarding_attempt_invitation_id_idx').on(table.invitationId),
   ],
 );
+
+/**
+ * Disposable synthetic onboarding operation ledger for idempotent replay.
+ * Retry tokens are never stored — only HMAC digests and opaque results.
+ */
+export const onboardingOperation = pgTable(
+  'onboarding_operation',
+  {
+    operationId: uuid('operation_id').primaryKey(),
+    bindingKey: text('binding_key').notNull(),
+    principalKey: text('principal_key').notNull(),
+    namespace: text('namespace').notNull(),
+    retryDigest: text('retry_digest').notNull(),
+    digest: text('digest').notNull(),
+    result: jsonb('result').notNull(),
+    createdAt: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    check(
+      'onboarding_operation_namespace_check',
+      sql`${table.namespace} IN (
+        'create_attempt',
+        'resume_attempt',
+        'abandon_attempt',
+        'refresh_policy',
+        'claim_attempt',
+        'issue_student_invitation',
+        'revoke_student_invitation'
+      )`,
+    ),
+    check(
+      'onboarding_operation_retry_digest_check',
+      sql`${table.retryDigest} ~ '^hmac-sha256\\.v1:[a-f0-9]{64}$'`,
+    ),
+    check(
+      'onboarding_operation_digest_check',
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    uniqueIndex('onboarding_operation_binding_key_unique').on(table.bindingKey),
+    index('onboarding_operation_principal_key_idx').on(table.principalKey),
+    index('onboarding_operation_namespace_idx').on(table.namespace),
+  ],
+);

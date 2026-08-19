@@ -71,6 +71,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'exercise_revision_taxonomy_term',
         'onboarding_attempt',
         'onboarding_invitation',
+        'onboarding_operation',
         'privacy_audit_event',
         'privacy_authorization_evidence',
         'privacy_policy_package_version',

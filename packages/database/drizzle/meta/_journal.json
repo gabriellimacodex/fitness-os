@@ -64,6 +64,13 @@
       "when": 1787113354331,
       "tag": "0008_prd07_onboarding_attempt",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787146764299,
+      "tag": "0009_prd07_onboarding_operation",
+      "breakpoints": true
     }
   ]
 }
