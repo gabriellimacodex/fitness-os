@@ -1,7 +1,7 @@
 import { principalRoleMappingIdSchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { SyntheticPrincipalRoleMappingRepository } from './synthetic-mappings.js';
+import { SyntheticPrincipalRoleMappingRepository } from '../src/onboarding/synthetic-mappings.js';
 
 describe('SyntheticPrincipalRoleMappingRepository', () => {
   it('accepts, replays identical puts, and conflicts on mapping_id mismatch', async () => {
@@ -39,6 +39,24 @@ describe('SyntheticPrincipalRoleMappingRepository', () => {
     await expect(repo.get(mappingId)).resolves.toEqual(record);
     await expect(repo.listByPrincipal('principal-1')).resolves.toEqual([
       record,
+    ]);
+
+    const coachId = principalRoleMappingIdSchema.parse(
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    );
+    const coach = {
+      createdAt: '2026-08-19T12:07:00.000Z',
+      mappingId: coachId,
+      principalKey: 'principal-1',
+      role: 'coach' as const,
+    };
+    await expect(repo.put(coach)).resolves.toEqual({
+      mapping: coach,
+      status: 'accepted',
+    });
+    await expect(repo.listByPrincipal('principal-1')).resolves.toEqual([
+      record,
+      coach,
     ]);
   });
 });
