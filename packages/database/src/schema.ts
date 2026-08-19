@@ -37,6 +37,7 @@ export {
   onboardingAttempt,
   onboardingInvitation,
   onboardingOperation,
+  onboardingRoleMapping,
 } from './onboarding/tables.js';
 
 export const students = pgTable('students', {

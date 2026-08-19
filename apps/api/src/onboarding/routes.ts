@@ -41,6 +41,7 @@ import { digestUtf8JsonSha256V1 } from './canonical.js';
 import {
   hydrateCoachInvitations,
   hydratePrincipalAttempts,
+  hydratePrincipalMappings,
   loadAttempt,
   loadInvitation,
   loadInvitationByClaimDigest,
@@ -48,6 +49,7 @@ import {
   persistAttempt,
   persistInvitation,
   persistOperation,
+  persistRoleMapping,
   type OnboardingPgPersistence,
 } from './pg-persistence.js';
 import {
@@ -242,6 +244,20 @@ export function registerOnboardingRoutes(
     }
   };
 
+  const rememberRoleMapping = async (
+    principalKey: string,
+    role: ProposedRole,
+  ): Promise<void> => {
+    recordRoleMapping(store, principalKey, role);
+    if (persistence !== undefined) {
+      await persistRoleMapping(persistence, {
+        mappingId: mappingIdFor(principalKey, role),
+        principalKey,
+        role,
+      });
+    }
+  };
+
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
 
@@ -286,6 +302,7 @@ export function registerOnboardingRoutes(
 
     if (persistence !== undefined) {
       await hydratePrincipalAttempts(store, persistence, context.principalKey);
+      await hydratePrincipalMappings(store, persistence, context.principalKey);
     }
 
     let cursor:
@@ -1016,8 +1033,7 @@ export function registerOnboardingRoutes(
         ...record,
         detail: completed.attempt,
       });
-      recordRoleMapping(
-        store,
+      await rememberRoleMapping(
         context.principalKey,
         record.detail.proposedRole,
       );
@@ -1044,6 +1060,10 @@ export function registerOnboardingRoutes(
     const context = await requireContext(request, reply);
     if (context === null) {
       return;
+    }
+
+    if (persistence !== undefined) {
+      await hydratePrincipalMappings(store, persistence, context.principalKey);
     }
 
     if (!hasCoachMapping(store, context)) {
@@ -1087,6 +1107,10 @@ export function registerOnboardingRoutes(
     const context = await requireContext(request, reply);
     if (context === null) {
       return;
+    }
+
+    if (persistence !== undefined) {
+      await hydratePrincipalMappings(store, persistence, context.principalKey);
     }
 
     if (!hasCoachMapping(store, context)) {
@@ -1182,6 +1206,14 @@ export function registerOnboardingRoutes(
       const context = await requireContext(request, reply);
       if (context === null) {
         return;
+      }
+
+      if (persistence !== undefined) {
+        await hydratePrincipalMappings(
+          store,
+          persistence,
+          context.principalKey,
+        );
       }
 
       if (!hasCoachMapping(store, context)) {
