@@ -318,7 +318,7 @@ describe('synthetic expected processor inventory', () => {
     expect(matched).toEqual({ status: 'matched' });
   });
 
-  it('flags missing handlers and undeclared runtime processors', () => {
+  it('flags missing handlers, purposes, and undeclared runtime processors', () => {
     const missingHandler = compareExpectedInventoryToRuntime({
       expected: inventory,
       runtime: [
@@ -337,6 +337,27 @@ describe('synthetic expected processor inventory', () => {
         },
       ],
     });
+
+    const missingPurpose = compareExpectedInventoryToRuntime({
+      expected: inventory,
+      runtime: [
+        privacyProcessorDescriptorReferenceSchema.parse({
+          ...processor,
+          allowedPurposeIds: [],
+        }),
+      ],
+    });
+    expect(missingPurpose.status).toBe('mismatched');
+    if (missingPurpose.status !== 'mismatched') {
+      throw new Error('expected mismatched');
+    }
+    expect(
+      missingPurpose.mismatches.some(
+        (row) =>
+          row.diagnosticCode === 'inventory_mismatch' &&
+          row.detail.startsWith('missing_purpose:'),
+      ),
+    ).toBe(true);
 
     const extra = compareExpectedInventoryToRuntime({
       expected: inventory,

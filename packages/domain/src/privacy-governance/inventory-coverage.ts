@@ -25,7 +25,8 @@ export type InventoryCoverageResult =
 
 /**
  * Exact expected-vs-runtime processor coverage. Extra runtime processors and
- * missing expected handlers fail. Does not claim production readiness.
+ * missing expected handlers/purposes/categories fail. Does not claim
+ * production readiness.
  */
 export function compareExpectedInventoryToRuntime(input: {
   expected: PrivacyExpectedProcessorInventory;
@@ -34,15 +35,23 @@ export function compareExpectedInventoryToRuntime(input: {
   const expected = canonicalizePrivacyExpectedProcessorInventory(
     input.expected,
   );
-  const runtimeById = new Map(
-    input.runtime.map((descriptor) => {
-      const canonical =
-        canonicalizePrivacyProcessorDescriptorReference(descriptor);
-      return [canonical.processorId, canonical] as const;
-    }),
-  );
-
   const mismatches: InventoryCoverageMismatch[] = [];
+  const runtimeById = new Map<string, PrivacyProcessorDescriptorReference>();
+
+  for (const descriptor of input.runtime) {
+    const canonical =
+      canonicalizePrivacyProcessorDescriptorReference(descriptor);
+    if (runtimeById.has(canonical.processorId)) {
+      mismatches.push({
+        detail: 'duplicate_runtime_processor_id',
+        diagnosticCode: 'inventory_mismatch',
+        processorId: canonical.processorId,
+      });
+      continue;
+    }
+    runtimeById.set(canonical.processorId, canonical);
+  }
+
   const expectedIds = new Set(
     expected.processors.map((processor) => processor.processorId),
   );
@@ -69,6 +78,28 @@ export function compareExpectedInventoryToRuntime(input: {
         diagnosticCode: 'inventory_mismatch',
         processorId: processor.processorId,
       });
+    }
+
+    const runtimePurposes = new Set(runtime.allowedPurposeIds);
+    for (const purposeId of processor.allowedPurposeIds) {
+      if (!runtimePurposes.has(purposeId)) {
+        mismatches.push({
+          detail: `missing_purpose:${purposeId}`,
+          diagnosticCode: 'inventory_mismatch',
+          processorId: processor.processorId,
+        });
+      }
+    }
+
+    const runtimeCategories = new Set(runtime.allowedCategoryIds);
+    for (const categoryId of processor.allowedCategoryIds) {
+      if (!runtimeCategories.has(categoryId)) {
+        mismatches.push({
+          detail: `missing_category:${categoryId}`,
+          diagnosticCode: 'inventory_mismatch',
+          processorId: processor.processorId,
+        });
+      }
     }
 
     const runtimeCapabilities = new Set<PrivacyProcessorCapability>(
