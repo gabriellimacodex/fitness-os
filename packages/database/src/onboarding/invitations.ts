@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   claimInvitation,
   revokeInvitation,
+  type OnboardingInvitationRepository,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -228,3 +229,10 @@ async function applyTransition(
 export type PostgresOnboardingInvitationRepository = ReturnType<
   typeof createPostgresOnboardingInvitationRepository
 >;
+
+/** Structural adapter: disposable PG repo satisfies the domain port. */
+export function asOnboardingInvitationRepository(
+  repository: PostgresOnboardingInvitationRepository,
+): OnboardingInvitationRepository {
+  return repository;
+}

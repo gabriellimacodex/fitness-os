@@ -69,6 +69,7 @@ export {
 } from './privacy/index.js';
 export {
   createPostgresOnboardingAttemptRepository,
+  asOnboardingInvitationRepository,
   createPostgresOnboardingInvitationRepository,
   createPostgresOnboardingOperationRepository,
   asPrincipalRoleMappingRepository,
