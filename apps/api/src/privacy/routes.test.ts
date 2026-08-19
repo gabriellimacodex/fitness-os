@@ -138,6 +138,11 @@ describe('synthetic privacy composition seam', () => {
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {},
     });
+    const processorExecute = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-execute',
+      payload: {},
+    });
 
     for (const response of [
       readiness,
@@ -146,6 +151,7 @@ describe('synthetic privacy composition seam', () => {
       withdrawal,
       retentionPreview,
       retentionAuthorize,
+      processorExecute,
     ]) {
       expect(response.statusCode).toBe(404);
       expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
@@ -649,6 +655,74 @@ describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
       },
     });
     expect(synthetic.json()).toEqual({ status: 'allowed_synthetic_test' });
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/processor-execute', () => {
+  it('completes synthetic inventory and denies productionMode synthetic', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const inventory = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-execute',
+      payload: {
+        descriptor: processor,
+        families: ['privacy_audit_event', 'privacy_subject_request'],
+        command: {
+          processorId: processor.processorId,
+          capability: 'inventory',
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          correlationId: privacyCorrelationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          ),
+          productionMode: false,
+        },
+      },
+    });
+
+    expect(inventory.statusCode).toBe(200);
+    expect(inventory.headers['cache-control']).toBe('no-store');
+    expect(inventory.json()).toMatchObject({
+      status: 'completed',
+      capability: 'inventory',
+    });
+    expect(inventory.json().families).toHaveLength(2);
+
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-execute',
+      payload: {
+        descriptor: processor,
+        families: ['privacy_audit_event'],
+        command: {
+          processorId: processor.processorId,
+          capability: 'inventory',
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          correlationId: privacyCorrelationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          ),
+          productionMode: true,
+        },
+      },
+    });
+
+    expect(denied.statusCode).toBe(200);
+    expect(denied.json()).toMatchObject({
+      status: 'denied',
+      reasonCode: 'synthetic_processor_in_production',
+    });
 
     await app.close();
   });

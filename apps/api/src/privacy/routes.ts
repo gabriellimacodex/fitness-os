@@ -4,6 +4,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   type PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
@@ -12,6 +13,8 @@ import {
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticProcessorExecuteRequestSchema,
+  privacySyntheticProcessorExecuteResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   privacySyntheticRetentionPreviewRequestSchema,
@@ -290,6 +293,43 @@ export function registerPrivacySyntheticRoutes(
       return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
         status: 'allowed_synthetic_test',
       });
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/processor-execute',
+    async (request, reply) => {
+      const body = privacySyntheticProcessorExecuteRequestSchema.safeParse(
+        request.body,
+      );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      // This seam is synthetic-only: productionMode always hard-denies here,
+      // regardless of a client-supplied descriptor.synthetic flag.
+      if (body.data.command.productionMode === true) {
+        return privacySyntheticProcessorExecuteResponseSchema.parse({
+          status: 'denied',
+          reasonCode: 'synthetic_processor_in_production',
+          capability: body.data.command.capability,
+          families: [],
+          accessLocatorDigest: null,
+          operationId: body.data.command.operationId,
+          correlationId: body.data.command.correlationId,
+        });
+      }
+
+      const processor = new SyntheticPrivacySubjectDataProcessor(
+        { ...body.data.descriptor, synthetic: true },
+        body.data.families,
+      );
+      const result = await processor.execute({
+        ...body.data.command,
+        productionMode: false,
+      });
+      return privacySyntheticProcessorExecuteResponseSchema.parse(result);
     },
   );
 }
