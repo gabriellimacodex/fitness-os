@@ -50,6 +50,12 @@ export {
   type OnboardingSecretFactory,
 } from './factories.js';
 export {
+  SyntheticPrincipalReferenceDeriver,
+  type PrincipalReferenceCandidate,
+  type PrincipalReferenceDeriveResult,
+  type PrincipalReferenceDeriver,
+} from './principal-reference.js';
+export {
   SyntheticPrincipalBindingRepository,
   type PrincipalBindingRecord,
   type PrincipalBindingRepository,
