@@ -73,6 +73,12 @@ export {
   type OnboardingTransitionSink,
 } from './transition-sink.js';
 export {
+  SyntheticIdentitySessionStore,
+  type IdentitySessionRecord,
+  type IdentitySessionStore,
+  type IdentitySessionStorePutResult,
+} from './identity-session-store.js';
+export {
   SyntheticIdentitySessionPort,
   type IdentitySessionPort,
   type IdentitySessionResolution,
