@@ -1,4 +1,8 @@
-export { onboardingAttempt, onboardingInvitation } from './tables.js';
+export {
+  onboardingAttempt,
+  onboardingInvitation,
+  onboardingOperation,
+} from './tables.js';
 export {
   createPostgresOnboardingAttemptRepository,
   type OnboardingAttemptPutResult,
@@ -13,3 +17,10 @@ export {
   type PostgresOnboardingInvitationRepository,
   type StoredOnboardingInvitation,
 } from './invitations.js';
+export {
+  createPostgresOnboardingOperationRepository,
+  type OnboardingMutationNamespace,
+  type OnboardingOperationPutResult,
+  type PostgresOnboardingOperationRepository,
+  type StoredOnboardingOperation,
+} from './operations.js';
