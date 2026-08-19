@@ -7,6 +7,7 @@ import {
   isNonterminal,
   revokeInvitation,
   SyntheticIdentitySessionPort,
+  SyntheticIdentitySessionStore,
   SyntheticOnboardingClaimRepository,
   SyntheticOnboardingPolicyGateway,
   SyntheticOnboardingReadinessProbe,
@@ -15,6 +16,7 @@ import {
   SyntheticPrincipalReferenceDeriver,
   transitionAttempt,
   type IdentitySessionPort,
+  type IdentitySessionStore,
   type OnboardingClaimRepository,
   type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
@@ -207,6 +209,7 @@ export function registerOnboardingRoutes(
   options: {
     claimRepository?: OnboardingClaimRepository;
     identitySession?: IdentitySessionPort;
+    identitySessionStore?: IdentitySessionStore;
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
     principalBinding?: PrincipalBindingRepository;
@@ -225,6 +228,8 @@ export function registerOnboardingRoutes(
     options.policyGateway ?? new SyntheticOnboardingPolicyGateway();
   const identitySession =
     options.identitySession ?? new SyntheticIdentitySessionPort();
+  const identitySessionStore =
+    options.identitySessionStore ?? new SyntheticIdentitySessionStore();
   const principalBinding =
     options.principalBinding ?? new SyntheticPrincipalBindingRepository();
   const principalReference =
@@ -356,6 +361,42 @@ export function registerOnboardingRoutes(
     });
 
     if (binding.status === 'denied') {
+      await sendError(
+        request,
+        reply,
+        401,
+        'UNAUTHENTICATED',
+        'Authentication required',
+      );
+      return null;
+    }
+
+    const sessionId = `synthetic-session:${binding.binding.principalKey}`;
+    const nowUtcMs = new Date().toISOString();
+    let session = await identitySessionStore.get(sessionId);
+    if (session === null) {
+      const putResult = await identitySessionStore.put({
+        createdAt: nowUtcMs,
+        expiresAt: nowUtcMs,
+        principalKey: binding.binding.principalKey,
+        sessionId,
+      });
+      if (putResult === 'conflict') {
+        session = await identitySessionStore.get(sessionId);
+      } else {
+        session = {
+          createdAt: nowUtcMs,
+          expiresAt: nowUtcMs,
+          principalKey: binding.binding.principalKey,
+          sessionId,
+        };
+      }
+    }
+
+    if (
+      session === null ||
+      session.principalKey !== binding.binding.principalKey
+    ) {
       await sendError(
         request,
         reply,
