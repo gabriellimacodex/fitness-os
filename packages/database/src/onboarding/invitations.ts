@@ -28,7 +28,7 @@ export type StoredOnboardingInvitation = {
   updatedAt: string;
 };
 
-export type OnboardingInvitationPutResult = 'accepted' | 'conflict';
+export type OnboardingInvitationPutResult = 'accepted' | 'conflict' | 'invalid';
 
 export type OnboardingInvitationTransitionResult =
   | { status: 'advanced'; invitation: StoredOnboardingInvitation }
@@ -88,6 +88,11 @@ export function createPostgresOnboardingInvitationRepository(
     put: async (
       record: StoredOnboardingInvitation,
     ): Promise<OnboardingInvitationPutResult> => {
+      // Initial writes must be issued; claim/revoke are the only mutators.
+      if (record.state !== 'issued') {
+        return 'invalid';
+      }
+
       try {
         await connection.db.insert(onboardingInvitation).values({
           claimDigest: record.claimDigest,
