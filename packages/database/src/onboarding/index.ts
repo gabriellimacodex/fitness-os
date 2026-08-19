@@ -26,6 +26,7 @@ export {
   type StoredOnboardingOperation,
 } from './operations.js';
 export {
+  asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
   type OnboardingRoleMappingPutResult,
   type PostgresOnboardingRoleMappingRepository,
