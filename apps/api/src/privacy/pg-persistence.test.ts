@@ -51,25 +51,32 @@ const evidence = privacyEvidenceReferenceSchema.parse({
   recordedAt: '2026-08-18T11:00:00.000Z',
 });
 
-const append = vi.fn(async () => 'accepted' as const);
-const getEvidence = vi.fn(async (evidenceId: string) =>
-  evidenceId === evidence.evidenceId ? evidence : null,
-);
+const auditEvents: unknown[] = [];
+const append = async (event: unknown) => {
+  auditEvents.push(event);
+  return 'accepted' as const;
+};
+let getEvidenceCalls = 0;
+const getEvidence = async (evidenceId: string) => {
+  getEvidenceCalls += 1;
+  return evidenceId === evidence.evidenceId ? evidence : null;
+};
+const subjectRequests = {
+  applyTransition: async () => ({ status: 'conflict' as const }),
+  get: async () => null,
+  listTransitions: async () => [],
+  put: async () => 'accepted' as const,
+};
 
 vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyAuditSink: vi.fn(() => ({ append })),
   createPostgresPrivacyAuthorizationEvidenceLedger: vi.fn(() => ({
-    appendEvidence: vi.fn(),
-    appendWithdrawal: vi.fn(),
-    getAuthoritativeWithdrawal: vi.fn(async () => null),
+    appendEvidence: async () => 'accepted' as const,
+    appendWithdrawal: async () => 'accepted' as const,
+    getAuthoritativeWithdrawal: async () => null,
     getEvidence,
   })),
-  createPostgresPrivacySubjectRequestRepository: vi.fn(() => ({
-    applyTransition: vi.fn(),
-    get: vi.fn(),
-    listTransitions: vi.fn(),
-    put: vi.fn(),
-  })),
+  createPostgresPrivacySubjectRequestRepository: vi.fn(() => subjectRequests),
 }));
 
 import {
@@ -94,12 +101,12 @@ describe('privacy PG persistence bundle', () => {
     );
     expect(persistence.evidence.getEvidence).toBe(getEvidence);
     expect(persistence.audit.append).toBe(append);
-    expect(persistence.subjectRequests).toBeDefined();
+    expect(persistence.subjectRequests).toBe(subjectRequests);
   });
 
   it('drives synthetic data-use-evaluate over the composed bundle ports', async () => {
-    append.mockClear();
-    getEvidence.mockClear();
+    auditEvents.length = 0;
+    getEvidenceCalls = 0;
 
     const connection = { db: {}, close: async () => undefined } as never;
     const persistence = createPrivacyPgPersistence(connection);
@@ -148,9 +155,9 @@ describe('privacy PG persistence bundle', () => {
       status: 'evaluated',
       decision: { outcome: 'allowed' },
     });
-    expect(getEvidence).toHaveBeenCalled();
-    expect(append).toHaveBeenCalled();
-    expect(append.mock.calls[0]?.[0]).toMatchObject({
+    expect(getEvidenceCalls).toBeGreaterThan(0);
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
       kind: 'data_use_evaluated',
       outcome: 'succeeded',
     });
