@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `76a8656` (PR #75 merged; see Progress below)
+- Progress snapshot head: `cac4d43` (PR #78 merged; see Progress below)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -86,16 +86,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                 |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                           |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                           |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                        |
-| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitation/attempt/operation/role-mapping (`0007`–`0010`) + write-through/hydrate through #66 on `bf2e344`; real-user still `LEGAL_PRIVACY`                            |
-| PRD 21               | `IN_PROGRESS` — Option A through #75 on `76a8656` (ordinary-role harness + evidence/audit inject + PG persistence bundle HTTP composition); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY` |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                    |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                   |
+| Area                 | State                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                           |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                     |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                     |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                  |
+| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitation/attempt/operation/role-mapping (`0007`–`0010`) + write-through/hydrate through #66 on `bf2e344`; real-user still `LEGAL_PRIVACY`                                      |
+| PRD 21               | `IN_PROGRESS` — Option A through #78 on `cac4d43` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY` |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                              |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                             |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
