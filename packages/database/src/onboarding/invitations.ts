@@ -85,6 +85,17 @@ export function createPostgresOnboardingInvitationRepository(
       return row ? toRecord(row) : null;
     },
 
+    getByClaimDigest: async (
+      claimDigest: string,
+    ): Promise<StoredOnboardingInvitation | null> => {
+      const [row] = await connection.db
+        .select()
+        .from(onboardingInvitation)
+        .where(eq(onboardingInvitation.claimDigest, claimDigest))
+        .limit(1);
+      return row ? toRecord(row) : null;
+    },
+
     put: async (
       record: StoredOnboardingInvitation,
     ): Promise<OnboardingInvitationPutResult> => {

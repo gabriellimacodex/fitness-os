@@ -289,7 +289,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
         allowSyntheticPrivacy: true,
         privacy: {
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
-          subjectRequests,
+          subjectRequests: subjectRequests as never,
         },
       },
     );
@@ -449,7 +449,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
         allowSyntheticPrivacy: true,
         privacy: {
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
-          subjectRequests,
+          subjectRequests: subjectRequests as never,
         },
       },
     );
