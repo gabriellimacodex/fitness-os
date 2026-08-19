@@ -6,7 +6,9 @@ import {
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
+  SyntheticOnboardingReadinessProbe,
   transitionAttempt,
+  type OnboardingReadinessProbe,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -209,13 +211,20 @@ export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
     persistence?: OnboardingPgPersistence;
+    readinessProbe?: OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
+    syntheticReadiness?: boolean;
   } = {},
 ): void {
   const store = options.store ?? createOnboardingStore();
   const persistence = options.persistence;
   const resolveContext = options.resolveContext ?? (() => null);
+  const readinessProbe =
+    options.readinessProbe ??
+    new SyntheticOnboardingReadinessProbe({
+      evaluatedAt: '2026-08-19T12:00:00.000Z',
+    });
 
   const rememberOperation = async (
     bindingKey: string,
@@ -267,6 +276,12 @@ export function registerOnboardingRoutes(
 
     return payload;
   });
+
+  if (options.syntheticReadiness === true) {
+    app.get('/v1/onboarding/synthetic/readiness', async () =>
+      readinessProbe.evaluate(),
+    );
+  }
 
   const requireContext = async (
     request: FastifyRequest,
