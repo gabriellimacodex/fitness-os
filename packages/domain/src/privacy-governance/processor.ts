@@ -18,6 +18,13 @@ const SUPPORTED_SIMULATION: ReadonlySet<PrivacyProcessorCapability> = new Set([
   'export',
 ]);
 
+/** Destructive / lifecycle capabilities never execute in this synthetic seam. */
+const LEGAL_PRIVACY_BLOCKED: ReadonlySet<PrivacyProcessorCapability> = new Set([
+  'delete',
+  'retention',
+  'governance_lifecycle',
+]);
+
 function familyCoverage(
   family: PrivacySyntheticProcessorFamilyCoverage['family'],
   seed: string,
@@ -34,7 +41,8 @@ function denied(
   reasonCode:
     | 'capability_not_declared'
     | 'synthetic_processor_in_production'
-    | 'unsupported_capability',
+    | 'unsupported_capability'
+    | 'requires_legal_privacy_decision',
   status: 'denied' | 'unsupported' = 'denied',
 ): PrivacySyntheticProcessorResult {
   return privacySyntheticProcessorResultSchema.parse({
@@ -79,6 +87,10 @@ export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataP
 
     if (!this.descriptor.capabilities.includes(valid.capability)) {
       return denied(valid, 'capability_not_declared');
+    }
+
+    if (LEGAL_PRIVACY_BLOCKED.has(valid.capability)) {
+      return denied(valid, 'requires_legal_privacy_decision');
     }
 
     if (!SUPPORTED_SIMULATION.has(valid.capability)) {
