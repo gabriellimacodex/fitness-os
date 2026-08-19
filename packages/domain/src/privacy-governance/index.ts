@@ -1,4 +1,9 @@
 export { evaluateDataUse } from './data-use.js';
+export {
+  compareExpectedInventoryToRuntime,
+  type InventoryCoverageMismatch,
+  type InventoryCoverageResult,
+} from './inventory-coverage.js';
 export type {
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
