@@ -772,4 +772,57 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
 
     await app.close();
   });
+
+  it('appends audit events through the injected audit sink', async () => {
+    const evidenceLedger = {
+      appendEvidence: async () => {
+        throw new Error('injected ledger must not append from the route');
+      },
+      appendWithdrawal: async () => {
+        throw new Error('injected ledger must not withdraw from the route');
+      },
+      getAuthoritativeWithdrawal: async () => null,
+      getEvidence: async (evidenceId: string) =>
+        evidenceId === evidence.evidenceId ? evidence : null,
+    };
+    const auditEvents: unknown[] = [];
+    const audit = {
+      append: async (event: unknown) => {
+        auditEvents.push(event);
+        return 'accepted' as const;
+      },
+    };
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          audit,
+          evidence: evidenceLedger,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: { outcome: 'allowed' },
+    });
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]).toMatchObject({
+      kind: 'data_use_evaluated',
+      outcome: 'succeeded',
+      policyVersionId: policy.versionId,
+    });
+
+    await app.close();
+  });
 });
