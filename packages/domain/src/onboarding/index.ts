@@ -50,6 +50,12 @@ export {
   type OnboardingSecretFactory,
 } from './factories.js';
 export {
+  SyntheticOnboardingClaimRepository,
+  type OnboardingClaimCommitInput,
+  type OnboardingClaimCommitResult,
+  type OnboardingClaimRepository,
+} from './claim-repository.js';
+export {
   SyntheticOnboardingTransitionSink,
   type OnboardingTransitionRecord,
   type OnboardingTransitionSink,
