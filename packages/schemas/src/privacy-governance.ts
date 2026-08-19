@@ -926,6 +926,8 @@ export const privacySyntheticProcessorResultSchema = z
     capability: privacyProcessorCapabilitySchema,
     families: z.array(privacySyntheticProcessorFamilyCoverageSchema).max(64),
     accessLocatorDigest: privacySha256DigestSchema.nullable(),
+    /** Opaque digest of a synthetic export manifest — never a payload blob. */
+    exportManifestDigest: privacySha256DigestSchema.nullable(),
     operationId: privacyOperationIdSchema,
     correlationId: privacyCorrelationIdSchema,
   })
@@ -959,6 +961,22 @@ export const privacySyntheticProcessorResultSchema = z
         code: 'custom',
         message: 'non-access results must not carry accessLocatorDigest',
         path: ['accessLocatorDigest'],
+      });
+    }
+    if (value.status === 'completed' && value.capability === 'export') {
+      if (value.exportManifestDigest === null) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'completed export results require exportManifestDigest',
+          path: ['exportManifestDigest'],
+        });
+      }
+    }
+    if (value.capability !== 'export' && value.exportManifestDigest !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'non-export results must not carry exportManifestDigest',
+        path: ['exportManifestDigest'],
       });
     }
   });

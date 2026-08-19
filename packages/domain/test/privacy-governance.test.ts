@@ -302,6 +302,32 @@ describe('synthetic subject-data processor simulation', () => {
     });
     expect(accessResult.status).toBe('completed');
     expect(accessResult.accessLocatorDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(accessResult.exportManifestDigest).toBeNull();
+
+    const exportProcessor = new SyntheticPrivacySubjectDataProcessor(
+      privacyProcessorDescriptorReferenceSchema.parse({
+        ...processor,
+        capabilities: ['access', 'inventory', 'export'],
+      }),
+      ['privacy_audit_event', 'privacy_subject_request'],
+    );
+    const exportResult = await exportProcessor.execute({
+      processorId: processor.processorId,
+      capability: 'export',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      ),
+      productionMode: false,
+    });
+    expect(exportResult.status).toBe('completed');
+    expect(exportResult.exportManifestDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(exportResult.accessLocatorDigest).toBeNull();
 
     const denied = await syntheticProcessor.execute({
       processorId: processor.processorId,
