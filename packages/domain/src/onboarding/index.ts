@@ -38,6 +38,12 @@ export type {
   TrustedClock,
 } from './ports.js';
 export { FixedTrustedClock, SystemTrustedClock } from './ports.js';
+export {
+  CryptoOnboardingIdFactory,
+  CryptoOnboardingSecretFactory,
+  type OnboardingIdFactory,
+  type OnboardingSecretFactory,
+} from './factories.js';
 export { SyntheticOnboardingAttemptRepository } from './synthetic-attempts.js';
 export { SyntheticOnboardingInvitationRepository } from './synthetic-invitations.js';
 export { SyntheticOnboardingOperationRepository } from './synthetic-operations.js';
