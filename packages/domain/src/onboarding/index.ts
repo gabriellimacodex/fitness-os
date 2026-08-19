@@ -50,6 +50,11 @@ export {
   type OnboardingSecretFactory,
 } from './factories.js';
 export {
+  SyntheticOnboardingPolicyGateway,
+  type OnboardingPolicyGateway,
+  type OnboardingPolicyGatewayStartResult,
+} from './policy-gateway.js';
+export {
   SyntheticOnboardingReadinessProbe,
   type OnboardingReadinessComponent,
   type OnboardingReadinessComponentId,
