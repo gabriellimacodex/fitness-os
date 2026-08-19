@@ -7,7 +7,6 @@ import {
   asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
   type PostgresOnboardingAttemptRepository,
-  type PostgresOnboardingInvitationRepository,
   type PostgresOnboardingOperationRepository,
   type StoredOnboardingAttempt,
   type StoredOnboardingInvitation,
