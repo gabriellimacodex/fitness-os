@@ -19,7 +19,9 @@ import type {
   OnboardingOperationRepository,
   PrincipalRoleMappingRepository,
   ProposedRole,
+  TrustedClock,
 } from '@fitness-os/domain';
+import { SystemTrustedClock } from '@fitness-os/domain';
 import type { PrincipalRoleMappingId } from '@fitness-os/schemas';
 
 import type {
@@ -40,8 +42,9 @@ export type OnboardingPgPersistence = {
 
 export function createOnboardingPgPersistence(
   connection: PostgresConnection,
-  options: { nowUtcMs?: () => string } = {},
+  options: { clock?: TrustedClock; nowUtcMs?: () => string } = {},
 ): OnboardingPgPersistence {
+  const clock = options.clock ?? new SystemTrustedClock();
   return {
     attempts: asOnboardingAttemptRepository(
       createPostgresOnboardingAttemptRepository(connection),
@@ -52,7 +55,7 @@ export function createOnboardingPgPersistence(
     mappings: asPrincipalRoleMappingRepository(
       createPostgresOnboardingRoleMappingRepository(connection),
     ),
-    nowUtcMs: options.nowUtcMs ?? (() => new Date().toISOString()),
+    nowUtcMs: options.nowUtcMs ?? (() => clock.nowUtcMs()),
     operations: asOnboardingOperationRepository(
       createPostgresOnboardingOperationRepository(connection),
     ),

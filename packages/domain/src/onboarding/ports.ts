@@ -148,3 +148,24 @@ export interface PrincipalRoleMappingRepository {
     record: PrincipalRoleMappingRecord,
   ): Promise<PrincipalRoleMappingPutResult>;
 }
+
+/**
+ * Supply canonical server UTC instants for expiry and transition times.
+ */
+export interface TrustedClock {
+  nowUtcMs(): string;
+}
+
+export class SystemTrustedClock implements TrustedClock {
+  nowUtcMs(): string {
+    return new Date().toISOString();
+  }
+}
+
+export class FixedTrustedClock implements TrustedClock {
+  constructor(private readonly fixedUtcMs: string) {}
+
+  nowUtcMs(): string {
+    return this.fixedUtcMs;
+  }
+}
