@@ -1,5 +1,9 @@
 import { and, eq } from 'drizzle-orm';
-import { claimInvitation, revokeInvitation } from '@fitness-os/domain';
+import {
+  claimInvitation,
+  revokeInvitation,
+  type ProposedRole,
+} from '@fitness-os/domain';
 import {
   invitationPurposeSchema,
   invitationStateSchema,
@@ -7,14 +11,12 @@ import {
   proposedRoleSchema,
   type OnboardingInvitationId,
 } from '@fitness-os/schemas';
-import type { z } from 'zod';
 
 import type { PostgresConnection } from '../connection.js';
 import { onboardingInvitation } from './tables.js';
 
-type ProposedRole = z.infer<typeof proposedRoleSchema>;
-type InvitationPurpose = z.infer<typeof invitationPurposeSchema>;
-type InvitationState = z.infer<typeof invitationStateSchema>;
+type InvitationPurpose = 'coach_bootstrap' | 'student_onboarding';
+type InvitationState = 'issued' | 'claimed' | 'revoked' | 'expired';
 
 export type StoredOnboardingInvitation = {
   invitationId: OnboardingInvitationId;

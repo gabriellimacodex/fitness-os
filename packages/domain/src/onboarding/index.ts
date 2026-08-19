@@ -16,4 +16,5 @@ export {
   inspectInvitationState,
   revokeInvitation,
   type InvitationMutationResult,
+  type InvitationState,
 } from './invitation.js';
