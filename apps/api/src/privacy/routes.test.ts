@@ -15,10 +15,7 @@ import {
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
-import {
-  SyntheticPrivacyAuthorizationEvidenceLedger,
-  SyntheticPrivacySubjectRequestRepository,
-} from '@fitness-os/domain';
+import { SyntheticPrivacySubjectRequestRepository } from '@fitness-os/domain';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -733,10 +730,20 @@ describe('POST /v1/privacy/synthetic/processor-execute', () => {
 
 describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence ledger', () => {
   it('reads evidence from the injected disposable ledger without in-memory seed', async () => {
-    const evidenceLedger = new SyntheticPrivacyAuthorizationEvidenceLedger();
-    await expect(evidenceLedger.appendEvidence(evidence)).resolves.toBe(
-      'accepted',
-    );
+    let getCalls = 0;
+    const evidenceLedger = {
+      appendEvidence: async () => {
+        throw new Error('injected ledger must not append from the route');
+      },
+      appendWithdrawal: async () => {
+        throw new Error('injected ledger must not withdraw from the route');
+      },
+      getAuthoritativeWithdrawal: async () => null,
+      getEvidence: async (evidenceId: string) => {
+        getCalls += 1;
+        return evidenceId === evidence.evidenceId ? evidence : null;
+      },
+    };
 
     const app = buildApp(
       { logger: false },
@@ -761,9 +768,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
       status: 'evaluated',
       decision: { outcome: 'allowed' },
     });
-    await expect(
-      evidenceLedger.getEvidence(evidence.evidenceId),
-    ).resolves.toEqual(evidence);
+    expect(getCalls).toBeGreaterThan(0);
 
     await app.close();
   });
