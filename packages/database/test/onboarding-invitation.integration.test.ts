@@ -29,7 +29,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
     });
 
     beforeEach(async () => {
-      await connection.db.execute(sql`TRUNCATE onboarding_invitation`);
+      await connection.db.execute(
+        sql`TRUNCATE onboarding_attempt, onboarding_invitation`,
+      );
     });
 
     afterAll(async () => {
