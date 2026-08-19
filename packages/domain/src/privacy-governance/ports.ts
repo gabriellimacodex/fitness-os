@@ -18,6 +18,8 @@ import type {
   PrivacySubjectRequestTransitionReason,
   PrivacySubjectRequestTransitionReference,
   PrivacySubjectScopeId,
+  PrivacySyntheticProcessorCommand,
+  PrivacySyntheticProcessorResult,
   PrivacyVerificationReference,
   PrivacyWithdrawalReference,
 } from '@fitness-os/schemas';
@@ -95,6 +97,17 @@ export interface PrivacyRuntimeProcessorRegistry {
  */
 export interface PrivacyExpectedProcessorInventoryPort {
   getInventory(): Promise<PrivacyExpectedProcessorInventory>;
+}
+
+/**
+ * Provider-neutral subject-data processor. Executes only declared capabilities
+ * through strict synthetic command/result contracts.
+ */
+export interface PrivacySubjectDataProcessor {
+  descriptorReference(): PrivacyProcessorDescriptorReference;
+  execute(
+    command: PrivacySyntheticProcessorCommand,
+  ): Promise<PrivacySyntheticProcessorResult>;
 }
 
 export type PrivacySubjectRequestApplyResult =

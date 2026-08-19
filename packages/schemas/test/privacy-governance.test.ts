@@ -32,6 +32,8 @@ import {
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
+  privacySyntheticProcessorCommandSchema,
+  privacySyntheticProcessorResultSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticSubjectRequestTransitionResponseSchema,
   privacySyntheticWithdrawalPlanRequestSchema,
@@ -516,6 +518,50 @@ describe('subject request and audit event references', () => {
       privacyAuditEventReferenceSchema.safeParse({
         ...succeeded,
         stackTrace: 'Error: boom',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('synthetic subject-data processor contracts', () => {
+  it('accepts completed inventory/access results and rejects free text', () => {
+    const inventory = privacySyntheticProcessorResultSchema.parse({
+      status: 'completed',
+      reasonCode: null,
+      capability: 'inventory',
+      families: [
+        {
+          family: 'privacy_audit_event',
+          recordCount: 0,
+          coverageDigest: 'a'.repeat(64),
+        },
+      ],
+      accessLocatorDigest: null,
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(inventory.capability).toBe('inventory');
+
+    const access = privacySyntheticProcessorResultSchema.parse({
+      status: 'completed',
+      reasonCode: null,
+      capability: 'access',
+      families: [],
+      accessLocatorDigest: 'b'.repeat(64),
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(access.accessLocatorDigest).toBe('b'.repeat(64));
+
+    expect(
+      privacySyntheticProcessorCommandSchema.safeParse({
+        processorId: '99999999-9999-4999-8999-999999999999',
+        capability: 'inventory',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+        sql: 'select 1',
       }).success,
     ).toBe(false);
   });
