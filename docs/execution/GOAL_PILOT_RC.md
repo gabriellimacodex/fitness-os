@@ -86,16 +86,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                        |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                  |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                  |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                               |
-| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitations/attempts/operations + Map write-through/hydrate through #64 on `e199c07`; next: role-mapping disposable table; real-user still `LEGAL_PRIVACY`    |
-| PRD 21               | `IN_PROGRESS` — Option A through #58 on `b0b9e17` (+ status doc #59); Gate A status `PENDING` (`gates/PRD_21_GATE_A.md`) — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`; destructive paths denied         |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                           |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                          |
+| Area                 | State                                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                     |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                               |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                               |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                            |
+| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitations/attempts/operations + Map write-through/hydrate through #64 on `e199c07`; next: role-mapping disposable table; real-user still `LEGAL_PRIVACY` |
+| PRD 21               | `IN_PROGRESS` — Option A through #58 on `b0b9e17` (+ status doc #59); Gate A status `PENDING` (`gates/PRD_21_GATE_A.md`) — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`; destructive paths denied      |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                        |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                       |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
