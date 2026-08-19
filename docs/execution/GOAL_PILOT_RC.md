@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `81c828f` (PR #106 merged; PR #107 OPEN ready — see Progress)
+- Progress snapshot head: `81c828f` (PR #106 merged; PR #107 OPEN — see Progress)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -89,16 +89,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                                             |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                       |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                       |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                    |
-| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 domain ports through #104; IdentitySessionPort wired into resolveContext (#106 on `81c828f`); HTTP deny inject PR **#107 OPEN** (head `4d832f9`, Agent 90 R2 PASS, CI green, MERGEABLE)       |
-| PRD 21               | `IN_PROGRESS` — Option A through #78+ on `main` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`                     |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                               |
+| Area                 | State                                                                                                                                                                                                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                                                                                                                             |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                                                                                                       |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                                                                                                       |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                                                                                                    |
+| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 domain ports through #104; IdentitySessionPort wired into resolveContext (#106 on `81c828f`); HTTP deny inject PR **#107 OPEN** (head `4d832f9`; CI `quality` green on Actions run `32309918825`; independent Agent 90 Round 2 disposition **not yet recorded** in this meta) |
+| PRD 21               | `IN_PROGRESS` — Option A through #78+ on `main` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`                                                                                                     |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                                                                                                |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                                                                                                               |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
@@ -117,21 +117,21 @@ Immediate next authorized Wave 3 work (after merging #107 if still open):
 
 ## Master Execution Plan — wave map (canonical)
 
-| Wave | Work                                                                 | Constraint summary                                      |
-| ---- | -------------------------------------------------------------------- | ------------------------------------------------------- |
-| 0–1  | 00 Bootstrap; 01 Platform                                            | Done                                                    |
-| 2    | 02 Domain; 03 Catalog; 04 Movement                                   | 03 done; 04 HUMAN_PERCEPTION pause; serialize shared paths |
-| 3    | 05 Training Core; 07 Onboarding; 21 Privacy                          | 05 blocked on 04; 07/21 synthetic authorized            |
-| 4    | 06 UX; 08 Body Scan; 15 Evidence; 20 Notifications                   | After own deps + contract freezes                       |
-| 5    | 09 Body Intelligence; 19 PWA Hardening                               | Capability validation / no native scope                 |
-| 6    | 10 Snapshot; 16 Copilot                                              | Evidence-grounded; human-in-the-loop                    |
-| 7    | 11 Twin; 14 Progress Photos                                          | After 10; privacy/perception gates                      |
-| 8–9  | 12 Character Sheet; 13 Evolution                                     | After twin / snapshot+sheet                             |
-| 10   | 17 Adaptive; 23 Observability                                        | Professional approval where consequential               |
-| 11   | 18 Coach Workspace                                                   | Integration-heavy                                       |
-| POC  | 22 Form Intelligence                                                 | Isolated; optional for baseline RC                      |
-| 12   | **24 Release Candidate**                                             | Gate D on exact head — **goal target**                  |
-| 13   | 25 Pilot Release                                                     | **Out of scope** until separate authorization           |
+| Wave | Work                                               | Constraint summary                                         |
+| ---- | -------------------------------------------------- | ---------------------------------------------------------- |
+| 0–1  | 00 Bootstrap; 01 Platform                          | Done                                                       |
+| 2    | 02 Domain; 03 Catalog; 04 Movement                 | 03 done; 04 HUMAN_PERCEPTION pause; serialize shared paths |
+| 3    | 05 Training Core; 07 Onboarding; 21 Privacy        | 05 blocked on 04; 07/21 synthetic authorized               |
+| 4    | 06 UX; 08 Body Scan; 15 Evidence; 20 Notifications | After own deps + contract freezes                          |
+| 5    | 09 Body Intelligence; 19 PWA Hardening             | Capability validation / no native scope                    |
+| 6    | 10 Snapshot; 16 Copilot                            | Evidence-grounded; human-in-the-loop                       |
+| 7    | 11 Twin; 14 Progress Photos                        | After 10; privacy/perception gates                         |
+| 8–9  | 12 Character Sheet; 13 Evolution                   | After twin / snapshot+sheet                                |
+| 10   | 17 Adaptive; 23 Observability                      | Professional approval where consequential                  |
+| 11   | 18 Coach Workspace                                 | Integration-heavy                                          |
+| POC  | 22 Form Intelligence                               | Isolated; optional for baseline RC                         |
+| 12   | **24 Release Candidate**                           | Gate D on exact head — **goal target**                     |
+| 13   | 25 Pilot Release                                   | **Out of scope** until separate authorization              |
 
 ## Execution sequence from current progress
 
