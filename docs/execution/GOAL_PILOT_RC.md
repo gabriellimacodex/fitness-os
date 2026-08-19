@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `71ceb99` (PR #70 merged; see Progress below)
+- Progress snapshot head: `7dd0fd3` (PR #72 merged; see Progress below)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -93,7 +93,7 @@ integrated after its POC gate.
 | PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                |
 | PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                             |
 | PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitation/attempt/operation/role-mapping (`0007`–`0010`) + write-through/hydrate through #66 on `bf2e344`; real-user still `LEGAL_PRIVACY` |
-| PRD 21               | `IN_PROGRESS` — Option A through #70 on `71ceb99` (ordinary-role harness + synthetic evidence/audit inject); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`     |
+| PRD 21               | `IN_PROGRESS` — Option A through #72 on `7dd0fd3` (ordinary-role harness + evidence/audit inject + proofs); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`      |
 | PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                         |
 | PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                        |
 
