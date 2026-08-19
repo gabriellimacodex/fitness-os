@@ -40,5 +40,15 @@ describe('SyntheticIdentitySessionPort', () => {
       reason: 'synthetic_in_production',
       status: 'denied',
     });
+    await expect(
+      port.resolve({
+        productionMode: true,
+        synthetic: false,
+        trustedPrincipalKey: 'principal-a',
+      }),
+    ).resolves.toEqual({
+      reason: 'synthetic_in_production',
+      status: 'denied',
+    });
   });
 });

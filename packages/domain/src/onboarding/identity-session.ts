@@ -45,13 +45,14 @@ export class SyntheticIdentitySessionPort implements IdentitySessionPort {
     mappedRoles?: readonly ProposedRole[];
     synthetic?: boolean;
   }): Promise<IdentitySessionResolution> {
+    if (input.productionMode) {
+      // This adapter is synthetic-only; production must use a reviewed adapter.
+      return { reason: 'synthetic_in_production', status: 'denied' };
+    }
     if (input.trustedPrincipalKey === null) {
       return { reason: 'missing', status: 'denied' };
     }
     const synthetic = input.synthetic ?? true;
-    if (input.productionMode && synthetic) {
-      return { reason: 'synthetic_in_production', status: 'denied' };
-    }
     return {
       context: {
         mappedRoles: input.mappedRoles ?? [],
