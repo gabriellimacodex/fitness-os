@@ -4,6 +4,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   type PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
@@ -12,6 +13,8 @@ import {
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticProcessorExecuteRequestSchema,
+  privacySyntheticProcessorExecuteResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   privacySyntheticRetentionPreviewRequestSchema,
@@ -290,6 +293,26 @@ export function registerPrivacySyntheticRoutes(
       return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
         status: 'allowed_synthetic_test',
       });
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/processor-execute',
+    async (request, reply) => {
+      const body = privacySyntheticProcessorExecuteRequestSchema.safeParse(
+        request.body,
+      );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const processor = new SyntheticPrivacySubjectDataProcessor(
+        body.data.descriptor,
+        body.data.families,
+      );
+      const result = await processor.execute(body.data.command);
+      return privacySyntheticProcessorExecuteResponseSchema.parse(result);
     },
   );
 }

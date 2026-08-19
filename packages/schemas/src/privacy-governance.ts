@@ -967,6 +967,27 @@ export type PrivacySyntheticProcessorResult = z.infer<
 >;
 
 /**
+ * Disposable synthetic API for SubjectDataProcessor execute behind
+ * allowSyntheticPrivacy.
+ */
+export const privacySyntheticProcessorExecuteRequestSchema = z
+  .object({
+    descriptor: privacyProcessorDescriptorReferenceSchema,
+    families: z.array(privacyGovernanceRecordFamilySchema).min(1).max(64),
+    command: privacySyntheticProcessorCommandSchema,
+  })
+  .strict();
+export type PrivacySyntheticProcessorExecuteRequest = z.infer<
+  typeof privacySyntheticProcessorExecuteRequestSchema
+>;
+
+export const privacySyntheticProcessorExecuteResponseSchema =
+  privacySyntheticProcessorResultSchema;
+export type PrivacySyntheticProcessorExecuteResponse = z.infer<
+  typeof privacySyntheticProcessorExecuteResponseSchema
+>;
+
+/**
  * Safe readiness diagnostic codes only. No policy text, subject IDs, hosts,
  * regions, credentials, or raw exceptions.
  */
