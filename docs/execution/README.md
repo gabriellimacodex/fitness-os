@@ -16,7 +16,7 @@ The roadmap is recorded in the [Master Execution Plan](MASTER_EXECUTION_PLAN.md)
 - [Stop Conditions](STOP_CONDITIONS.md) — the limited situations that require founder or human action.
 - [Release Gates](RELEASE_GATES.md) — PR, capability, external red-team, and Pilot Release Candidate gates.
 - [Reviewer Agent](REVIEWER_AGENT.md) — the independent Agent 90 adversarial review model.
-- [Gate records](gates/) — durable evidence for completed external and release gates.
+- [Gate records](gates/) — durable evidence for completed external and release gates (includes PRD 21 Gate A **status** `PENDING`, not PASS).
 - [Decision records](decisions/) — founder architecture decisions that resolve recorded stops.
 - [PRD governance](../prds/README.md) and [registry](../prds/PRD_REGISTRY.md) — required PRD content, states, and authorization boundary.
 
