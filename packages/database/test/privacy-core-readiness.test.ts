@@ -26,10 +26,15 @@ describe('privacy core migration readiness', () => {
         join(drizzleRoot, '0005_prd21_privacy_subject_request_transition.sql'),
       ),
     ).toBe(true);
+    expect(
+      existsSync(
+        join(drizzleRoot, '0006_prd21_privacy_append_only_guards.sql'),
+      ),
+    ).toBe(true);
 
     const hashes = requiredPrivacyCoreMigrationHashes();
-    expect(hashes).toHaveLength(6);
-    expect(new Set(hashes).size).toBe(6);
+    expect(hashes).toHaveLength(7);
+    expect(new Set(hashes).size).toBe(7);
     for (const hash of hashes) {
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
     }

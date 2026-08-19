@@ -474,5 +474,160 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(history).toEqual([advanced.transition]);
       expect(history.every((row) => row.previousState === 'ready')).toBe(true);
     });
+
+    it('rejects ad hoc UPDATE/DELETE on append-only privacy ledgers', async () => {
+      await policies.put(policy);
+      await purposes.put(purpose);
+      await processors.put(processor);
+      await expect(evidenceLedger.appendEvidence(evidence)).resolves.toBe(
+        'accepted',
+      );
+      await expect(
+        evidenceLedger.appendWithdrawal(
+          privacyWithdrawalReferenceSchema.parse({
+            withdrawalId: privacyWithdrawalIdSchema.parse(
+              'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+            ),
+            evidenceId: evidence.evidenceId,
+            state: 'withdrawn',
+            withdrawnAt: '2026-08-18T12:00:00.000Z',
+            operationId: privacyOperationIdSchema.parse(
+              'ffffffff-ffff-4fff-8fff-ffffffffffff',
+            ),
+            processingOutcome: 'accepted',
+          }),
+        ),
+      ).resolves.toBe('accepted');
+      await expect(
+        auditSink.append(
+          privacyAuditEventReferenceSchema.parse({
+            auditEventId: privacyAuditEventIdSchema.parse(
+              '77777777-7777-4777-8777-777777777777',
+            ),
+            kind: 'authorization_evidence_appended',
+            outcome: 'succeeded',
+            reasonCode: null,
+            policyVersionId: policy.versionId,
+            evidenceId: evidence.evidenceId,
+            requestId: null,
+            operationId: privacyOperationIdSchema.parse(
+              'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            ),
+            correlationId: privacyCorrelationIdSchema.parse(
+              '55555555-5555-4555-8555-555555555555',
+            ),
+            recordedAt: '2026-08-18T12:00:00.000Z',
+          }),
+        ),
+      ).resolves.toBe('accepted');
+
+      const request = privacySubjectRequestReferenceSchema.parse({
+        requestId: privacySubjectRequestIdSchema.parse(
+          '66666666-6666-4666-8666-666666666666',
+        ),
+        requestType: 'export',
+        state: 'verification_required',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      });
+      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
+      const advanced = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T12:01:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'a1111111-1111-4111-8111-111111111111',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b2222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      });
+      expect(advanced.status).toBe('advanced');
+
+      const assertAppendOnlyRejected = async (operation: Promise<unknown>) => {
+        try {
+          await operation;
+          throw new Error('expected append-only rejection');
+        } catch (error) {
+          const text = [
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify(error),
+          ].join('\n');
+          expect(text).toMatch(
+            /42501|privacy_reject_append_only_mutation|fitness_os_privacy_append_only/,
+          );
+        }
+      };
+
+      const guardedUpdates = [
+        sql`UPDATE privacy_authorization_evidence SET content_digest = ${'e'.repeat(64)} WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        sql`UPDATE privacy_withdrawal SET processing_outcome = 'idempotent_replay' WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        sql`UPDATE privacy_audit_event SET outcome = 'failed' WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        sql`UPDATE privacy_subject_request_transition SET next_state = 'denied' WHERE request_id = ${request.requestId}::uuid`,
+        sql`UPDATE privacy_policy_package_version SET content_digest = ${'e'.repeat(64)} WHERE version_id = ${policy.versionId}::uuid`,
+        sql`UPDATE privacy_purpose_version SET content_digest = ${'e'.repeat(64)} WHERE purpose_version_id = ${purpose.purposeVersionId}::uuid`,
+        sql`UPDATE privacy_processor_registration SET descriptor_digest = ${'e'.repeat(64)} WHERE processor_id = ${processor.processorId}::uuid`,
+      ] as const;
+
+      for (const statement of guardedUpdates) {
+        await assertAppendOnlyRejected(connection.db.execute(statement));
+      }
+
+      await assertAppendOnlyRejected(
+        connection.db.execute(
+          sql`DELETE FROM privacy_authorization_evidence WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+        ),
+      );
+
+      // Current pointer remains updatable (not append-only guarded).
+      await expect(
+        connection.db.execute(
+          sql`UPDATE privacy_subject_request SET state = 'in_progress' WHERE request_id = ${request.requestId}::uuid`,
+        ),
+      ).resolves.toBeTruthy();
+
+      const roleRows = await connection.db.execute<{ rolname: string }>(sql`
+        SELECT rolname FROM pg_roles WHERE rolname = 'fitness_os_privacy_ordinary'
+      `);
+      expect(roleRows.map((row) => row.rolname)).toEqual([
+        'fitness_os_privacy_ordinary',
+      ]);
+
+      const updatePriv = await connection.db.execute<{
+        has_update: boolean;
+      }>(sql`
+        SELECT has_table_privilege(
+          'fitness_os_privacy_ordinary',
+          'privacy_subject_request_transition',
+          'UPDATE'
+        ) AS has_update
+      `);
+      expect(updatePriv[0]?.has_update).toBe(false);
+
+      const insertPriv = await connection.db.execute<{
+        has_insert: boolean;
+      }>(sql`
+        SELECT has_table_privilege(
+          'fitness_os_privacy_ordinary',
+          'privacy_subject_request_transition',
+          'INSERT'
+        ) AS has_insert
+      `);
+      expect(insertPriv[0]?.has_insert).toBe(true);
+    });
   },
 );

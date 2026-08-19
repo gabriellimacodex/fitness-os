@@ -151,5 +151,7 @@ foundation. Disposable PostgreSQL persistence for Option A policy/purpose/
 processor references, subject-request current pointers, append-only
 subject-request transition history, and evidence / withdrawal / audit
 ledgers may land in additive migrations under `packages/database` for
-synthetic test environments only; production policy activation remains
-stopped by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+synthetic test environments only. Append-only / immutable privacy ledgers
+are guarded against ordinary UPDATE/DELETE (triggers +
+`fitness_os_privacy_ordinary` SELECT/INSERT-only grants). Production
+policy activation remains stopped by `LEGAL_PRIVACY_DECISION_REQUIRED`.
