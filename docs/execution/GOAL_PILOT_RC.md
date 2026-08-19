@@ -8,7 +8,7 @@
   authorization)
 - Date recorded: 2026-08-18
 - Last refreshed: 2026-08-19
-- Progress snapshot head: `e199c07` (PR #64 merged; see Progress below)
+- Progress snapshot head: `bf2e344` (PR #66 merged; see Progress below)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -86,16 +86,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                           |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                     |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                               |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                               |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                            |
-| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitations/attempts/operations + Map write-through/hydrate through #64 on `e199c07`; next: role-mapping disposable table; real-user still `LEGAL_PRIVACY` |
-| PRD 21               | `IN_PROGRESS` — Option A through #58 on `b0b9e17` (+ status doc #59); Gate A status `PENDING` (`gates/PRD_21_GATE_A.md`) — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`; destructive paths denied      |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                        |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                       |
+| Area                 | State                                                                                                                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                          |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                          |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                       |
+| PRD 07               | `IN_PROGRESS` — synthetic onboarding + disposable PG invitation/attempt/operation/role-mapping (`0007`–`0010`) + write-through/hydrate through #66 on `bf2e344`; real-user still `LEGAL_PRIVACY`           |
+| PRD 21               | `IN_PROGRESS` — Option A through #58 on `b0b9e17` (+ status doc #59); Gate A status `PENDING` (`gates/PRD_21_GATE_A.md`) — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`; destructive paths denied |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                   |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                  |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
@@ -104,9 +104,8 @@ Open stop that blocks production privacy / real-user onboarding: **LEGAL_PRIVACY
 — disposable/synthetic persistence and policy-neutral mechanics remain authorized.
 
 Disposable migrations already on `main` (do not regenerate): `0001` catalog;
-`0002`–`0006` privacy; `0007`–`0009` onboarding invitation/attempt/operation.
-Next disposable onboarding slice when continuing Wave 3: `0010`
-`onboarding_role_mapping` + write-through on claim path.
+`0002`–`0006` privacy; `0007`–`0010` onboarding invitation/attempt/operation/role-mapping.
+Next Wave 3 authorized work: further PRD 07/21 synthetic/disposable mechanics without inventing Gate A PASS or registry COMPLETED under active stops.
 
 ## Execution sequence from current progress
 
@@ -120,9 +119,9 @@ Work the DAG; use safe wave parallelism only when ownership and contracts allow.
 
 ### Wave 3 — authorized in parallel where deps allow
 
-3. **PRD 07** — continue authorized synthetic / disposable onboarding:
-   - finish role-mapping persistence (migration `0010` + repo + write-through);
-   - keep real-user activation blocked by `LEGAL_PRIVACY` until cleared.
+3. **PRD 07** — continue authorized synthetic / disposable onboarding beyond
+   `0010` only if gaps remain; keep real-user activation blocked by
+   `LEGAL_PRIVACY` until cleared.
 4. **PRD 21** — continue Option A from current `main`:
    - keep destructive/lifecycle paths denied under `LEGAL_PRIVACY`;
    - Gate A status remains `PENDING` until resume conditions in
