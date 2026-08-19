@@ -489,6 +489,10 @@ export function registerOnboardingRoutes(
       return await commit({ outcome: 'invalid_or_unavailable' });
     }
 
+    if (persistence !== undefined) {
+      await hydratePrincipalMappings(store, persistence, context.principalKey);
+    }
+
     const alreadyMappedRoles = [
       ...new Set([
         ...context.mappedRoles,
@@ -929,6 +933,14 @@ export function registerOnboardingRoutes(
       const context = await requireContext(request, reply);
       if (context === null) {
         return;
+      }
+
+      if (persistence !== undefined) {
+        await hydratePrincipalMappings(
+          store,
+          persistence,
+          context.principalKey,
+        );
       }
 
       const digest = semanticDigest({

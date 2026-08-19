@@ -206,4 +206,88 @@ describe('onboarding PG write-through seam', () => {
 
     await studentApp.close();
   });
+
+  it('hydrates durable mappings before create-attempt conflict checks', async () => {
+    const store = createOnboardingStore();
+    const principalKey = 'student-hydrate-1';
+    const role = 'student' as const;
+    const mappingId = mappingIdFor(principalKey, role);
+
+    const persistence = createRecordingPersistence();
+    persistence.mappings.listByPrincipal = async () => [
+      {
+        createdAt: '2026-08-19T14:00:00.000Z',
+        mappingId,
+        principalKey,
+        role,
+      },
+    ];
+
+    // Seed a fresh invitation into the empty in-memory store via coach issue.
+    const coachApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          persistence: persistence as OnboardingPgPersistence,
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-hydrate-1',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const issued = await coachApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-hydrate-issue'),
+      },
+    });
+    expect(issued.statusCode).toBe(200);
+    const claimSecret = (
+      issued.json() as { result: { issued: { claimSecret: string } } }
+    ).result.issued.claimSecret;
+    await coachApp.close();
+
+    // New empty store (restart simulation) with same persistence + invitation.
+    const coldStore = createOnboardingStore();
+    coldStore.pepper = store.pepper;
+    for (const [id, invitation] of store.invitations) {
+      coldStore.invitations.set(id, invitation);
+    }
+
+    const studentApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          persistence: persistence as OnboardingPgPersistence,
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey,
+            synthetic: true,
+          }),
+          store: coldStore,
+        },
+      },
+    );
+
+    const created = await studentApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret,
+        retryToken: retryTokenSchema.parse('synthetic-retry-hydrate-create'),
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toMatchObject({
+      result: { outcome: 'mapping_conflict' },
+    });
+
+    await studentApp.close();
+  });
 });
