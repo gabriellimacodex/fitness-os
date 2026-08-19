@@ -6,9 +6,11 @@ import {
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
+  SyntheticIdentitySessionPort,
   SyntheticOnboardingPolicyGateway,
   SyntheticOnboardingReadinessProbe,
   transitionAttempt,
+  type IdentitySessionPort,
   type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
   type ProposedRole,
@@ -81,7 +83,7 @@ import {
 export interface OnboardingContext {
   mappedRoles: readonly ProposedRole[];
   principalKey: string;
-  synthetic: true;
+  synthetic: boolean;
 }
 
 export type ResolveOnboardingContext = (
@@ -195,6 +197,7 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    identitySession?: IdentitySessionPort;
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
     readinessProbe?: OnboardingReadinessProbe;
@@ -208,6 +211,8 @@ export function registerOnboardingRoutes(
   const resolveContext = options.resolveContext ?? (() => null);
   const policyGateway =
     options.policyGateway ?? new SyntheticOnboardingPolicyGateway();
+  const identitySession =
+    options.identitySession ?? new SyntheticIdentitySessionPort();
   const readinessProbe =
     options.readinessProbe ??
     new SyntheticOnboardingReadinessProbe({
@@ -288,7 +293,29 @@ export function registerOnboardingRoutes(
       return null;
     }
 
-    return context;
+    const resolved = await identitySession.resolve({
+      mappedRoles: context.mappedRoles,
+      productionMode: false,
+      synthetic: context.synthetic,
+      trustedPrincipalKey: context.principalKey,
+    });
+
+    if (resolved.status !== 'resolved') {
+      await sendError(
+        request,
+        reply,
+        401,
+        'UNAUTHENTICATED',
+        'Authentication required',
+      );
+      return null;
+    }
+
+    return {
+      mappedRoles: resolved.context.mappedRoles,
+      principalKey: resolved.context.principalKey,
+      synthetic: resolved.context.synthetic,
+    };
   };
 
   app.get('/v1/onboarding/current', async (request, reply) => {
