@@ -12,6 +12,7 @@ import {
   SyntheticOnboardingReadinessProbe,
   SyntheticOnboardingTransitionSink,
   SyntheticPrincipalBindingRepository,
+  SyntheticPrincipalReferenceDeriver,
   transitionAttempt,
   type IdentitySessionPort,
   type OnboardingClaimRepository,
@@ -19,6 +20,7 @@ import {
   type OnboardingReadinessProbe,
   type OnboardingTransitionSink,
   type PrincipalBindingRepository,
+  type PrincipalReferenceDeriver,
   type ProposedRole,
 } from '@fitness-os/domain';
 import {
@@ -208,6 +210,7 @@ export function registerOnboardingRoutes(
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
     principalBinding?: PrincipalBindingRepository;
+    principalReference?: PrincipalReferenceDeriver;
     readinessProbe?: OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
     store?: OnboardingStore;
@@ -224,6 +227,8 @@ export function registerOnboardingRoutes(
     options.identitySession ?? new SyntheticIdentitySessionPort();
   const principalBinding =
     options.principalBinding ?? new SyntheticPrincipalBindingRepository();
+  const principalReference =
+    options.principalReference ?? new SyntheticPrincipalReferenceDeriver();
   const claimRepository =
     options.claimRepository ?? new SyntheticOnboardingClaimRepository();
   const transitionSink =
@@ -298,6 +303,24 @@ export function registerOnboardingRoutes(
     const context = await resolveContext(request);
 
     if (context === null) {
+      await sendError(
+        request,
+        reply,
+        401,
+        'UNAUTHENTICATED',
+        'Authentication required',
+      );
+      return null;
+    }
+
+    const derived = await principalReference.derive({
+      environment: 'synthetic',
+      issuer: 'synthetic.fitness-os',
+      productionMode: false,
+      subjectDigest: context.principalKey,
+    });
+
+    if (derived.status !== 'derived' || derived.candidates.length === 0) {
       await sendError(
         request,
         reply,
