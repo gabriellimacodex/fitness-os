@@ -207,7 +207,10 @@ export function buildApp(
   });
 
   registerMovementRoutes(app);
-  registerOnboardingRoutes(app, platform.onboarding);
+  registerOnboardingRoutes(app, {
+    ...platform.onboarding,
+    syntheticReadiness: platform.allowSyntheticOnboarding === true,
+  });
 
   if (platform.allowSyntheticPrivacy === true) {
     registerPrivacySyntheticRoutes(app, platform.privacy ?? {});

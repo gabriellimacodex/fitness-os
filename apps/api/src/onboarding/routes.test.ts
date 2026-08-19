@@ -128,6 +128,30 @@ describe('onboarding routes without trusted context', () => {
     await app.close();
   });
 
+  it('exposes synthetic readiness only behind the explicit onboarding seam', async () => {
+    const denied = buildApp({ logger: false });
+    const missing = await denied.inject({
+      method: 'GET',
+      url: '/v1/onboarding/synthetic/readiness',
+    });
+    expect(missing.statusCode).toBe(404);
+    await denied.close();
+
+    const { app } = buildSyntheticApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/synthetic/readiness',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      mechanismReady: true,
+      productionReady: false,
+      diagnosticCodes: ['legal_privacy_decision_required'],
+    });
+    await app.close();
+  });
+
   it('does not expose a public synthetic login surface', async () => {
     const app = buildApp({ logger: false });
 
