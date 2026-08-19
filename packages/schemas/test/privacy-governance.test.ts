@@ -537,6 +537,7 @@ describe('synthetic subject-data processor contracts', () => {
         },
       ],
       accessLocatorDigest: null,
+      exportManifestDigest: null,
       operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       correlationId: '55555555-5555-4555-8555-555555555555',
     });
@@ -548,10 +549,35 @@ describe('synthetic subject-data processor contracts', () => {
       capability: 'access',
       families: [],
       accessLocatorDigest: 'b'.repeat(64),
+      exportManifestDigest: null,
       operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       correlationId: '55555555-5555-4555-8555-555555555555',
     });
     expect(access.accessLocatorDigest).toBe('b'.repeat(64));
+
+    const exported = privacySyntheticProcessorResultSchema.parse({
+      status: 'completed',
+      reasonCode: null,
+      capability: 'export',
+      families: [
+        {
+          family: 'privacy_subject_request',
+          recordCount: 0,
+          coverageDigest: 'c'.repeat(64),
+        },
+      ],
+      accessLocatorDigest: null,
+      exportManifestDigest: 'd'.repeat(64),
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(exported.exportManifestDigest).toBe('d'.repeat(64));
+    expect(
+      privacySyntheticProcessorResultSchema.safeParse({
+        ...exported,
+        payload: { rows: [] },
+      }).success,
+    ).toBe(false);
 
     expect(
       privacySyntheticProcessorCommandSchema.safeParse({

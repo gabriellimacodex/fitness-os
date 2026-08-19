@@ -316,6 +316,7 @@ export function registerPrivacySyntheticRoutes(
           capability: body.data.command.capability,
           families: [],
           accessLocatorDigest: null,
+          exportManifestDigest: null,
           operationId: body.data.command.operationId,
           correlationId: body.data.command.correlationId,
         });

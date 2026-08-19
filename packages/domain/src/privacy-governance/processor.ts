@@ -15,6 +15,7 @@ import type { PrivacySubjectDataProcessor } from './ports.js';
 const SUPPORTED_SIMULATION: ReadonlySet<PrivacyProcessorCapability> = new Set([
   'inventory',
   'access',
+  'export',
 ]);
 
 function familyCoverage(
@@ -28,9 +29,30 @@ function familyCoverage(
   };
 }
 
+function denied(
+  command: PrivacySyntheticProcessorCommand,
+  reasonCode:
+    | 'capability_not_declared'
+    | 'synthetic_processor_in_production'
+    | 'unsupported_capability',
+  status: 'denied' | 'unsupported' = 'denied',
+): PrivacySyntheticProcessorResult {
+  return privacySyntheticProcessorResultSchema.parse({
+    accessLocatorDigest: null,
+    capability: command.capability,
+    correlationId: command.correlationId,
+    exportManifestDigest: null,
+    families: [],
+    operationId: command.operationId,
+    reasonCode,
+    status,
+  });
+}
+
 /**
  * Provider-neutral synthetic SubjectDataProcessor. Executes only declared
- * inventory/access capabilities; never activates production paths.
+ * inventory/access/export capabilities; never activates production paths or
+ * returns subject payloads.
  */
 export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataProcessor {
   constructor(
@@ -48,51 +70,19 @@ export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataP
     const valid = privacySyntheticProcessorCommandSchema.parse(command);
 
     if (valid.processorId !== this.descriptor.processorId) {
-      return privacySyntheticProcessorResultSchema.parse({
-        accessLocatorDigest: null,
-        capability: valid.capability,
-        correlationId: valid.correlationId,
-        families: [],
-        operationId: valid.operationId,
-        reasonCode: 'capability_not_declared',
-        status: 'denied',
-      });
+      return denied(valid, 'capability_not_declared');
     }
 
     if (valid.productionMode === true && this.descriptor.synthetic) {
-      return privacySyntheticProcessorResultSchema.parse({
-        accessLocatorDigest: null,
-        capability: valid.capability,
-        correlationId: valid.correlationId,
-        families: [],
-        operationId: valid.operationId,
-        reasonCode: 'synthetic_processor_in_production',
-        status: 'denied',
-      });
+      return denied(valid, 'synthetic_processor_in_production');
     }
 
     if (!this.descriptor.capabilities.includes(valid.capability)) {
-      return privacySyntheticProcessorResultSchema.parse({
-        accessLocatorDigest: null,
-        capability: valid.capability,
-        correlationId: valid.correlationId,
-        families: [],
-        operationId: valid.operationId,
-        reasonCode: 'capability_not_declared',
-        status: 'denied',
-      });
+      return denied(valid, 'capability_not_declared');
     }
 
     if (!SUPPORTED_SIMULATION.has(valid.capability)) {
-      return privacySyntheticProcessorResultSchema.parse({
-        accessLocatorDigest: null,
-        capability: valid.capability,
-        correlationId: valid.correlationId,
-        families: [],
-        operationId: valid.operationId,
-        reasonCode: 'unsupported_capability',
-        status: 'unsupported',
-      });
+      return denied(valid, 'unsupported_capability', 'unsupported');
     }
 
     const families = this.families.map((family) =>
@@ -107,6 +97,29 @@ export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataP
         accessLocatorDigest: null,
         capability: 'inventory',
         correlationId: valid.correlationId,
+        exportManifestDigest: null,
+        families,
+        operationId: valid.operationId,
+        reasonCode: null,
+        status: 'completed',
+      });
+    }
+
+    if (valid.capability === 'export') {
+      return privacySyntheticProcessorResultSchema.parse({
+        accessLocatorDigest: null,
+        capability: 'export',
+        correlationId: valid.correlationId,
+        exportManifestDigest: createHash('sha256')
+          .update(
+            [
+              this.descriptor.processorId,
+              valid.subjectScopeId,
+              valid.operationId,
+              ...families.map((family) => family.coverageDigest),
+            ].join(':'),
+          )
+          .digest('hex'),
         families,
         operationId: valid.operationId,
         reasonCode: null,
@@ -122,6 +135,7 @@ export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataP
         .digest('hex'),
       capability: 'access',
       correlationId: valid.correlationId,
+      exportManifestDigest: null,
       families,
       operationId: valid.operationId,
       reasonCode: null,
