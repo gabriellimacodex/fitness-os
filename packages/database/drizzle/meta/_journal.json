@@ -57,6 +57,13 @@
       "when": 1787112160833,
       "tag": "0007_prd07_onboarding_invitation",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787113354331,
+      "tag": "0008_prd07_onboarding_attempt",
+      "breakpoints": true
     }
   ]
 }

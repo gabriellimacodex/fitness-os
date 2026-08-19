@@ -68,10 +68,16 @@ export {
   type PostgresPrivacyAuthorizationEvidenceLedger,
 } from './privacy/index.js';
 export {
+  createPostgresOnboardingAttemptRepository,
   createPostgresOnboardingInvitationRepository,
+  onboardingAttempt,
   onboardingInvitation,
+  type OnboardingAttemptPutResult,
+  type OnboardingAttemptTransitionResult,
   type OnboardingInvitationPutResult,
   type OnboardingInvitationTransitionResult,
+  type PostgresOnboardingAttemptRepository,
   type PostgresOnboardingInvitationRepository,
+  type StoredOnboardingAttempt,
   type StoredOnboardingInvitation,
 } from './onboarding/index.js';
