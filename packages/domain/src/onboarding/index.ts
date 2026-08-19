@@ -49,6 +49,14 @@ export {
   type OnboardingIdFactory,
   type OnboardingSecretFactory,
 } from './factories.js';
+export {
+  SyntheticOnboardingReadinessProbe,
+  type OnboardingReadinessComponent,
+  type OnboardingReadinessComponentId,
+  type OnboardingReadinessDiagnostic,
+  type OnboardingReadinessProbe,
+  type OnboardingReadinessResult,
+} from './readiness.js';
 export { SyntheticOnboardingAttemptRepository } from './synthetic-attempts.js';
 export { SyntheticOnboardingInvitationRepository } from './synthetic-invitations.js';
 export { SyntheticOnboardingOperationRepository } from './synthetic-operations.js';
