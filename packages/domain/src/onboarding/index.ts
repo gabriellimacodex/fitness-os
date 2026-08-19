@@ -18,3 +18,9 @@ export {
   type InvitationMutationResult,
   type InvitationState,
 } from './invitation.js';
+export type {
+  PrincipalRoleMappingPutResult,
+  PrincipalRoleMappingRecord,
+  PrincipalRoleMappingRepository,
+} from './ports.js';
+export { SyntheticPrincipalRoleMappingRepository } from './synthetic-mappings.js';

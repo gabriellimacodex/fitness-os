@@ -71,6 +71,7 @@ export {
   createPostgresOnboardingAttemptRepository,
   createPostgresOnboardingInvitationRepository,
   createPostgresOnboardingOperationRepository,
+  asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
   onboardingAttempt,
   onboardingInvitation,

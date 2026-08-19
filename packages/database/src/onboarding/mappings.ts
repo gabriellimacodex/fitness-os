@@ -1,5 +1,8 @@
 import { and, eq } from 'drizzle-orm';
-import type { ProposedRole } from '@fitness-os/domain';
+import type {
+  PrincipalRoleMappingRepository,
+  ProposedRole,
+} from '@fitness-os/domain';
 import {
   principalRoleMappingIdSchema,
   proposedRoleSchema,
@@ -142,3 +145,10 @@ export function createPostgresOnboardingRoleMappingRepository(
 export type PostgresOnboardingRoleMappingRepository = ReturnType<
   typeof createPostgresOnboardingRoleMappingRepository
 >;
+
+/** Structural adapter: disposable PG repo satisfies the domain port. */
+export function asPrincipalRoleMappingRepository(
+  repository: PostgresOnboardingRoleMappingRepository,
+): PrincipalRoleMappingRepository {
+  return repository;
+}
