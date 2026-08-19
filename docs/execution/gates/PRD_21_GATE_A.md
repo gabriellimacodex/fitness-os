@@ -100,8 +100,9 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
 
 - Synthetic inventory fixture is mechanism-only (`synthetic_only`); not a
   production inventory review.
-- Ordinary-role live `SET ROLE` DML harness and TRUNCATE bypass hardening remain
-  deferred from #54 reviews.
+- Ordinary-role live `SET LOCAL ROLE` DML / TRUNCATE denial harness is covered
+  in disposable integration tests (schema USAGE grant `0011`); production
+  lifecycle DML remains a later slice under `LEGAL_PRIVACY`.
 - Form Intelligence / body capture dependents (08+) still require PRD 21
   `COMPLETED` before their privacy-dependent paths begin.
 - PRD 25 remains `PROPOSED` and out of Autonomous Pilot V1 standing authority.

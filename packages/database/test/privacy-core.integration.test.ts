@@ -628,6 +628,65 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ) AS has_insert
       `);
       expect(insertPriv[0]?.has_insert).toBe(true);
+
+      // Live ordinary-role session: privilege catalog is not enough — exercise
+      // SET LOCAL ROLE DML / TRUNCATE denial against the disposable tables.
+      await connection.db.execute(
+        sql`GRANT fitness_os_privacy_ordinary TO CURRENT_USER`,
+      );
+
+      const assertOrdinaryRoleRejected = async (
+        statement: ReturnType<typeof sql>,
+      ) => {
+        try {
+          await connection.db.transaction(async (tx) => {
+            await tx.execute(sql`SET LOCAL ROLE fitness_os_privacy_ordinary`);
+            await tx.execute(statement);
+          });
+          throw new Error('expected ordinary-role DML rejection');
+        } catch (error) {
+          const text = [
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify(error),
+          ].join('\n');
+          expect(text).toMatch(
+            /42501|permission denied|fitness_os_privacy_append_only|privacy_reject_append_only_mutation/,
+          );
+        }
+      };
+
+      await assertOrdinaryRoleRejected(
+        sql`UPDATE privacy_authorization_evidence SET content_digest = ${'f'.repeat(64)} WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+      );
+      await assertOrdinaryRoleRejected(
+        sql`DELETE FROM privacy_authorization_evidence WHERE evidence_id = ${evidence.evidenceId}::uuid`,
+      );
+      await assertOrdinaryRoleRejected(
+        sql`TRUNCATE privacy_authorization_evidence`,
+      );
+      await assertOrdinaryRoleRejected(
+        sql`TRUNCATE privacy_subject_request_transition`,
+      );
+
+      // INSERT remains allowed for the ordinary role (append path).
+      await connection.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL ROLE fitness_os_privacy_ordinary`);
+        await tx.execute(sql`
+          INSERT INTO privacy_authorization_evidence (
+            evidence_id,
+            purpose_id,
+            policy_version_id,
+            content_digest,
+            recorded_at
+          ) VALUES (
+            ${'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0'}::uuid,
+            ${purpose.purposeId}::uuid,
+            ${policy.versionId}::uuid,
+            ${'a1'.repeat(32)},
+            ${'2026-08-19T16:00:00.000Z'}::timestamptz
+          )
+        `);
+      });
     });
   },
 );

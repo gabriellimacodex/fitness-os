@@ -78,6 +78,13 @@
       "when": 1787151744735,
       "tag": "0010_prd07_onboarding_role_mapping",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787159969113,
+      "tag": "0011_prd21_privacy_ordinary_schema_usage",
+      "breakpoints": true
     }
   ]
 }
