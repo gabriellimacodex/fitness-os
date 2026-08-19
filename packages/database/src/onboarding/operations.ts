@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import type { OnboardingOperationRepository } from '@fitness-os/domain';
 import {
   onboardingOperationIdSchema,
   type OnboardingOperationId,
@@ -178,3 +179,10 @@ export function createPostgresOnboardingOperationRepository(
 export type PostgresOnboardingOperationRepository = ReturnType<
   typeof createPostgresOnboardingOperationRepository
 >;
+
+/** Structural adapter: disposable PG repo satisfies the domain port. */
+export function asOnboardingOperationRepository(
+  repository: PostgresOnboardingOperationRepository,
+): OnboardingOperationRepository {
+  return repository;
+}
