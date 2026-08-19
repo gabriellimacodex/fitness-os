@@ -15,7 +15,10 @@ import {
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
-import { SyntheticPrivacySubjectRequestRepository } from '@fitness-os/domain';
+import {
+  SyntheticPrivacyAuthorizationEvidenceLedger,
+  SyntheticPrivacySubjectRequestRepository,
+} from '@fitness-os/domain';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -723,6 +726,44 @@ describe('POST /v1/privacy/synthetic/processor-execute', () => {
       status: 'denied',
       reasonCode: 'synthetic_processor_in_production',
     });
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence ledger', () => {
+  it('reads evidence from the injected disposable ledger without in-memory seed', async () => {
+    const evidenceLedger = new SyntheticPrivacyAuthorizationEvidenceLedger();
+    await expect(evidenceLedger.appendEvidence(evidence)).resolves.toBe(
+      'accepted',
+    );
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          evidence: evidenceLedger,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: { outcome: 'allowed' },
+    });
+    await expect(
+      evidenceLedger.getEvidence(evidence.evidenceId),
+    ).resolves.toEqual(evidence);
 
     await app.close();
   });
