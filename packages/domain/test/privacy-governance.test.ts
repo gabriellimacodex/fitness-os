@@ -329,7 +329,7 @@ describe('synthetic subject-data processor simulation', () => {
     expect(exportResult.exportManifestDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(exportResult.accessLocatorDigest).toBeNull();
 
-    const denied = await syntheticProcessor.execute({
+    const undeclaredDelete = await syntheticProcessor.execute({
       processorId: processor.processorId,
       capability: 'delete',
       subjectScopeId: privacySubjectScopeIdSchema.parse(
@@ -343,10 +343,51 @@ describe('synthetic subject-data processor simulation', () => {
       ),
       productionMode: false,
     });
-    expect(denied).toMatchObject({
+    expect(undeclaredDelete).toMatchObject({
       status: 'denied',
       reasonCode: 'capability_not_declared',
     });
+
+    const declaredDestructive = new SyntheticPrivacySubjectDataProcessor(
+      privacyProcessorDescriptorReferenceSchema.parse({
+        ...processor,
+        capabilities: [
+          'access',
+          'inventory',
+          'export',
+          'delete',
+          'retention',
+          'governance_lifecycle',
+        ],
+      }),
+      ['privacy_audit_event'],
+    );
+    for (const capability of [
+      'delete',
+      'retention',
+      'governance_lifecycle',
+    ] as const) {
+      await expect(
+        declaredDestructive.execute({
+          processorId: processor.processorId,
+          capability,
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          correlationId: privacyCorrelationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          ),
+          productionMode: false,
+        }),
+      ).resolves.toMatchObject({
+        status: 'denied',
+        reasonCode: 'requires_legal_privacy_decision',
+        capability,
+      });
+    }
 
     const productionDenied = await syntheticProcessor.execute({
       processorId: processor.processorId,

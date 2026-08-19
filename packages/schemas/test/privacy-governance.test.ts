@@ -580,6 +580,19 @@ describe('synthetic subject-data processor contracts', () => {
     ).toBe(false);
 
     expect(
+      privacySyntheticProcessorResultSchema.parse({
+        status: 'denied',
+        reasonCode: 'requires_legal_privacy_decision',
+        capability: 'delete',
+        families: [],
+        accessLocatorDigest: null,
+        exportManifestDigest: null,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        correlationId: '55555555-5555-4555-8555-555555555555',
+      }).reasonCode,
+    ).toBe('requires_legal_privacy_decision');
+
+    expect(
       privacySyntheticProcessorCommandSchema.safeParse({
         processorId: '99999999-9999-4999-8999-999999999999',
         capability: 'inventory',

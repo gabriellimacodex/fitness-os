@@ -921,6 +921,7 @@ export const privacySyntheticProcessorResultSchema = z
         'capability_not_declared',
         'synthetic_processor_in_production',
         'unsupported_capability',
+        'requires_legal_privacy_decision',
       ])
       .nullable(),
     capability: privacyProcessorCapabilitySchema,
