@@ -50,6 +50,12 @@ export {
   type OnboardingSecretFactory,
 } from './factories.js';
 export {
+  SyntheticIdentitySessionPort,
+  type IdentitySessionPort,
+  type IdentitySessionResolution,
+  type OnboardingTrustedContext,
+} from './identity-session.js';
+export {
   SyntheticOnboardingPolicyGateway,
   type OnboardingPolicyGateway,
   type OnboardingPolicyGatewayStartResult,
