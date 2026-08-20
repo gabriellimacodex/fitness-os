@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `5889fac340efc26fd33282c58cfafd83c7027b19` (progress refresh; disposition unchanged)
-- Prior recorded heads: `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `b1a4f90fe0f92bcc19bec5c9e50e16351599108e` (progress refresh; disposition unchanged)
+- Prior recorded heads: `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #124)
+- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #127–#128)
 
 ## Explicit non-claims
 
@@ -55,10 +55,13 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Inventory-coverage HTTP seam              | `#120`, `#121` (contract freeze)          |
 | Expected inventory port inject            | `#122`                                    |
 | Runtime registry listDescriptors / inject | `#124`                                    |
+| Synthetic expected-inventory GET          | `#127`                                    |
+| Synthetic runtime-processors GET          | `#128`                                    |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
-composition `#107`–`#117`, `#119`, `#121` resume-sink portion) are **out of
-scope** for this inventory except where listed as explicit privacy seams.
+composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`
+TransitionSink chain test) are **out of scope** for this inventory except where
+listed as explicit privacy seams.
 
 CI / Agent 90 for each row above lives on that PR’s merge record — this status
 file does not re-attest those runs.
