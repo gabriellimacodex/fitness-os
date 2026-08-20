@@ -1347,4 +1347,52 @@ describe('synthetic inventory triad (GET expected + GET runtime + coverage)', ()
 
     await app.close();
   });
+
+  it('reports processor_missing when runtime registry is empty via ports', async () => {
+    const emptyRegistry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expected,
+          ) as never,
+          processors: emptyRegistry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const runtimeGet = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/runtime-processors',
+    });
+    expect(
+      privacySyntheticRuntimeProcessorsResponseSchema.parse(runtimeGet.json())
+        .runtime,
+    ).toEqual([]);
+
+    const coverage = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {},
+    });
+    const body = privacySyntheticInventoryCoverageResponseSchema.parse(
+      coverage.json(),
+    );
+
+    expect(coverage.statusCode).toBe(200);
+    expect(body.status).toBe('mismatched');
+    expect(body.mismatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          diagnosticCode: 'processor_missing',
+          processorId: processor.processorId,
+        }),
+      ]),
+    );
+
+    await app.close();
+  });
 });
