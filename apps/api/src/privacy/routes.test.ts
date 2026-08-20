@@ -1176,7 +1176,10 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.json()).toMatchObject({
       status: 'audit_unavailable',
-      decision: { outcome: 'allowed' },
+      decision: {
+        outcome: 'denied',
+        reasonCode: 'audit_unavailable',
+      },
     });
 
     await app.close();

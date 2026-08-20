@@ -1166,7 +1166,21 @@ export const privacySyntheticDataUseEvaluateResponseSchema = z
     status: z.enum(['evaluated', 'audit_unavailable']),
     decision: privacyDataUseDecisionSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (
+      value.status === 'audit_unavailable' &&
+      (value.decision.outcome !== 'denied' ||
+        value.decision.reasonCode !== 'audit_unavailable')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'audit_unavailable responses require a fail-closed denied decision',
+        path: ['decision'],
+      });
+    }
+  });
 export type PrivacySyntheticDataUseEvaluateResponse = z.infer<
   typeof privacySyntheticDataUseEvaluateResponseSchema
 >;

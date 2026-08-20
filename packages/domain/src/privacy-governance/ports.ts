@@ -185,6 +185,18 @@ export interface PrivacyDataUseEvaluationInput {
   productionMode: boolean;
 }
 
+type PrivacyDeniedDataUseDecision = Extract<
+  PrivacyDataUseDecision,
+  { outcome: 'denied' }
+>;
+
+type PrivacyAuditUnavailableDecision = Omit<
+  PrivacyDeniedDataUseDecision,
+  'reasonCode'
+> & {
+  reasonCode: 'audit_unavailable';
+};
+
 export type PrivacyDataUseEvaluationResult =
   | {
       status: 'evaluated';
@@ -192,5 +204,5 @@ export type PrivacyDataUseEvaluationResult =
     }
   | {
       status: 'audit_unavailable';
-      decision: PrivacyDataUseDecision;
+      decision: PrivacyAuditUnavailableDecision;
     };
