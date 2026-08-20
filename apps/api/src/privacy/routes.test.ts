@@ -1,6 +1,7 @@
 import {
   apiErrorResponseSchema,
   privacyActorContextReferenceSchema,
+  privacyAuditEventIdSchema,
   privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
@@ -15,7 +16,10 @@ import {
   privacySubjectScopeIdSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
-import { SyntheticPrivacySubjectRequestRepository } from '@fitness-os/domain';
+import {
+  SyntheticPrivacySubjectRequestRepository,
+  SyntheticPrivacyTrustedClock,
+} from '@fitness-os/domain';
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -178,6 +182,62 @@ describe('GET /v1/privacy/synthetic/readiness', () => {
     expect(body.mechanismReady).toBe(true);
     expect(body.productionReady).toBe(false);
     expect(body.diagnosticCodes).toContain('legal_privacy_decision_required');
+
+    await app.close();
+  });
+
+  it('stamps readiness and data-use through PrivacyTrustedClock and PrivacyIdFactory', async () => {
+    const fixedUtc = '2026-08-19T21:00:00.000Z';
+    const fixedCorrelation = privacyCorrelationIdSchema.parse(
+      '11111111-1111-4111-8111-111111111111',
+    );
+    const fixedOperation = privacyOperationIdSchema.parse(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    const fixedAudit = privacyAuditEventIdSchema.parse(
+      '33333333-3333-4333-8333-333333333333',
+    );
+    const fixedScope = privacySubjectScopeIdSchema.parse(
+      '44444444-4444-4444-8444-444444444444',
+    );
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: new SyntheticPrivacyTrustedClock(fixedUtc),
+          ids: {
+            auditEventId: () => fixedAudit,
+            correlationId: () => fixedCorrelation,
+            operationId: () => fixedOperation,
+            subjectScopeId: () => fixedScope,
+          },
+        },
+      },
+    );
+
+    const readiness = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/readiness',
+    });
+    expect(
+      privacyReadinessResultSchema.parse(readiness.json()).evaluatedAt,
+    ).toBe(fixedUtc);
+
+    const evaluated = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+    expect(evaluated.statusCode).toBe(200);
+    expect(evaluated.json()).toMatchObject({
+      status: 'evaluated',
+      decision: {
+        outcome: 'allowed',
+        evaluatedAt: fixedUtc,
+        correlationId: fixedCorrelation,
+      },
+    });
 
     await app.close();
   });

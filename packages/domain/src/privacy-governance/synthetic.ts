@@ -297,7 +297,9 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
 }
 
 export function createSyntheticPrivacyDataUsePorts(input?: {
+  clock?: PrivacyTrustedClock;
   fixedUtcMs?: string;
+  ids?: PrivacyIdFactory;
 }): PrivacyDataUsePorts & {
   audit: SyntheticPrivacyAuditSink;
   evidence: SyntheticPrivacyAuthorizationEvidenceLedger;
@@ -307,11 +309,13 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
 } {
   return {
     audit: new SyntheticPrivacyAuditSink(),
-    clock: new SyntheticPrivacyTrustedClock(
-      input?.fixedUtcMs ?? '2026-08-18T12:00:00.000Z',
-    ),
+    clock:
+      input?.clock ??
+      new SyntheticPrivacyTrustedClock(
+        input?.fixedUtcMs ?? '2026-08-18T12:00:00.000Z',
+      ),
     evidence: new SyntheticPrivacyAuthorizationEvidenceLedger(),
-    ids: new SyntheticPrivacyIdFactory(),
+    ids: input?.ids ?? new SyntheticPrivacyIdFactory(),
     policies: new SyntheticPrivacyPolicyPackageRepository(),
     processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
     purposes: new SyntheticPrivacyPurposeRegistry(),
