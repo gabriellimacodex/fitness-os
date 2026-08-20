@@ -17,6 +17,7 @@ import {
   SyntheticOnboardingTransitionSink,
   SyntheticPrincipalBindingRepository,
   SyntheticPrincipalReferenceDeriver,
+  SystemTrustedClock,
   transitionAttempt,
   type IdentitySessionPort,
   type IdentitySessionStore,
@@ -30,6 +31,7 @@ import {
   type PrincipalBindingRepository,
   type PrincipalReferenceDeriver,
   type ProposedRole,
+  type TrustedClock,
 } from '@fitness-os/domain';
 import {
   abandonAttemptRequestSchema,
@@ -209,6 +211,7 @@ export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
     claimRepository?: OnboardingClaimRepository;
+    clock?: TrustedClock;
     idFactory?: OnboardingIdFactory;
     identitySession?: IdentitySessionPort;
     identitySessionStore?: IdentitySessionStore;
@@ -247,6 +250,7 @@ export function registerOnboardingRoutes(
     options.secretFactory ?? new CryptoOnboardingSecretFactory();
   const secretVerifier =
     options.secretVerifier ?? new HmacInvitationSecretVerifier(store.pepper);
+  const clock = options.clock ?? new SystemTrustedClock();
   const digestSecret = (secret: string) => secretVerifier.digest(secret);
   const readinessProbe =
     options.readinessProbe ??
@@ -365,7 +369,7 @@ export function registerOnboardingRoutes(
     }
 
     const binding = await principalBinding.resolveOrEstablish({
-      nowUtcMs: new Date().toISOString(),
+      nowUtcMs: clock.nowUtcMs(),
       principalKey: resolved.context.principalKey,
       productionMode: false,
     });
@@ -382,7 +386,7 @@ export function registerOnboardingRoutes(
     }
 
     const sessionId = `synthetic-session:${binding.binding.principalKey}`;
-    const nowUtcMs = new Date().toISOString();
+    const nowUtcMs = clock.nowUtcMs();
     let session = await identitySessionStore.get(sessionId);
     if (session === null) {
       const putResult = await identitySessionStore.put({
@@ -692,7 +696,7 @@ export function registerOnboardingRoutes(
       invitation,
       nextOrdinalForRole(store, context.principalKey, invitation.proposedRole),
       context.principalKey,
-      new Date().toISOString(),
+      clock.nowUtcMs(),
       idFactory.attemptId(),
     );
     await rememberAttempt(record);
@@ -1194,7 +1198,7 @@ export function registerOnboardingRoutes(
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
-      const recordedAt = new Date().toISOString();
+      const recordedAt = clock.nowUtcMs();
       const mappingId = mappingIdFor(
         context.principalKey,
         record.detail.proposedRole,

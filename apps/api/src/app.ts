@@ -41,6 +41,7 @@ export interface PlatformOptions {
   };
   onboarding?: {
     claimRepository?: import('@fitness-os/domain').OnboardingClaimRepository;
+    clock?: import('@fitness-os/domain').TrustedClock;
     idFactory?: import('@fitness-os/domain').OnboardingIdFactory;
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     identitySessionStore?: import('@fitness-os/domain').IdentitySessionStore;

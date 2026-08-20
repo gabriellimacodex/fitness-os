@@ -1,3 +1,4 @@
+import { FixedTrustedClock } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
   attemptDetailSchema,
@@ -878,6 +879,44 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
 });
 
 describe('student invitation list/issue/revoke', () => {
+  it('stamps attempt creation time through TrustedClock', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const fixedUtc = '2026-08-19T18:00:00.000Z';
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          clock: new FixedTrustedClock(fixedUtc),
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+    expect(store.attempts.get(attemptId)?.createdAt).toBe(fixedUtc);
+    await app.close();
+  });
+
   it('creates attempts with OnboardingIdFactory.attemptId', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
