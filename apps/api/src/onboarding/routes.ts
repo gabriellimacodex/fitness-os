@@ -299,6 +299,25 @@ export function registerOnboardingRoutes(
     }
   };
 
+  const appendTransition = async (input: {
+    aggregate: 'invitation' | 'attempt' | 'role_mapping' | 'operation';
+    aggregateId: string;
+    nextState: string;
+    operationId: string;
+    previousState: string;
+    reason: string;
+  }): Promise<void> => {
+    await transitionSink.append({
+      aggregate: input.aggregate,
+      aggregateId: input.aggregateId,
+      nextState: input.nextState,
+      operationId: input.operationId,
+      previousState: input.previousState,
+      reason: input.reason,
+      recordedAt: clock.nowUtcMs(),
+    });
+  };
+
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
 
@@ -701,10 +720,33 @@ export function registerOnboardingRoutes(
     );
     await rememberAttempt(record);
 
-    return await commit({
+    const operationId = idFactory.operationId();
+    await appendTransition({
+      aggregate: 'attempt',
+      aggregateId: record.detail.attemptId,
+      nextState: record.detail.lifecycle,
+      operationId,
+      previousState: 'unallocated',
+      reason: 'create_attempt',
+    });
+    const result = {
       attempt: record.detail,
-      command: 'attempt',
-      outcome: 'command_succeeded',
+      command: 'attempt' as const,
+      outcome: 'command_succeeded' as const,
+    };
+    await rememberOperation(bindingKey, context.principalKey, {
+      digest,
+      namespace: 'create_attempt',
+      operationId,
+      result,
+      retryDigest,
+    });
+    return operationEnvelope({
+      digest,
+      namespace: 'create_attempt',
+      operationId,
+      result,
+      state: 'operation_committed',
     });
   });
 
@@ -930,6 +972,7 @@ export function registerOnboardingRoutes(
         });
       }
 
+      const previousLifecycle = record.detail.lifecycle;
       const abandoned = transitionAttempt(
         record.detail,
         'terminal',
@@ -944,10 +987,33 @@ export function registerOnboardingRoutes(
         detail: abandoned.attempt,
       });
 
-      return await commit({
+      const operationId = idFactory.operationId();
+      await appendTransition({
+        aggregate: 'attempt',
+        aggregateId: record.detail.attemptId,
+        nextState: abandoned.attempt.lifecycle,
+        operationId,
+        previousState: previousLifecycle,
+        reason: 'abandon_attempt',
+      });
+      const result = {
         attempt: abandoned.attempt,
-        command: 'attempt',
-        outcome: 'command_succeeded',
+        command: 'attempt' as const,
+        outcome: 'command_succeeded' as const,
+      };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'abandon_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'abandon_attempt',
+        operationId,
+        result,
+        state: 'operation_committed',
       });
     },
   );
@@ -1048,6 +1114,7 @@ export function registerOnboardingRoutes(
         });
       }
 
+      const previousLifecycle = record.detail.lifecycle;
       const advanced = transitionAttempt(record.detail, 'ready_to_claim');
       if (advanced.status !== 'advanced') {
         return await commit({ outcome: 'invalid_or_unavailable' });
@@ -1070,10 +1137,33 @@ export function registerOnboardingRoutes(
         detail: updated,
       });
 
-      return await commit({
+      const operationId = idFactory.operationId();
+      await appendTransition({
+        aggregate: 'attempt',
+        aggregateId: record.detail.attemptId,
+        nextState: updated.lifecycle,
+        operationId,
+        previousState: previousLifecycle,
+        reason: 'refresh_policy',
+      });
+      const result = {
         attempt: updated,
-        command: 'attempt',
-        outcome: 'command_succeeded',
+        command: 'attempt' as const,
+        outcome: 'command_succeeded' as const,
+      };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'refresh_policy',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'refresh_policy',
+        operationId,
+        result,
+        state: 'operation_committed',
       });
     },
   );
@@ -1564,17 +1654,41 @@ export function registerOnboardingRoutes(
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
+      const previousState = invitation.state;
       invitation.state = revoked.state;
       await rememberInvitation(invitation);
 
-      return await commit({
-        command: 'revoke_student_invitation',
+      const operationId = idFactory.operationId();
+      await appendTransition({
+        aggregate: 'invitation',
+        aggregateId: invitation.invitationId,
+        nextState: invitation.state,
+        operationId,
+        previousState,
+        reason: 'revoke_student_invitation',
+      });
+      const result = {
+        command: 'revoke_student_invitation' as const,
         invitation: {
           invitationId: invitation.invitationId,
-          purpose: 'student_onboarding',
+          purpose: 'student_onboarding' as const,
           state: invitation.state,
         },
-        outcome: 'command_succeeded',
+        outcome: 'command_succeeded' as const,
+      };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'revoke_student_invitation',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'revoke_student_invitation',
+        operationId,
+        result,
+        state: 'operation_committed',
       });
     },
   );
