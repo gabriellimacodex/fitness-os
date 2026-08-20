@@ -7,8 +7,8 @@
 - Explicitly excluded: **PRD 25 — Pilot Release** (`PROPOSED`; needs separate
   authorization)
 - Date recorded: 2026-08-18
-- Last refreshed: 2026-08-19
-- Progress snapshot head: `81c828f` (PR #106 merged; PR #107 OPEN — see Progress)
+- Last refreshed: 2026-08-20
+- Progress snapshot head: `69311d6` (PR #122 merged; see Progress)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -89,16 +89,16 @@ integrated after its POC gate.
 
 ## Progress snapshot (do not redo completed work)
 
-| Area                 | State                                                                                                                                                                                                                                                                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                                                                                                                             |
-| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                                                                                                       |
-| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                                                                                                       |
-| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                                                                                                    |
-| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 domain ports through #104; IdentitySessionPort wired into resolveContext (#106 on `81c828f`); HTTP deny inject PR **#107 OPEN** (head `4d832f9`; CI `quality` green on Actions run `32309918825`; independent Agent 90 Round 2 disposition **not yet recorded** in this meta) |
-| PRD 21               | `IN_PROGRESS` — Option A through #78+ on `main` (ordinary-role harness, evidence/audit inject, PG persistence bundle + synthetic HTTP/integration); Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`                                                                                                     |
-| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                                                                                                |
-| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                                                                                                               |
+| Area                 | State                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PRD 00–02            | `COMPLETED`                                                                                                                                                                                                                                                                                                                              |
+| PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                                                                                                        |
+| PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                                                                                                        |
+| PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                                                                                                     |
+| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 ports composed in API through #119/#121 (IdentitySession, PrincipalBinding/Reference, ClaimRepository, TransitionSink on create/resume/abandon/policy/claim/issue/revoke, Id/Secret factories, SecretVerifier, TrustedClock). Real-user still `LEGAL_PRIVACY`. Head `69311d6`. |
+| PRD 21               | `IN_PROGRESS` — Option A synthetic seams through #122 (clock/ids, inventory-coverage HTTP + expectedInventory port, contracts freeze #121). Gate A status `PENDING` — **not** PASS; production `BLOCKED` by `LEGAL_PRIVACY`. See `gates/PRD_21_GATE_A.md`.                                                                               |
+| PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                                                                                                 |
+| PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                                                                                                                |
 
 Open stop that blocks the Training Core chain: **PRD 04 content** needs human
 perception receipts before Gate A content publication and before PRD 05.
@@ -109,11 +109,13 @@ Open stop that blocks production privacy / real-user onboarding: **LEGAL_PRIVACY
 Disposable migrations already on `main` (do not regenerate): `0001` catalog;
 `0002`–`0006` + `0011` privacy; `0007`–`0010` onboarding invitation/attempt/operation/role-mapping.
 
-Immediate next authorized Wave 3 work (after merging #107 if still open):
+Immediate next authorized Wave 3 work:
 
-1. Wire `OnboardingClaimRepository` / `OnboardingTransitionSink` into the claim path.
-2. Continue remaining PRD 07/21 synthetic/disposable mechanics without inventing
-   Gate A PASS or registry `COMPLETED` under active stops.
+1. Continue remaining PRD 07/21 synthetic/disposable mechanics (no inventing
+   Gate A PASS or registry `COMPLETED` under active stops).
+2. Optional later: synthetic-only Gate A package for PRD 21 **only** if resume
+   conditions in `gates/PRD_21_GATE_A.md` are met — never invent PASS/COMPLETED.
+3. Resume PRD 04 content publication only after human perception receipts.
 
 ## Master Execution Plan — wave map (canonical)
 
