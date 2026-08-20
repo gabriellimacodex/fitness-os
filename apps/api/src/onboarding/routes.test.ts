@@ -1382,6 +1382,88 @@ describe('policy-refresh and claim', () => {
     await app.close();
   });
 
+  it('records create and abandon transitions through OnboardingTransitionSink', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const appended: Array<{
+      aggregate: string;
+      nextState: string;
+      previousState: string;
+      reason: string;
+    }> = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: {
+            append: async (record) => {
+              appended.push({
+                aggregate: record.aggregate,
+                nextState: record.nextState,
+                previousState: record.previousState,
+                reason: record.reason,
+              });
+              return 'accepted';
+            },
+          },
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    const abandoned = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/abandon`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-abandon-sink'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(abandoned.json()).result,
+    ).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: { lifecycle: 'terminal', terminalReason: 'abandoned' },
+    });
+    expect(appended).toEqual(
+      expect.arrayContaining([
+        {
+          aggregate: 'attempt',
+          nextState: 'policy_pending',
+          previousState: 'unallocated',
+          reason: 'create_attempt',
+        },
+        {
+          aggregate: 'attempt',
+          nextState: 'terminal',
+          previousState: 'policy_pending',
+          reason: 'abandon_attempt',
+        },
+      ]),
+    );
+    await app.close();
+  });
+
   it('records claim transitions through OnboardingTransitionSink', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
