@@ -14,6 +14,8 @@ import {
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
   type PrivacyIdFactory,
+  type PrivacyPolicyPackageRepository,
+  type PrivacyPurposeRegistry,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacyTrustedClock,
@@ -71,13 +73,24 @@ export interface PrivacySyntheticOptions {
    */
   audit?: PrivacyAuditSink;
   /**
+   * Optional disposable policy package repository. When set, data-use-evaluate
+   * loads policy by version id from this port instead of seeding in-memory.
+   */
+  policies?: PrivacyPolicyPackageRepository;
+  /**
+   * Optional disposable purpose registry. When set, data-use-evaluate loads
+   * purpose by version id from this port instead of seeding in-memory.
+   */
+  purposes?: PrivacyPurposeRegistry;
+  /**
    * Optional reviewed expected-inventory port. When set, inventory-coverage may
    * omit `expected` in the request body and load it from this port.
    */
   expectedInventory?: PrivacyExpectedProcessorInventoryPort;
   /**
    * Optional runtime processor registry. When set, inventory-coverage may omit
-   * `runtime` in the request body and load descriptors via `listDescriptors`.
+   * `runtime` in the request body and load descriptors via `listDescriptors`;
+   * data-use-evaluate also loads the processor from this port instead of seeding.
    */
   processors?: PrivacyRuntimeProcessorRegistry;
 }
@@ -145,6 +158,8 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
+  const injectedPolicies = options.policies;
+  const injectedPurposes = options.purposes;
   const expectedInventory = options.expectedInventory;
   const processors = options.processors;
 
@@ -218,9 +233,15 @@ export function registerPrivacySyntheticRoutes(
         // Dual zod brand across package boundaries — same pattern as privacy tests.
         ids: ids as never,
       });
-      syntheticPorts.policies.seed(body.data.policy);
-      syntheticPorts.purposes.seed(body.data.purpose);
-      syntheticPorts.processors.seed(body.data.processor);
+      if (injectedPolicies === undefined) {
+        syntheticPorts.policies.seed(body.data.policy);
+      }
+      if (injectedPurposes === undefined) {
+        syntheticPorts.purposes.seed(body.data.purpose);
+      }
+      if (processors === undefined) {
+        syntheticPorts.processors.seed(body.data.processor);
+      }
       if (
         body.data.evidence !== null &&
         injectedEvidence === undefined &&
@@ -234,6 +255,9 @@ export function registerPrivacySyntheticRoutes(
         ...syntheticPorts,
         audit: injectedAudit ?? syntheticPorts.audit,
         evidence: injectedEvidence ?? syntheticPorts.evidence,
+        policies: injectedPolicies ?? syntheticPorts.policies,
+        purposes: injectedPurposes ?? syntheticPorts.purposes,
+        processors: processors ?? syntheticPorts.processors,
       };
 
       const result = await evaluateDataUse(ports, {

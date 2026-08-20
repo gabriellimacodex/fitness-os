@@ -810,6 +810,118 @@ describe('POST /v1/privacy/synthetic/processor-execute', () => {
   });
 });
 
+describe('POST /v1/privacy/synthetic/data-use-evaluate with injected registries', () => {
+  it('loads policy/purpose/processor from injected ports without in-memory seed', async () => {
+    let getActiveCalls = 0;
+    let getVersionCalls = 0;
+    let getDescriptorCalls = 0;
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          policies: {
+            getActive: async (versionId: string) => {
+              getActiveCalls += 1;
+              return versionId === policy.versionId ? policy : null;
+            },
+            put: async () => 'accepted' as const,
+          },
+          purposes: {
+            getVersion: async (purposeVersionId: string) => {
+              getVersionCalls += 1;
+              return purposeVersionId === purpose.purposeVersionId
+                ? purpose
+                : null;
+            },
+            put: async () => 'accepted' as const,
+          },
+          processors: {
+            getDescriptor: async (processorId: string) => {
+              getDescriptorCalls += 1;
+              return processorId === processor.processorId ? processor : null;
+            },
+            listDescriptors: async () => [processor],
+            put: async () => 'accepted' as const,
+          },
+          evidence: {
+            appendEvidence: async () => 'accepted' as const,
+            appendWithdrawal: async () => 'accepted' as const,
+            getAuthoritativeWithdrawal: async () => null,
+            getEvidence: async (evidenceId: string) =>
+              evidenceId === evidence.evidenceId ? evidence : null,
+          },
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: { outcome: 'allowed' },
+    });
+    expect(getActiveCalls).toBeGreaterThan(0);
+    expect(getVersionCalls).toBeGreaterThan(0);
+    expect(getDescriptorCalls).toBeGreaterThan(0);
+
+    await app.close();
+  });
+
+  it('denies with purpose_unknown when injected purpose registry is empty', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          policies: {
+            getActive: async () => policy,
+            put: async () => 'accepted' as const,
+          },
+          purposes: {
+            getVersion: async () => null,
+            put: async () => 'accepted' as const,
+          },
+          processors: {
+            getDescriptor: async () => processor,
+            listDescriptors: async () => [processor],
+            put: async () => 'accepted' as const,
+          },
+          evidence: {
+            appendEvidence: async () => 'accepted' as const,
+            appendWithdrawal: async () => 'accepted' as const,
+            getAuthoritativeWithdrawal: async () => null,
+            getEvidence: async (evidenceId: string) =>
+              evidenceId === evidence.evidenceId ? evidence : null,
+          },
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: { outcome: 'denied', reasonCode: 'purpose_unknown' },
+    });
+
+    await app.close();
+  });
+});
+
 describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence ledger', () => {
   it('reads evidence from the injected disposable ledger without in-memory seed', async () => {
     let getCalls = 0;
