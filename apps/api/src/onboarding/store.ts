@@ -157,11 +157,14 @@ export function createStoredAttempt(
   ordinal: number,
   principalKey: string,
   createdAt: string = new Date().toISOString(),
+  attemptId: OnboardingAttemptId = onboardingAttemptIdSchema.parse(
+    randomUUID(),
+  ),
 ): StoredAttempt {
   return {
     createdAt,
     detail: attemptDetailSchema.parse({
-      attemptId: onboardingAttemptIdSchema.parse(randomUUID()),
+      attemptId,
       invitationId: invitation.invitationId,
       lifecycle: 'policy_pending',
       ordinal,
