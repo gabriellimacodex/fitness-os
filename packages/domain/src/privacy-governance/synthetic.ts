@@ -203,6 +203,12 @@ export class SyntheticPrivacyRuntimeProcessorRegistry implements PrivacyRuntimeP
     return this.byId.get(processorId) ?? null;
   }
 
+  async listDescriptors(): Promise<
+    readonly PrivacyProcessorDescriptorReference[]
+  > {
+    return [...this.byId.values()];
+  }
+
   async put(record: PrivacyProcessorDescriptorReference) {
     if (this.byId.has(record.processorId)) {
       return 'conflict' as const;
