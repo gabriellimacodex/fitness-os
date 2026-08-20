@@ -23,6 +23,7 @@ import {
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageRequestSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
@@ -156,6 +157,27 @@ export function registerPrivacySyntheticRoutes(
 
   app.get('/v1/privacy/synthetic/readiness', async () =>
     syntheticMechanismReadiness(clock.nowUtcMs()),
+  );
+
+  app.get(
+    '/v1/privacy/synthetic/expected-inventory',
+    async (request, reply) => {
+      if (expectedInventory === undefined) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      const inventory = await expectedInventory.getInventory();
+      return privacySyntheticExpectedInventoryResponseSchema.parse({
+        evaluatedAt: clock.nowUtcMs(),
+        inventory,
+      });
+    },
   );
 
   app.post(
