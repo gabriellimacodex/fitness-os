@@ -3,11 +3,16 @@ import { fileURLToPath } from 'node:url';
 import { createPostgresConnection } from '@fitness-os/database';
 import {
   privacyActorContextReferenceSchema,
+  privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
+  privacySubjectRequestIdSchema,
+  privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
 } from '@fitness-os/schemas';
 import { sql } from 'drizzle-orm';
@@ -329,6 +334,135 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await expect(
         persistence.processors.getDescriptor(processor.processorId),
       ).resolves.toEqual(processor);
+
+      await app.close();
+    });
+
+    it('advances subject-request transitions over disposable Postgres', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      const baseRequest = privacySubjectRequestReferenceSchema.parse({
+        requestId: privacySubjectRequestIdSchema.parse(
+          '66666666-6666-4666-8666-666666666666',
+        ),
+        requestType: 'export',
+        state: 'verification_required',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        updatedAt: '2026-08-18T11:00:00.000Z',
+      });
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            subjectRequests: persistence.subjectRequests,
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/subject-request-transition',
+        payload: {
+          request: baseRequest,
+          next: 'ready',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'a1111111-1111-4111-8111-111111111111',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'b2222222-2222-4222-8222-222222222222',
+          ),
+          correlationId: baseRequest.correlationId,
+          reasonCode: 'verification_accepted',
+          verification: {
+            verificationRefDigest: '2'.repeat(64),
+            synthetic: true,
+          },
+          productionMode: false,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: 'advanced',
+        request: { state: 'ready' },
+        transition: {
+          previousState: 'verification_required',
+          nextState: 'ready',
+          reasonCode: 'verification_accepted',
+        },
+      });
+
+      const requestRows = await connection.db.execute<{
+        request_id: string;
+        state: string;
+      }>(sql`
+        SELECT request_id, state
+        FROM privacy_subject_request
+        WHERE request_id = ${baseRequest.requestId}
+      `);
+      expect(requestRows).toEqual([
+        { request_id: baseRequest.requestId, state: 'ready' },
+      ]);
+
+      const transitionRows = await connection.db.execute<{
+        previous_state: string;
+        next_state: string;
+      }>(sql`
+        SELECT previous_state, next_state
+        FROM privacy_subject_request_transition
+        WHERE request_id = ${baseRequest.requestId}
+        ORDER BY recorded_at
+      `);
+      expect(transitionRows).toEqual([
+        {
+          previous_state: 'verification_required',
+          next_state: 'ready',
+        },
+      ]);
+
+      await app.close();
+    });
+
+    it('lists runtime processors from disposable Postgres registry via GET', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.processors.put(processor)).resolves.toBe(
+        'accepted',
+      );
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            processors: persistence.processors,
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/privacy/synthetic/runtime-processors',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        evaluatedAt: '2026-08-18T12:00:00.000Z',
+        runtime: [
+          {
+            processorId: processor.processorId,
+            inventoryId: processor.inventoryId,
+            synthetic: true,
+          },
+        ],
+      });
 
       await app.close();
     });
