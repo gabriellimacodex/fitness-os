@@ -1,11 +1,13 @@
 import { fileURLToPath } from 'node:url';
 
 import { createPostgresConnection } from '@fitness-os/database';
+import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
 import {
   privacyActorContextReferenceSchema,
   privacyCorrelationIdSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
@@ -462,6 +464,156 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             processorId: processor.processorId,
             inventoryId: processor.inventoryId,
             synthetic: true,
+          },
+        ],
+      });
+
+      await app.close();
+    });
+
+    it('matches inventory-coverage using PG listDescriptors without body runtime', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.processors.put(processor)).resolves.toBe(
+        'accepted',
+      );
+
+      const expected = privacyExpectedProcessorInventorySchema.parse({
+        schemaVersion: 'privacy.processor-inventory.v1',
+        inventoryId: processor.inventoryId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        sourceCommit: 'f4502d9',
+        processors: [
+          {
+            processorId: processor.processorId,
+            registrationVersion: 1,
+            inventoryId: processor.inventoryId,
+            descriptorDigest: processor.descriptorDigest,
+            codeOwner: processor.codeOwner,
+            adapterPackage: '@fitness-os/domain',
+            storageKind: 'in_memory_synthetic',
+            allowedPurposeIds: processor.allowedPurposeIds,
+            allowedCategoryIds: processor.allowedCategoryIds,
+            subjectLookupStrategy: 'synthetic_scope_id',
+            supportedCapabilities: processor.capabilities,
+            unsupportedCapabilities: [
+              {
+                capability: 'delete',
+                rationale: 'deferred_to_later_prd21_slice',
+              },
+            ],
+            recordFamilies: [
+              {
+                family: 'privacy_audit_event',
+                lifecycleAction: 'retain_until_reviewed',
+              },
+              {
+                family: 'privacy_subject_request',
+                lifecycleAction: 'retain_until_reviewed',
+              },
+            ],
+            environmentApplicability: 'synthetic_only',
+            requiredReadiness: 'mechanism_only',
+            synthetic: true,
+          },
+        ],
+      });
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            processors: persistence.processors,
+            expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+              expected,
+            ) as never,
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          },
+        },
+      );
+
+      const matched = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/inventory-coverage',
+        payload: {},
+      });
+      expect(matched.statusCode).toBe(200);
+      expect(matched.json()).toMatchObject({
+        status: 'matched',
+        mismatches: [],
+        evaluatedAt: '2026-08-18T12:00:00.000Z',
+      });
+
+      await app.close();
+    });
+
+    it('reports processor_missing from empty PG registry via inventory-coverage', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      const expected = privacyExpectedProcessorInventorySchema.parse({
+        schemaVersion: 'privacy.processor-inventory.v1',
+        inventoryId: processor.inventoryId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        sourceCommit: 'f4502d9',
+        processors: [
+          {
+            processorId: processor.processorId,
+            registrationVersion: 1,
+            inventoryId: processor.inventoryId,
+            descriptorDigest: processor.descriptorDigest,
+            codeOwner: processor.codeOwner,
+            adapterPackage: '@fitness-os/domain',
+            storageKind: 'in_memory_synthetic',
+            allowedPurposeIds: processor.allowedPurposeIds,
+            allowedCategoryIds: processor.allowedCategoryIds,
+            subjectLookupStrategy: 'synthetic_scope_id',
+            supportedCapabilities: processor.capabilities,
+            unsupportedCapabilities: [
+              {
+                capability: 'delete',
+                rationale: 'deferred_to_later_prd21_slice',
+              },
+            ],
+            recordFamilies: [
+              {
+                family: 'privacy_audit_event',
+                lifecycleAction: 'retain_until_reviewed',
+              },
+            ],
+            environmentApplicability: 'synthetic_only',
+            requiredReadiness: 'mechanism_only',
+            synthetic: true,
+          },
+        ],
+      });
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            processors: persistence.processors,
+            expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+              expected,
+            ) as never,
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/inventory-coverage',
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: 'mismatched',
+        mismatches: [
+          {
+            processorId: processor.processorId,
+            diagnosticCode: 'processor_missing',
           },
         ],
       });
