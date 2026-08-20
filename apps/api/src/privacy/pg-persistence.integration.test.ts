@@ -340,6 +340,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     it('advances subject-request transitions over disposable Postgres', async () => {
       const persistence = createPrivacyPgPersistence(connection);
+      // policy_version_id on privacy_subject_request FKs to policy package.
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
       const baseRequest = privacySubjectRequestReferenceSchema.parse({
         requestId: privacySubjectRequestIdSchema.parse(
           '66666666-6666-4666-8666-666666666666',
