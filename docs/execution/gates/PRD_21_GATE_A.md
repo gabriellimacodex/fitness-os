@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `69311d63a43f0b0b7827f94b343822dd351e1a6b` (progress refresh; disposition unchanged)
-- Prior recorded head: `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `5889fac340efc26fd33282c58cfafd83c7027b19` (progress refresh; disposition unchanged)
+- Prior recorded heads: `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-20` (landed-evidence refresh only)
+- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #124)
 
 ## Explicit non-claims
 
@@ -38,22 +38,23 @@
 
 Explicit Option A / privacy-governance PRs only (not a continuous numeric range):
 
-| Slice                          | PR(s)                                       |
-| ------------------------------ | ------------------------------------------- |
-| Option A decision              | `decisions/PRD_21_OPTION_A.md`              |
-| Contracts / domain / synthetic | `#28`, `#33`, `#35`, `#38`–`#45`            |
-| Disposable PG core → request   | `#46`–`#48`                                 |
-| Standing `/goal` meta          | `#49`, `#56`, `#58` (and related refreshes) |
-| Transition history             | `#50`                                       |
-| API → repository wire          | `#51`                                       |
-| Expected inventory + coverage  | `#52`, `#53`                                |
-| Append-only guards             | `#54`                                       |
-| SubjectDataProcessor sim + API | `#55`, `#56`                                |
-| Export digest simulation       | `#57`                                       |
-| Destructive capability deny    | `#58`                                       |
-| Synthetic clock / IdFactory    | `#118`                                      |
-| Inventory-coverage HTTP seam   | `#120`, `#121` (contract freeze)            |
-| Expected inventory port inject | `#122`                                      |
+| Slice                                     | PR(s)                                     |
+| ----------------------------------------- | ----------------------------------------- |
+| Option A decision                         | `decisions/PRD_21_OPTION_A.md`            |
+| Contracts / domain / synthetic            | `#28`, `#33`, `#35`, `#38`–`#45`          |
+| Disposable PG core → request              | `#46`–`#48`                               |
+| Standing `/goal` meta                     | `#49`, `#56`, `#58`, `#123` (and related) |
+| Transition history                        | `#50`                                     |
+| API → repository wire                     | `#51`                                     |
+| Expected inventory + coverage             | `#52`, `#53`                              |
+| Append-only guards                        | `#54`                                     |
+| SubjectDataProcessor sim + API            | `#55`, `#56`                              |
+| Export digest simulation                  | `#57`                                     |
+| Destructive capability deny               | `#58`                                     |
+| Synthetic clock / IdFactory               | `#118`                                    |
+| Inventory-coverage HTTP seam              | `#120`, `#121` (contract freeze)          |
+| Expected inventory port inject            | `#122`                                    |
+| Runtime registry listDescriptors / inject | `#124`                                    |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion) are **out of
