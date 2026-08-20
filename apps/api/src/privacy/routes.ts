@@ -5,11 +5,15 @@ import {
   planRetentionPreview,
   planWithdrawal,
   SyntheticPrivacyAuthorizationEvidenceLedger,
+  SyntheticPrivacyIdFactory,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
+  SyntheticPrivacyTrustedClock,
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
+  type PrivacyIdFactory,
   type PrivacySubjectRequestRepository,
+  type PrivacyTrustedClock,
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
@@ -32,8 +36,18 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface PrivacySyntheticOptions {
+  /**
+   * Optional trusted clock. Defaults to `SyntheticPrivacyTrustedClock` using
+   * `clock.nowUtcMs()` (or the synthetic default instant).
+   */
+  clock?: PrivacyTrustedClock;
   /** Fixed clock for deterministic tests; defaults to domain synthetic clock. */
   fixedUtcMs?: string;
+  /**
+   * Optional ID factory for audit/correlation/operation/subject-scope IDs.
+   * Defaults to `SyntheticPrivacyIdFactory`.
+   */
+  ids?: PrivacyIdFactory;
   /**
    * Optional subject-request repository. Defaults to an in-memory synthetic
    * repository shared for the lifetime of this route registration.
@@ -108,6 +122,8 @@ export function registerPrivacySyntheticRoutes(
   options: PrivacySyntheticOptions = {},
 ): void {
   const fixedUtcMs = options.fixedUtcMs ?? '2026-08-18T12:00:00.000Z';
+  const clock = options.clock ?? new SyntheticPrivacyTrustedClock(fixedUtcMs);
+  const ids = options.ids ?? new SyntheticPrivacyIdFactory();
   const subjectRequests =
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const injectedEvidence = options.evidence;
@@ -122,7 +138,7 @@ export function registerPrivacySyntheticRoutes(
   });
 
   app.get('/v1/privacy/synthetic/readiness', async () =>
-    syntheticMechanismReadiness(fixedUtcMs),
+    syntheticMechanismReadiness(clock.nowUtcMs()),
   );
 
   app.post(
@@ -136,7 +152,11 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const syntheticPorts = createSyntheticPrivacyDataUsePorts({ fixedUtcMs });
+      const syntheticPorts = createSyntheticPrivacyDataUsePorts({
+        clock,
+        // Dual zod brand across package boundaries — same pattern as privacy tests.
+        ids: ids as never,
+      });
       syntheticPorts.policies.seed(body.data.policy);
       syntheticPorts.purposes.seed(body.data.purpose);
       syntheticPorts.processors.seed(body.data.processor);
@@ -202,7 +222,7 @@ export function registerPrivacySyntheticRoutes(
       const result = await subjectRequests.applyTransition({
         requestId: body.data.request.requestId,
         next: body.data.next,
-        updatedAt: fixedUtcMs,
+        updatedAt: clock.nowUtcMs(),
         transitionId: body.data.transitionId,
         operationId: body.data.operationId,
         correlationId: body.data.correlationId,
@@ -253,7 +273,7 @@ export function registerPrivacySyntheticRoutes(
       withdrawalId: body.data.withdrawalId,
       evidenceId: body.data.evidenceId,
       operationId: body.data.operationId,
-      withdrawnAt: fixedUtcMs,
+      withdrawnAt: clock.nowUtcMs(),
     });
 
     if (result.status === 'conflict') {
