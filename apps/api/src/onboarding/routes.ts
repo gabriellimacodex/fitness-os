@@ -1519,6 +1519,14 @@ export function registerOnboardingRoutes(
     };
 
     const operationId = idFactory.operationId();
+    await appendTransition({
+      aggregate: 'invitation',
+      aggregateId: invitationId,
+      nextState: 'issued',
+      operationId,
+      previousState: 'unissued',
+      reason: 'issue_student_invitation',
+    });
     await rememberOperation(bindingKey, context.principalKey, {
       digest,
       namespace: 'issue_student_invitation',

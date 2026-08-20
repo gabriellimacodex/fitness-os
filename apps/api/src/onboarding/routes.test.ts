@@ -960,6 +960,66 @@ describe('student invitation list/issue/revoke', () => {
     await app.close();
   });
 
+  it('records issue_student_invitation through OnboardingTransitionSink', async () => {
+    const store = createOnboardingStore();
+    const appended: Array<{
+      aggregate: string;
+      nextState: string;
+      previousState: string;
+      reason: string;
+    }> = [];
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-principal',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: {
+            append: async (record) => {
+              appended.push({
+                aggregate: record.aggregate,
+                nextState: record.nextState,
+                previousState: record.previousState,
+                reason: record.reason,
+              });
+              return 'accepted';
+            },
+          },
+        },
+      },
+    );
+
+    const issued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue-sink'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(issued.json()).result,
+    ).toMatchObject({
+      outcome: 'command_succeeded',
+      command: 'issue_student_invitation',
+    });
+    expect(appended).toEqual(
+      expect.arrayContaining([
+        {
+          aggregate: 'invitation',
+          nextState: 'issued',
+          previousState: 'unissued',
+          reason: 'issue_student_invitation',
+        },
+      ]),
+    );
+    await app.close();
+  });
+
   it('issues claim material through OnboardingSecretFactory and OnboardingIdFactory', async () => {
     const store = createOnboardingStore();
     const fixedSecret = 'injected-claim-secret-factory-01';
