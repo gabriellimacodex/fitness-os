@@ -12,6 +12,7 @@ import {
   SyntheticPrivacyTrustedClock,
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
+  type PrivacyExpectedProcessorInventoryPort,
   type PrivacyIdFactory,
   type PrivacySubjectRequestRepository,
   type PrivacyTrustedClock,
@@ -66,6 +67,11 @@ export interface PrivacySyntheticOptions {
    * is used.
    */
   audit?: PrivacyAuditSink;
+  /**
+   * Optional reviewed expected-inventory port. When set, inventory-coverage may
+   * omit `expected` in the request body and load it from this port.
+   */
+  expectedInventory?: PrivacyExpectedProcessorInventoryPort;
 }
 
 function sendError(
@@ -131,6 +137,7 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
+  const expectedInventory = options.expectedInventory;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -394,8 +401,18 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
+      const expected =
+        body.data.expected ??
+        (expectedInventory !== undefined
+          ? await expectedInventory.getInventory()
+          : undefined);
+
+      if (expected === undefined) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
       const coverage = compareExpectedInventoryToRuntime({
-        expected: body.data.expected,
+        expected,
         runtime: body.data.runtime,
       });
 
