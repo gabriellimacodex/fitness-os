@@ -1554,4 +1554,64 @@ describe('synthetic inventory triad (GET expected + GET runtime + coverage)', ()
 
     await app.close();
   });
+
+  it('reports inventory_mismatch for missing expected category via ports', async () => {
+    const extraCategoryId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const baseProcessor = expected.processors[0];
+    if (baseProcessor === undefined) {
+      throw new Error('expected processor fixture missing');
+    }
+    const expectedWithExtraCategory =
+      privacyExpectedProcessorInventorySchema.parse({
+        ...expected,
+        sourceCommit: '027281e',
+        processors: [
+          {
+            ...baseProcessor,
+            allowedCategoryIds: [
+              ...baseProcessor.allowedCategoryIds,
+              extraCategoryId,
+            ],
+          },
+        ],
+      });
+    const registry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    registry.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expectedWithExtraCategory,
+          ) as never,
+          processors: registry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const coverage = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {},
+    });
+    const body = privacySyntheticInventoryCoverageResponseSchema.parse(
+      coverage.json(),
+    );
+
+    expect(coverage.statusCode).toBe(200);
+    expect(body.status).toBe('mismatched');
+    expect(body.mismatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          diagnosticCode: 'inventory_mismatch',
+          detail: `missing_category:${extraCategoryId}`,
+          processorId: processor.processorId,
+        }),
+      ]),
+    );
+
+    await app.close();
+  });
 });
