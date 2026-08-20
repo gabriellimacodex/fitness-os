@@ -86,6 +86,11 @@ export interface PrivacyRuntimeProcessorRegistry {
   getDescriptor(
     processorId: string,
   ): Promise<PrivacyProcessorDescriptorReference | null>;
+  /**
+   * Return every registered runtime descriptor. Used by synthetic
+   * inventory-coverage composition; production adapters may still deny.
+   */
+  listDescriptors(): Promise<readonly PrivacyProcessorDescriptorReference[]>;
   put(
     record: PrivacyProcessorDescriptorReference,
   ): Promise<PrivacyReferencePutResult>;

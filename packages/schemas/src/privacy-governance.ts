@@ -1339,7 +1339,14 @@ export const privacySyntheticInventoryCoverageRequestSchema = z
      * `PrivacyExpectedProcessorInventoryPort`; otherwise required at the route.
      */
     expected: privacyExpectedProcessorInventorySchema.optional(),
-    runtime: z.array(privacyProcessorDescriptorReferenceSchema).max(128),
+    /**
+     * Optional when the synthetic API is composed with an injected
+     * `PrivacyRuntimeProcessorRegistry`; otherwise required at the route.
+     */
+    runtime: z
+      .array(privacyProcessorDescriptorReferenceSchema)
+      .max(128)
+      .optional(),
   })
   .strict();
 export type PrivacySyntheticInventoryCoverageRequest = z.infer<

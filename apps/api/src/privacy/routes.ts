@@ -14,6 +14,7 @@ import {
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
   type PrivacyIdFactory,
+  type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacyTrustedClock,
 } from '@fitness-os/domain';
@@ -72,6 +73,11 @@ export interface PrivacySyntheticOptions {
    * omit `expected` in the request body and load it from this port.
    */
   expectedInventory?: PrivacyExpectedProcessorInventoryPort;
+  /**
+   * Optional runtime processor registry. When set, inventory-coverage may omit
+   * `runtime` in the request body and load descriptors via `listDescriptors`.
+   */
+  processors?: PrivacyRuntimeProcessorRegistry;
 }
 
 function sendError(
@@ -138,6 +144,7 @@ export function registerPrivacySyntheticRoutes(
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const expectedInventory = options.expectedInventory;
+  const processors = options.processors;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -411,9 +418,19 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
+      const runtime =
+        body.data.runtime ??
+        (processors !== undefined
+          ? await processors.listDescriptors()
+          : undefined);
+
+      if (runtime === undefined) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
       const coverage = compareExpectedInventoryToRuntime({
         expected,
-        runtime: body.data.runtime,
+        runtime,
       });
 
       return privacySyntheticInventoryCoverageResponseSchema.parse({

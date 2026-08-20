@@ -176,6 +176,13 @@ export function createPostgresPrivacyRuntimeProcessorRegistry(
       return row ? toProcessor(row) : null;
     },
 
+    listDescriptors: async () => {
+      const rows = await connection.db
+        .select()
+        .from(privacyProcessorRegistration);
+      return rows.map((row) => toProcessor(row));
+    },
+
     put: async (record): Promise<PrivacyReferencePutResult> => {
       const valid = canonicalizePrivacyProcessorDescriptorReference(
         privacyProcessorDescriptorReferenceSchema.parse(record),

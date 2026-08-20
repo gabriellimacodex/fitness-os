@@ -20,6 +20,7 @@ import {
 } from '@fitness-os/schemas';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
 } from '@fitness-os/domain';
@@ -992,6 +993,55 @@ describe('POST /v1/privacy/synthetic/inventory-coverage', () => {
     );
 
     await app.close();
+  });
+
+  it('loads runtime descriptors from PrivacyRuntimeProcessorRegistry when omitted', async () => {
+    const registry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    registry.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expected,
+          ) as never,
+          // Dual zod brand across package boundaries.
+          processors: registry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {},
+    });
+    const body = privacySyntheticInventoryCoverageResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'matched',
+      mismatches: [],
+    });
+    await app.close();
+
+    const bare = buildSyntheticPrivacyApp();
+    const rejected = await bare.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {
+        expected,
+      },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(rejected.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+    await bare.close();
   });
 
   it('loads expected inventory from PrivacyExpectedProcessorInventoryPort when omitted', async () => {
