@@ -184,6 +184,37 @@ describe('onboarding routes without trusted context', () => {
     await app.close();
   });
 
+  it('denies when IdentitySessionStore cannot establish a session', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          identitySessionStore: {
+            get: async () => null,
+            put: async () => 'conflict' as const,
+            revoke: async () => 'missing' as const,
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/current',
+    });
+    expect(response.statusCode).toBe(401);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'UNAUTHENTICATED',
+    );
+    await app.close();
+  });
+
   it('denies when PrincipalReferenceDeriver rejects the binder subject', async () => {
     const app = buildApp(
       { logger: false },
