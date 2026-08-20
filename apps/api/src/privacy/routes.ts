@@ -1,5 +1,6 @@
 import {
   authorizeRetentionExecution,
+  compareExpectedInventoryToRuntime,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
   planRetentionPreview,
@@ -20,6 +21,8 @@ import {
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticInventoryCoverageRequestSchema,
+  privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
   privacySyntheticProcessorExecuteResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
@@ -377,6 +380,30 @@ export function registerPrivacySyntheticRoutes(
         productionMode: false,
       });
       return privacySyntheticProcessorExecuteResponseSchema.parse(result);
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/inventory-coverage',
+    async (request, reply) => {
+      const body = privacySyntheticInventoryCoverageRequestSchema.safeParse(
+        request.body,
+      );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const coverage = compareExpectedInventoryToRuntime({
+        expected: body.data.expected,
+        runtime: body.data.runtime,
+      });
+
+      return privacySyntheticInventoryCoverageResponseSchema.parse({
+        evaluatedAt: clock.nowUtcMs(),
+        mismatches: coverage.status === 'mismatched' ? coverage.mismatches : [],
+        status: coverage.status,
+      });
     },
   );
 }

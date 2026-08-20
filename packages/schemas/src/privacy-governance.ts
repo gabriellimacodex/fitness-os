@@ -1327,3 +1327,43 @@ export const privacySyntheticRetentionExecutionAuthorizeResponseSchema = z
 export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
   typeof privacySyntheticRetentionExecutionAuthorizeResponseSchema
 >;
+
+/**
+ * Synthetic-only expected-vs-runtime processor inventory coverage check.
+ * Mechanism evidence only — does not authorize production readiness.
+ */
+export const privacySyntheticInventoryCoverageRequestSchema = z
+  .object({
+    expected: privacyExpectedProcessorInventorySchema,
+    runtime: z.array(privacyProcessorDescriptorReferenceSchema).max(128),
+  })
+  .strict();
+export type PrivacySyntheticInventoryCoverageRequest = z.infer<
+  typeof privacySyntheticInventoryCoverageRequestSchema
+>;
+
+export const privacyInventoryCoverageMismatchSchema = z
+  .object({
+    diagnosticCode: z.enum([
+      'inventory_mismatch',
+      'processor_missing',
+      'handler_missing',
+    ]),
+    processorId: z.string().nullable(),
+    detail: z.string().min(1).max(256),
+  })
+  .strict();
+export type PrivacyInventoryCoverageMismatch = z.infer<
+  typeof privacyInventoryCoverageMismatchSchema
+>;
+
+export const privacySyntheticInventoryCoverageResponseSchema = z
+  .object({
+    status: z.enum(['matched', 'mismatched']),
+    mismatches: z.array(privacyInventoryCoverageMismatchSchema).max(256),
+    evaluatedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacySyntheticInventoryCoverageResponse = z.infer<
+  typeof privacySyntheticInventoryCoverageResponseSchema
+>;
