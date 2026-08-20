@@ -2,11 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `69311d63a43f0b0b7827f94b343822dd351e1a6b` (progress refresh; disposition unchanged)
+- Prior recorded head: `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-19`
+- Record timestamp: `2026-08-20` (landed-evidence refresh only)
 
 ## Explicit non-claims
 
@@ -50,9 +51,13 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | SubjectDataProcessor sim + API | `#55`, `#56`                                |
 | Export digest simulation       | `#57`                                       |
 | Destructive capability deny    | `#58`                                       |
+| Synthetic clock / IdFactory    | `#118`                                      |
+| Inventory-coverage HTTP seam   | `#120`, `#121` (contract freeze)            |
+| Expected inventory port inject | `#122`                                      |
 
-Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`) are **out of
-scope** for this inventory.
+Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
+composition `#107`–`#117`, `#119`, `#121` resume-sink portion) are **out of
+scope** for this inventory except where listed as explicit privacy seams.
 
 CI / Agent 90 for each row above lives on that PR’s merge record — this status
 file does not re-attest those runs.
