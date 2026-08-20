@@ -41,6 +41,7 @@ export interface PlatformOptions {
   };
   onboarding?: {
     claimRepository?: import('@fitness-os/domain').OnboardingClaimRepository;
+    idFactory?: import('@fitness-os/domain').OnboardingIdFactory;
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     identitySessionStore?: import('@fitness-os/domain').IdentitySessionStore;
     persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
@@ -49,6 +50,8 @@ export interface PlatformOptions {
     principalReference?: import('@fitness-os/domain').PrincipalReferenceDeriver;
     readinessProbe?: import('@fitness-os/domain').OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
+    secretFactory?: import('@fitness-os/domain').OnboardingSecretFactory;
+    secretVerifier?: import('@fitness-os/domain').InvitationSecretVerifier;
     store?: OnboardingStore;
     transitionSink?: import('@fitness-os/domain').OnboardingTransitionSink;
   };

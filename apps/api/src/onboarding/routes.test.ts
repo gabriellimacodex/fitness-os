@@ -4,6 +4,8 @@ import {
   currentOnboardingResponseSchema,
   invitationClaimSecretSchema,
   onboardingAttemptIdSchema,
+  onboardingInvitationIdSchema,
+  onboardingOperationIdSchema,
   onboardingOperationResponseSchema,
   retryTokenSchema,
   studentInvitationListResponseSchema,
@@ -875,6 +877,58 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
 });
 
 describe('student invitation list/issue/revoke', () => {
+  it('issues claim material through OnboardingSecretFactory and OnboardingIdFactory', async () => {
+    const store = createOnboardingStore();
+    const fixedSecret = 'injected-claim-secret-factory-01';
+    const fixedInvitationId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const fixedOperationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          idFactory: {
+            attemptId: () =>
+              onboardingAttemptIdSchema.parse(
+                'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+              ),
+            invitationId: () =>
+              onboardingInvitationIdSchema.parse(fixedInvitationId),
+            operationId: () =>
+              onboardingOperationIdSchema.parse(fixedOperationId),
+          },
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-principal',
+            synthetic: true,
+          }),
+          secretFactory: {
+            claimSecret: () => fixedSecret,
+          },
+          store,
+        },
+      },
+    );
+
+    const issued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue-factory'),
+      },
+    });
+    const issuedBody = onboardingOperationResponseSchema.parse(issued.json());
+    expect(issuedBody.operation.operationId).toBe(fixedOperationId);
+    expect(issuedBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      issued: {
+        claimSecret: fixedSecret,
+        invitationId: fixedInvitationId,
+      },
+    });
+    await app.close();
+  });
+
   it('issues, lists, and revokes coach-owned student invitations without leaking foreign ones', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, {
