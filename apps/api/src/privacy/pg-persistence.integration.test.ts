@@ -169,5 +169,76 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       await app.close();
     });
+
+    it('evaluates data-use against disposable Postgres policy/purpose/processor registries', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+      await expect(persistence.purposes.put(purpose)).resolves.toBe('accepted');
+      await expect(persistence.processors.put(processor)).resolves.toBe(
+        'accepted',
+      );
+      await expect(persistence.evidence.appendEvidence(evidence)).resolves.toBe(
+        'accepted',
+      );
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            audit: persistence.audit,
+            evidence: persistence.evidence,
+            policies: persistence.policies,
+            purposes: persistence.purposes,
+            processors: persistence.processors,
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            subjectRequests: persistence.subjectRequests,
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/data-use-evaluate',
+        payload: {
+          actor: privacyActorContextReferenceSchema.parse({
+            issuer: 'synthetic.identity.v1',
+            version: 1,
+            principalReferenceDigest: 'e'.repeat(64),
+            authorityClaims: ['data_use_evaluate'],
+            synthetic: true,
+          }),
+          purpose,
+          policy,
+          processor,
+          operationKind: 'data_use_evaluation',
+          engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+            '44444444-4444-4444-8444-444444444444',
+          ),
+          evidence,
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          productionMode: false,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: 'evaluated',
+        decision: { outcome: 'allowed' },
+      });
+      await expect(
+        persistence.policies.getActive(policy.versionId),
+      ).resolves.toEqual(policy);
+      await expect(
+        persistence.purposes.getVersion(purpose.purposeVersionId),
+      ).resolves.toEqual(purpose);
+      await expect(
+        persistence.processors.getDescriptor(processor.processorId),
+      ).resolves.toEqual(processor);
+
+      await app.close();
+    });
   },
 );
