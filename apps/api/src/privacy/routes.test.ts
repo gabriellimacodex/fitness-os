@@ -17,6 +17,7 @@ import {
   privacySubjectScopeIdSchema,
   privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
+  privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
 import {
@@ -161,6 +162,10 @@ describe('synthetic privacy composition seam', () => {
       method: 'GET',
       url: '/v1/privacy/synthetic/expected-inventory',
     });
+    const runtimeProcessorsGet = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/runtime-processors',
+    });
 
     for (const response of [
       readiness,
@@ -172,6 +177,7 @@ describe('synthetic privacy composition seam', () => {
       processorExecute,
       inventoryCoverage,
       expectedInventoryGet,
+      runtimeProcessorsGet,
     ]) {
       expect(response.statusCode).toBe(404);
       expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
@@ -1186,6 +1192,60 @@ describe('GET /v1/privacy/synthetic/expected-inventory', () => {
         inventoryVersionDigest: processor.inventoryVersionDigest,
       },
     });
+    await app.close();
+  });
+});
+
+describe('GET /v1/privacy/synthetic/runtime-processors', () => {
+  it('returns 404 when processors registry is not injected', async () => {
+    const app = buildSyntheticPrivacyApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/runtime-processors',
+    });
+    expect(response.statusCode).toBe(404);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'NOT_FOUND',
+    );
+    await app.close();
+  });
+
+  it('returns injected runtime descriptors stamped by TrustedClock', async () => {
+    const registry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    registry.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          // Dual zod brand across package boundaries.
+          processors: registry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/runtime-processors',
+    });
+    const body = privacySyntheticRuntimeProcessorsResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body).toMatchObject({
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+    });
+    expect(body.runtime).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          processorId: processor.processorId,
+          inventoryId: processor.inventoryId,
+        }),
+      ]),
+    );
     await app.close();
   });
 });

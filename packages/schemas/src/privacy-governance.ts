@@ -1392,3 +1392,17 @@ export const privacySyntheticExpectedInventoryResponseSchema = z
 export type PrivacySyntheticExpectedInventoryResponse = z.infer<
   typeof privacySyntheticExpectedInventoryResponseSchema
 >;
+
+/**
+ * Synthetic-only read of injected runtime processor registry descriptors.
+ * Mechanism evidence only — does not authorize production readiness.
+ */
+export const privacySyntheticRuntimeProcessorsResponseSchema = z
+  .object({
+    runtime: z.array(privacyProcessorDescriptorReferenceSchema).max(128),
+    evaluatedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacySyntheticRuntimeProcessorsResponse = z.infer<
+  typeof privacySyntheticRuntimeProcessorsResponseSchema
+>;

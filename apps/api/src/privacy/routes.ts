@@ -26,6 +26,7 @@ import {
   privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageRequestSchema,
   privacySyntheticInventoryCoverageResponseSchema,
+  privacySyntheticRuntimeProcessorsResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
   privacySyntheticProcessorExecuteResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
@@ -176,6 +177,27 @@ export function registerPrivacySyntheticRoutes(
       return privacySyntheticExpectedInventoryResponseSchema.parse({
         evaluatedAt: clock.nowUtcMs(),
         inventory,
+      });
+    },
+  );
+
+  app.get(
+    '/v1/privacy/synthetic/runtime-processors',
+    async (request, reply) => {
+      if (processors === undefined) {
+        return sendError(
+          request,
+          reply,
+          404,
+          'NOT_FOUND',
+          'Resource not found',
+        );
+      }
+
+      const runtime = await processors.listDescriptors();
+      return privacySyntheticRuntimeProcessorsResponseSchema.parse({
+        evaluatedAt: clock.nowUtcMs(),
+        runtime,
       });
     },
   );
