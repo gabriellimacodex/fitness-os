@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `054090d5ad2a1efb025768ab5d5f88d2c4e9c852` (progress refresh; disposition unchanged)
-- Prior recorded heads: `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `e4a413284ffe1f7d11103e3dae7167d8ca3381c0` (progress refresh; disposition unchanged)
+- Prior recorded heads: `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #140)
+- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #145)
 
 ## Explicit non-claims
 
@@ -58,6 +58,10 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Synthetic expected-inventory GET          | `#127`                                                                                                                           |
 | Synthetic runtime-processors GET          | `#128`                                                                                                                           |
 | Inventory triad / mismatch via ports      | `#130`, `#131`, `#135` (undeclared runtime), `#138` (`handler_missing`), `#139` (`missing_purpose`), `#140` (`missing_category`) |
+| PG registry bundle + data-use inject      | `#142`                                                                                                                           |
+| Withdrawal ledger write-through           | `#143`                                                                                                                           |
+| Subject-request + runtime-processors PG   | `#144`                                                                                                                           |
+| Inventory-coverage via PG listDescriptors | `#145`                                                                                                                           |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
