@@ -211,7 +211,16 @@ async function commitDecision(
 
   const appended = await ports.audit.append(audit);
   if (appended === 'unavailable') {
-    return { decision, status: 'audit_unavailable' };
+    const failClosedDecision = {
+      outcome: 'denied',
+      reasonCode: 'audit_unavailable',
+      evaluatedAt: decision.evaluatedAt,
+      correlationId: decision.correlationId,
+    } as const;
+    return {
+      decision: failClosedDecision,
+      status: 'audit_unavailable',
+    };
   }
 
   return { decision, status: 'evaluated' };

@@ -30,6 +30,7 @@ import {
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
+  privacySyntheticDataUseEvaluateResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticProcessorCommandSchema,
@@ -850,6 +851,27 @@ describe('processor descriptor and readiness contracts', () => {
       privacySyntheticDataUseEvaluateRequestSchema.safeParse({
         ...request,
         noticeText: 'forbidden',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an allowed decision when mandatory audit is unavailable', () => {
+    expect(
+      privacySyntheticDataUseEvaluateResponseSchema.safeParse({
+        status: 'audit_unavailable',
+        decision: {
+          outcome: 'allowed',
+          subjectScopeId: '22222222-2222-4222-8222-222222222222',
+          actorContextDigest: 'e'.repeat(64),
+          purposeVersionId: '33333333-3333-4333-8333-333333333333',
+          operationKind: 'data_use_evaluation',
+          engineeringCategoryId: '44444444-4444-4444-8444-444444444444',
+          processorDescriptorVersionDigest: 'c'.repeat(64),
+          policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          policyDigest: 'a'.repeat(64),
+          evaluatedAt: '2026-08-18T12:00:00.000Z',
+          correlationId: '55555555-5555-4555-8555-555555555555',
+        },
       }).success,
     ).toBe(false);
   });

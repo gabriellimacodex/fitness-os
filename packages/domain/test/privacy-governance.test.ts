@@ -191,7 +191,10 @@ describe('evaluateDataUse', () => {
     });
 
     expect(result.status).toBe('audit_unavailable');
-    expect(result.decision.outcome).toBe('allowed');
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'audit_unavailable',
+    });
     expect(ports.audit.events).toHaveLength(0);
   });
 
