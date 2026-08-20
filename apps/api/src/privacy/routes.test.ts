@@ -15,6 +15,7 @@ import {
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
+  privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacyWithdrawalIdSchema,
 } from '@fitness-os/schemas';
@@ -156,6 +157,10 @@ describe('synthetic privacy composition seam', () => {
       url: '/v1/privacy/synthetic/inventory-coverage',
       payload: {},
     });
+    const expectedInventoryGet = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/expected-inventory',
+    });
 
     for (const response of [
       readiness,
@@ -166,6 +171,7 @@ describe('synthetic privacy composition seam', () => {
       retentionAuthorize,
       processorExecute,
       inventoryCoverage,
+      expectedInventoryGet,
     ]) {
       expect(response.statusCode).toBe(404);
       expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
@@ -1090,5 +1096,96 @@ describe('POST /v1/privacy/synthetic/inventory-coverage', () => {
       'BAD_REQUEST',
     );
     await bare.close();
+  });
+});
+
+describe('GET /v1/privacy/synthetic/expected-inventory', () => {
+  const expected = privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: 'a39ece5',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+          {
+            family: 'privacy_subject_request',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  });
+
+  it('returns 404 when expectedInventory port is not injected', async () => {
+    const app = buildSyntheticPrivacyApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/expected-inventory',
+    });
+    expect(response.statusCode).toBe(404);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'NOT_FOUND',
+    );
+    await app.close();
+  });
+
+  it('returns injected expected inventory stamped by TrustedClock', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expected,
+          ) as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/expected-inventory',
+    });
+    const body = privacySyntheticExpectedInventoryResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body).toMatchObject({
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+      inventory: {
+        inventoryId: processor.inventoryId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+      },
+    });
+    await app.close();
   });
 });

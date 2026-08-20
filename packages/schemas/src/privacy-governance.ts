@@ -1378,3 +1378,17 @@ export const privacySyntheticInventoryCoverageResponseSchema = z
 export type PrivacySyntheticInventoryCoverageResponse = z.infer<
   typeof privacySyntheticInventoryCoverageResponseSchema
 >;
+
+/**
+ * Synthetic-only read of the injected expected processor inventory port.
+ * Mechanism evidence only — does not authorize production readiness.
+ */
+export const privacySyntheticExpectedInventoryResponseSchema = z
+  .object({
+    inventory: privacyExpectedProcessorInventorySchema,
+    evaluatedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacySyntheticExpectedInventoryResponse = z.infer<
+  typeof privacySyntheticExpectedInventoryResponseSchema
+>;
