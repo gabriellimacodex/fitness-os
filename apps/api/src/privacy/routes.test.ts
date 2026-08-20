@@ -1137,6 +1137,50 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
 
     await app.close();
   });
+
+  it('returns 503 when the injected audit sink is unavailable', async () => {
+    const evidenceLedger = {
+      appendEvidence: async () => {
+        throw new Error('injected ledger must not append from the route');
+      },
+      appendWithdrawal: async () => {
+        throw new Error('injected ledger must not withdraw from the route');
+      },
+      getAuthoritativeWithdrawal: async () => null,
+      getEvidence: async (evidenceId: string) =>
+        evidenceId === evidence.evidenceId ? evidence : null,
+    };
+    const audit = {
+      append: async () => 'unavailable' as const,
+    };
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          audit,
+          evidence: evidenceLedger,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toMatchObject({
+      status: 'audit_unavailable',
+      decision: { outcome: 'allowed' },
+    });
+
+    await app.close();
+  });
 });
 
 describe('POST /v1/privacy/synthetic/inventory-coverage', () => {
