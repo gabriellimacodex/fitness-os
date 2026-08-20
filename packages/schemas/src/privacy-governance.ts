@@ -1334,7 +1334,11 @@ export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
  */
 export const privacySyntheticInventoryCoverageRequestSchema = z
   .object({
-    expected: privacyExpectedProcessorInventorySchema,
+    /**
+     * Optional when the synthetic API is composed with an injected
+     * `PrivacyExpectedProcessorInventoryPort`; otherwise required at the route.
+     */
+    expected: privacyExpectedProcessorInventorySchema.optional(),
     runtime: z.array(privacyProcessorDescriptorReferenceSchema).max(128),
   })
   .strict();
