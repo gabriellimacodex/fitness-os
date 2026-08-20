@@ -1187,7 +1187,9 @@ export function registerOnboardingRoutes(
       if (
         invitation === undefined ||
         invitation.invitationId !== record.detail.invitationId ||
-        inspectInvitationState(invitation.state) !== 'issued'
+        inspectInvitationState(invitation.state) !== 'issued' ||
+        secretVerifier.verify(body.data.claimSecret, invitation.claimDigest)
+          .status !== 'matched'
       ) {
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
