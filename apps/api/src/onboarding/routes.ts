@@ -1,8 +1,11 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 import {
   canAllocateAttempt,
+  CryptoOnboardingIdFactory,
+  CryptoOnboardingSecretFactory,
   evaluateClaimEligibility,
+  HmacInvitationSecretVerifier,
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
@@ -17,9 +20,12 @@ import {
   transitionAttempt,
   type IdentitySessionPort,
   type IdentitySessionStore,
+  type InvitationSecretVerifier,
   type OnboardingClaimRepository,
+  type OnboardingIdFactory,
   type OnboardingPolicyGateway,
   type OnboardingReadinessProbe,
+  type OnboardingSecretFactory,
   type OnboardingTransitionSink,
   type PrincipalBindingRepository,
   type PrincipalReferenceDeriver,
@@ -71,15 +77,12 @@ import {
   createOnboardingStore,
   createStoredAttempt,
   decodeAttemptCursor,
-  digestClaimSecret,
   digestRetryToken,
   encodeAttemptCursor,
   getAttemptForPrincipal,
   isAfterCursor,
   mappingIdFor,
   mappedRolesFor,
-  newInvitationId,
-  newOperationId,
   nextOrdinalForRole,
   operationBindingKey,
   recordRoleMapping,
@@ -132,8 +135,12 @@ function summarizeAttempt(attempt: AttemptDetail) {
   });
 }
 
-function invitationReference(store: OnboardingStore, secret: string): string {
-  const digest = digestClaimSecret(secret, store.pepper);
+function invitationReference(
+  store: OnboardingStore,
+  secret: string,
+  digestSecret: (value: string) => string,
+): string {
+  const digest = digestSecret(secret);
   for (const invitation of store.invitations.values()) {
     if (invitation.claimDigest === digest) {
       return invitation.invitationId;
@@ -159,12 +166,6 @@ function hasCoachMapping(
   context: OnboardingContext,
 ): boolean {
   return effectiveMappedRoles(store, context).includes('coach');
-}
-
-function newClaimSecret() {
-  return invitationClaimSecretSchema.parse(
-    randomBytes(24).toString('base64url'),
-  );
 }
 
 function semanticDigest(input: Record<string, string>): string {
@@ -208,6 +209,7 @@ export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
     claimRepository?: OnboardingClaimRepository;
+    idFactory?: OnboardingIdFactory;
     identitySession?: IdentitySessionPort;
     identitySessionStore?: IdentitySessionStore;
     persistence?: OnboardingPgPersistence;
@@ -216,6 +218,8 @@ export function registerOnboardingRoutes(
     principalReference?: PrincipalReferenceDeriver;
     readinessProbe?: OnboardingReadinessProbe;
     resolveContext?: ResolveOnboardingContext;
+    secretFactory?: OnboardingSecretFactory;
+    secretVerifier?: InvitationSecretVerifier;
     store?: OnboardingStore;
     syntheticReadiness?: boolean;
     transitionSink?: OnboardingTransitionSink;
@@ -238,6 +242,12 @@ export function registerOnboardingRoutes(
     options.claimRepository ?? new SyntheticOnboardingClaimRepository();
   const transitionSink =
     options.transitionSink ?? new SyntheticOnboardingTransitionSink();
+  const idFactory = options.idFactory ?? new CryptoOnboardingIdFactory();
+  const secretFactory =
+    options.secretFactory ?? new CryptoOnboardingSecretFactory();
+  const secretVerifier =
+    options.secretVerifier ?? new HmacInvitationSecretVerifier(store.pepper);
+  const digestSecret = (secret: string) => secretVerifier.digest(secret);
   const readinessProbe =
     options.readinessProbe ??
     new SyntheticOnboardingReadinessProbe({
@@ -496,11 +506,15 @@ export function registerOnboardingRoutes(
     const invitation = await loadInvitationByClaimDigest(
       store,
       persistence,
-      digestClaimSecret(body.data.claimSecret, store.pepper),
+      digestSecret(body.data.claimSecret),
     );
     const digest = semanticDigest({
       authority: context.principalKey,
-      invitationRef: invitationReference(store, body.data.claimSecret),
+      invitationRef: invitationReference(
+        store,
+        body.data.claimSecret,
+        digestSecret,
+      ),
       namespace: 'inspect_invitation',
     });
     const inspection = invitation
@@ -511,7 +525,7 @@ export function registerOnboardingRoutes(
       return operationEnvelope({
         digest,
         namespace: 'inspect_invitation',
-        operationId: newOperationId(),
+        operationId: idFactory.operationId(),
         result: { outcome: 'invalid_or_unavailable' },
         state: 'operation_committed',
       });
@@ -520,7 +534,7 @@ export function registerOnboardingRoutes(
     return operationEnvelope({
       digest,
       namespace: 'inspect_invitation',
-      operationId: newOperationId(),
+      operationId: idFactory.operationId(),
       result: {
         command: 'inspect_invitation',
         inspection: {
@@ -548,7 +562,11 @@ export function registerOnboardingRoutes(
 
     const digest = semanticDigest({
       authority: context.principalKey,
-      invitationRef: invitationReference(store, body.data.claimSecret),
+      invitationRef: invitationReference(
+        store,
+        body.data.claimSecret,
+        digestSecret,
+      ),
       namespace: 'create_attempt',
     });
     const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
@@ -586,11 +604,11 @@ export function registerOnboardingRoutes(
     const invitation = await loadInvitationByClaimDigest(
       store,
       persistence,
-      digestClaimSecret(body.data.claimSecret, store.pepper),
+      digestSecret(body.data.claimSecret),
     );
 
     const commit = async (result: unknown) => {
-      const operationId = newOperationId();
+      const operationId = idFactory.operationId();
       await rememberOperation(bindingKey, context.principalKey, {
         digest,
         namespace: 'create_attempt',
@@ -762,7 +780,7 @@ export function registerOnboardingRoutes(
       }
 
       const commit = async (result: unknown) => {
-        const operationId = newOperationId();
+        const operationId = idFactory.operationId();
         await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'resume_attempt',
@@ -864,7 +882,7 @@ export function registerOnboardingRoutes(
       }
 
       const commit = async (result: unknown) => {
-        const operationId = newOperationId();
+        const operationId = idFactory.operationId();
         await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'abandon_attempt',
@@ -999,7 +1017,7 @@ export function registerOnboardingRoutes(
       }
 
       const commit = async (result: unknown) => {
-        const operationId = newOperationId();
+        const operationId = idFactory.operationId();
         await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'refresh_policy',
@@ -1080,7 +1098,11 @@ export function registerOnboardingRoutes(
       const digest = semanticDigest({
         attemptId: params.data.attemptId,
         authority: context.principalKey,
-        invitationRef: invitationReference(store, body.data.claimSecret),
+        invitationRef: invitationReference(
+          store,
+          body.data.claimSecret,
+          digestSecret,
+        ),
         namespace: 'claim_attempt',
       });
       const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
@@ -1116,7 +1138,7 @@ export function registerOnboardingRoutes(
       }
 
       const commit = async (result: unknown) => {
-        const operationId = newOperationId();
+        const operationId = idFactory.operationId();
         await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'claim_attempt',
@@ -1158,7 +1180,7 @@ export function registerOnboardingRoutes(
       const invitation = await loadInvitationByClaimDigest(
         store,
         persistence,
-        digestClaimSecret(body.data.claimSecret, store.pepper),
+        digestSecret(body.data.claimSecret),
       );
       if (
         invitation === undefined ||
@@ -1218,7 +1240,7 @@ export function registerOnboardingRoutes(
         record.detail.proposedRole,
       );
 
-      const operationId = newOperationId();
+      const operationId = idFactory.operationId();
       await transitionSink.append({
         aggregate: 'invitation',
         aggregateId: invitation.invitationId,
@@ -1374,10 +1396,12 @@ export function registerOnboardingRoutes(
       });
     }
 
-    const claimSecret = newClaimSecret();
-    const invitationId = newInvitationId();
+    const claimSecret = invitationClaimSecretSchema.parse(
+      secretFactory.claimSecret(),
+    );
+    const invitationId = idFactory.invitationId();
     await rememberInvitation({
-      claimDigest: digestClaimSecret(claimSecret, store.pepper),
+      claimDigest: digestSecret(claimSecret),
       invitationId,
       proposedRole: 'student',
       purpose: 'student_onboarding',
@@ -1396,7 +1420,7 @@ export function registerOnboardingRoutes(
       outcome: 'command_succeeded' as const,
     };
 
-    const operationId = newOperationId();
+    const operationId = idFactory.operationId();
     await rememberOperation(bindingKey, context.principalKey, {
       digest,
       namespace: 'issue_student_invitation',
@@ -1479,7 +1503,7 @@ export function registerOnboardingRoutes(
       }
 
       const commit = async (result: unknown) => {
-        const operationId = newOperationId();
+        const operationId = idFactory.operationId();
         await rememberOperation(bindingKey, context.principalKey, {
           digest,
           namespace: 'revoke_student_invitation',
