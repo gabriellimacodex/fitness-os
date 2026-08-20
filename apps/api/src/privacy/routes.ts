@@ -353,6 +353,46 @@ export function registerPrivacySyntheticRoutes(
       return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
     }
 
+    // When a disposable evidence ledger is injected, persist via appendWithdrawal
+    // (ledger owns authoritative existing state). Without inject, keep the pure
+    // planWithdrawal seam used by in-memory tests.
+    if (injectedEvidence !== undefined) {
+      const candidate = {
+        withdrawalId: body.data.withdrawalId,
+        evidenceId: body.data.evidenceId,
+        state: 'withdrawn' as const,
+        withdrawnAt: clock.nowUtcMs(),
+        operationId: body.data.operationId,
+        processingOutcome: 'accepted' as const,
+      };
+
+      const status = await injectedEvidence.appendWithdrawal(candidate);
+
+      if (status === 'conflict') {
+        return privacySyntheticWithdrawalPlanResponseSchema.parse({
+          status: 'conflict',
+        });
+      }
+
+      const stored = await injectedEvidence.getAuthoritativeWithdrawal(
+        body.data.evidenceId,
+      );
+
+      if (stored === null) {
+        return privacySyntheticWithdrawalPlanResponseSchema.parse({
+          status: 'conflict',
+        });
+      }
+
+      return privacySyntheticWithdrawalPlanResponseSchema.parse({
+        status,
+        withdrawal:
+          status === 'idempotent_replay'
+            ? { ...stored, processingOutcome: 'idempotent_replay' }
+            : stored,
+      });
+    }
+
     const result = planWithdrawal({
       existing: body.data.existing,
       withdrawalId: body.data.withdrawalId,

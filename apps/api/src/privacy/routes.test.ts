@@ -626,6 +626,124 @@ describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
 
     await app.close();
   });
+
+  it('persists withdrawal through an injected evidence ledger and denies later data-use', async () => {
+    const withdrawals = new Map<string, unknown>();
+    let appendCalls = 0;
+    const evidenceLedger = {
+      appendEvidence: async () => 'accepted' as const,
+      appendWithdrawal: async (record: {
+        evidenceId: string;
+        withdrawalId: string;
+        operationId: string;
+        withdrawnAt: string;
+      }) => {
+        appendCalls += 1;
+        const existing = withdrawals.get(record.evidenceId) as
+          | {
+              evidenceId: string;
+              operationId: string;
+              withdrawalId: string;
+              state: 'withdrawn';
+              withdrawnAt: string;
+              processingOutcome: string;
+            }
+          | undefined;
+        if (
+          existing &&
+          existing.operationId === record.operationId &&
+          existing.evidenceId === record.evidenceId
+        ) {
+          return 'idempotent_replay' as const;
+        }
+        if (existing?.state === 'withdrawn') {
+          return 'already_withdrawn' as const;
+        }
+        const stored = {
+          withdrawalId: record.withdrawalId,
+          evidenceId: record.evidenceId,
+          state: 'withdrawn' as const,
+          withdrawnAt: record.withdrawnAt,
+          operationId: record.operationId,
+          processingOutcome: 'accepted' as const,
+        };
+        withdrawals.set(record.evidenceId, stored);
+        return 'accepted' as const;
+      },
+      getAuthoritativeWithdrawal: async (evidenceId: string) =>
+        (withdrawals.get(evidenceId) as never) ?? null,
+      getEvidence: async (evidenceId: string) =>
+        evidenceId === evidence.evidenceId ? evidence : null,
+    };
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          evidence: evidenceLedger,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const withdrawalId = privacyWithdrawalIdSchema.parse(
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    );
+    const operationId = privacyOperationIdSchema.parse(
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    );
+
+    const planned = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {
+        existing: null,
+        withdrawalId,
+        evidenceId: evidence.evidenceId,
+        operationId,
+      },
+    });
+    expect(planned.statusCode).toBe(200);
+    expect(planned.json()).toMatchObject({
+      status: 'accepted',
+      withdrawal: {
+        evidenceId: evidence.evidenceId,
+        state: 'withdrawn',
+        processingOutcome: 'accepted',
+      },
+    });
+    expect(appendCalls).toBe(1);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {
+        existing: null,
+        withdrawalId,
+        evidenceId: evidence.evidenceId,
+        operationId,
+      },
+    });
+    expect(replay.json()).toMatchObject({
+      status: 'idempotent_replay',
+      withdrawal: { processingOutcome: 'idempotent_replay' },
+    });
+    expect(appendCalls).toBe(2);
+
+    const evaluated = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+    expect(evaluated.statusCode).toBe(200);
+    expect(evaluated.json()).toMatchObject({
+      status: 'evaluated',
+      decision: { outcome: 'denied', reasonCode: 'evidence_withdrawn' },
+    });
+
+    await app.close();
+  });
 });
 
 describe('POST /v1/privacy/synthetic/retention-preview', () => {

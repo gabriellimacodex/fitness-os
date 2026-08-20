@@ -170,6 +170,98 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await app.close();
     });
 
+    it('persists withdrawal over disposable Postgres and denies subsequent data-use', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+      await expect(persistence.purposes.put(purpose)).resolves.toBe('accepted');
+      await expect(persistence.processors.put(processor)).resolves.toBe(
+        'accepted',
+      );
+      await expect(persistence.evidence.appendEvidence(evidence)).resolves.toBe(
+        'accepted',
+      );
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            audit: persistence.audit,
+            evidence: persistence.evidence,
+            policies: persistence.policies,
+            purposes: persistence.purposes,
+            processors: persistence.processors,
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            subjectRequests: persistence.subjectRequests,
+          },
+        },
+      );
+
+      const withdrawalId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      const operationId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+      const planned = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/withdrawal-plan',
+        payload: {
+          existing: null,
+          withdrawalId,
+          evidenceId: evidence.evidenceId,
+          operationId,
+        },
+      });
+      expect(planned.statusCode).toBe(200);
+      expect(planned.json()).toMatchObject({
+        status: 'accepted',
+        withdrawal: { state: 'withdrawn', evidenceId: evidence.evidenceId },
+      });
+
+      const withdrawalRows = await connection.db.execute<{
+        evidence_id: string;
+        state: string;
+      }>(sql`
+        SELECT evidence_id, state
+        FROM privacy_withdrawal
+        WHERE evidence_id = ${evidence.evidenceId}
+      `);
+      expect(withdrawalRows).toEqual([
+        { evidence_id: evidence.evidenceId, state: 'withdrawn' },
+      ]);
+
+      const evaluated = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/data-use-evaluate',
+        payload: {
+          actor: privacyActorContextReferenceSchema.parse({
+            issuer: 'synthetic.identity.v1',
+            version: 1,
+            principalReferenceDigest: 'e'.repeat(64),
+            authorityClaims: ['data_use_evaluate'],
+            synthetic: true,
+          }),
+          purpose,
+          policy,
+          processor,
+          operationKind: 'data_use_evaluation',
+          engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+            '44444444-4444-4444-8444-444444444444',
+          ),
+          evidence,
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '22222222-2222-4222-8222-222222222222',
+          ),
+          productionMode: false,
+        },
+      });
+      expect(evaluated.statusCode).toBe(200);
+      expect(evaluated.json()).toMatchObject({
+        status: 'evaluated',
+        decision: { outcome: 'denied', reasonCode: 'evidence_withdrawn' },
+      });
+
+      await app.close();
+    });
+
     it('evaluates data-use against disposable Postgres policy/purpose/processor registries', async () => {
       const persistence = createPrivacyPgPersistence(connection);
       await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
