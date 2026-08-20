@@ -1249,3 +1249,102 @@ describe('GET /v1/privacy/synthetic/runtime-processors', () => {
     await app.close();
   });
 });
+
+describe('synthetic inventory triad (GET expected + GET runtime + coverage)', () => {
+  const expected = privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: 'b1a4f90',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+          {
+            family: 'privacy_subject_request',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  });
+
+  it('matches coverage from injected ports without request bodies for inventory', async () => {
+    const registry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    registry.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expected,
+          ) as never,
+          processors: registry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const expectedGet = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/expected-inventory',
+    });
+    expect(
+      privacySyntheticExpectedInventoryResponseSchema.parse(expectedGet.json())
+        .inventory.inventoryId,
+    ).toBe(processor.inventoryId);
+
+    const runtimeGet = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/runtime-processors',
+    });
+    expect(
+      privacySyntheticRuntimeProcessorsResponseSchema.parse(runtimeGet.json())
+        .runtime,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ processorId: processor.processorId }),
+      ]),
+    );
+
+    const coverage = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {},
+    });
+    expect(
+      privacySyntheticInventoryCoverageResponseSchema.parse(coverage.json()),
+    ).toMatchObject({
+      status: 'matched',
+      mismatches: [],
+      evaluatedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+    await app.close();
+  });
+});
