@@ -692,6 +692,8 @@ export function registerOnboardingRoutes(
       invitation,
       nextOrdinalForRole(store, context.principalKey, invitation.proposedRole),
       context.principalKey,
+      new Date().toISOString(),
+      idFactory.attemptId(),
     );
     await rememberAttempt(record);
 

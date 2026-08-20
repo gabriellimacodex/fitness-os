@@ -877,6 +877,49 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
 });
 
 describe('student invitation list/issue/revoke', () => {
+  it('creates attempts with OnboardingIdFactory.attemptId', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const fixedAttemptId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          idFactory: {
+            attemptId: () => onboardingAttemptIdSchema.parse(fixedAttemptId),
+            invitationId: () =>
+              onboardingInvitationIdSchema.parse(
+                'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+              ),
+            operationId: () =>
+              onboardingOperationIdSchema.parse(
+                'ffffffff-ffff-4fff-8fff-ffffffffffff',
+              ),
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    expect(createdBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: { attemptId: fixedAttemptId },
+    });
+    await app.close();
+  });
+
   it('issues claim material through OnboardingSecretFactory and OnboardingIdFactory', async () => {
     const store = createOnboardingStore();
     const fixedSecret = 'injected-claim-secret-factory-01';
