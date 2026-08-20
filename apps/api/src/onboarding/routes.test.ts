@@ -1776,6 +1776,99 @@ describe('policy-refresh and claim', () => {
     await app.close();
   });
 
+  it('accumulates resume→abandon attempt evidence via SyntheticOnboardingTransitionSink.list()', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const sink = new SyntheticOnboardingTransitionSink();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: sink,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-ra-create'),
+      },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+    const lifecycle = createdBody.result.attempt.lifecycle;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-ra-resume'),
+      },
+    });
+
+    const abandoned = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/abandon`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-ra-abandon'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(abandoned.json()).result,
+    ).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: { lifecycle: 'terminal', terminalReason: 'abandoned' },
+    });
+
+    expect(sink.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          aggregate: 'attempt',
+          aggregateId: attemptId,
+          previousState: 'unallocated',
+          nextState: lifecycle,
+          reason: 'create_attempt',
+        }),
+        expect.objectContaining({
+          aggregate: 'attempt',
+          aggregateId: attemptId,
+          previousState: lifecycle,
+          nextState: lifecycle,
+          reason: 'resume_attempt',
+        }),
+        expect.objectContaining({
+          aggregate: 'attempt',
+          aggregateId: attemptId,
+          previousState: lifecycle,
+          nextState: 'terminal',
+          reason: 'abandon_attempt',
+        }),
+      ]),
+    );
+    const firstRead = sink.list();
+    expect(firstRead).toHaveLength(3);
+    expect(sink.list()).toEqual(firstRead);
+
+    await app.close();
+  });
+
   it('accumulates create→policy→claim evidence via SyntheticOnboardingTransitionSink.list()', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
