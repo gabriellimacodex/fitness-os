@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a` (progress refresh; disposition unchanged)
-- Prior recorded heads: `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `054090d5ad2a1efb025768ab5d5f88d2c4e9c852` (progress refresh; disposition unchanged)
+- Prior recorded heads: `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #135)
+- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #140)
 
 ## Explicit non-claims
 
@@ -38,29 +38,29 @@
 
 Explicit Option A / privacy-governance PRs only (not a continuous numeric range):
 
-| Slice                                     | PR(s)                                       |
-| ----------------------------------------- | ------------------------------------------- |
-| Option A decision                         | `decisions/PRD_21_OPTION_A.md`              |
-| Contracts / domain / synthetic            | `#28`, `#33`, `#35`, `#38`–`#45`            |
-| Disposable PG core → request              | `#46`–`#48`                                 |
-| Standing `/goal` meta                     | `#49`, `#56`, `#58`, `#123` (and related)   |
-| Transition history                        | `#50`                                       |
-| API → repository wire                     | `#51`                                       |
-| Expected inventory + coverage             | `#52`, `#53`                                |
-| Append-only guards                        | `#54`                                       |
-| SubjectDataProcessor sim + API            | `#55`, `#56`                                |
-| Export digest simulation                  | `#57`                                       |
-| Destructive capability deny               | `#58`                                       |
-| Synthetic clock / IdFactory               | `#118`                                      |
-| Inventory-coverage HTTP seam              | `#120`, `#121` (contract freeze)            |
-| Expected inventory port inject            | `#122`                                      |
-| Runtime registry listDescriptors / inject | `#124`                                      |
-| Synthetic expected-inventory GET          | `#127`                                      |
-| Synthetic runtime-processors GET          | `#128`                                      |
-| Inventory triad / mismatch via ports      | `#130`, `#131`, `#135` (undeclared runtime) |
+| Slice                                     | PR(s)                                                                                                                            |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Option A decision                         | `decisions/PRD_21_OPTION_A.md`                                                                                                   |
+| Contracts / domain / synthetic            | `#28`, `#33`, `#35`, `#38`–`#45`                                                                                                 |
+| Disposable PG core → request              | `#46`–`#48`                                                                                                                      |
+| Standing `/goal` meta                     | `#49`, `#56`, `#58`, `#123` (and related)                                                                                        |
+| Transition history                        | `#50`                                                                                                                            |
+| API → repository wire                     | `#51`                                                                                                                            |
+| Expected inventory + coverage             | `#52`, `#53`                                                                                                                     |
+| Append-only guards                        | `#54`                                                                                                                            |
+| SubjectDataProcessor sim + API            | `#55`, `#56`                                                                                                                     |
+| Export digest simulation                  | `#57`                                                                                                                            |
+| Destructive capability deny               | `#58`                                                                                                                            |
+| Synthetic clock / IdFactory               | `#118`                                                                                                                           |
+| Inventory-coverage HTTP seam              | `#120`, `#121` (contract freeze)                                                                                                 |
+| Expected inventory port inject            | `#122`                                                                                                                           |
+| Runtime registry listDescriptors / inject | `#124`                                                                                                                           |
+| Synthetic expected-inventory GET          | `#127`                                                                                                                           |
+| Synthetic runtime-processors GET          | `#128`                                                                                                                           |
+| Inventory triad / mismatch via ports      | `#130`, `#131`, `#135` (undeclared runtime), `#138` (`handler_missing`), `#139` (`missing_purpose`), `#140` (`missing_category`) |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
-composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`
+composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
 TransitionSink chain tests) are **out of scope** for this inventory except where
 listed as explicit privacy seams.
 
