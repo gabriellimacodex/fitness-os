@@ -16,6 +16,7 @@ import { buildApp } from '../app.js';
 import {
   createOnboardingStore,
   createStoredAttempt,
+  digestClaimSecret,
   mappingIdFor,
 } from './store.js';
 import { seedInvitation, seedIssuedInvitation } from './test-store.js';
@@ -1217,6 +1218,66 @@ describe('policy-refresh and claim', () => {
     });
     expect(claimed.body).not.toContain(CLAIM_SECRET);
 
+    await app.close();
+  });
+
+  it('denies claim when InvitationSecretVerifier reports mismatch', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          secretVerifier: {
+            digest: (secret) => digestClaimSecret(secret, store.pepper),
+            verify: () => ({ status: 'mismatch' as const }),
+          },
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-policy-verify'),
+      },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-verify'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(claimed.json()).result,
+    ).toMatchObject({ outcome: 'invalid_or_unavailable' });
+    expect(claimed.body).not.toContain('mismatch');
     await app.close();
   });
 
