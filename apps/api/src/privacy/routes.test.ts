@@ -1395,4 +1395,51 @@ describe('synthetic inventory triad (GET expected + GET runtime + coverage)', ()
 
     await app.close();
   });
+
+  it('reports inventory_mismatch for undeclared runtime processors via ports', async () => {
+    const undeclared = privacyProcessorDescriptorReferenceSchema.parse({
+      ...processor,
+      processorId: '88888888-8888-4888-8888-888888888888',
+      descriptorDigest: 'e'.repeat(64),
+    });
+    const registry = new SyntheticPrivacyRuntimeProcessorRegistry();
+    registry.seed(processor);
+    registry.seed(undeclared);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+            expected,
+          ) as never,
+          processors: registry as never,
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        },
+      },
+    );
+
+    const coverage = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/inventory-coverage',
+      payload: {},
+    });
+    const body = privacySyntheticInventoryCoverageResponseSchema.parse(
+      coverage.json(),
+    );
+
+    expect(coverage.statusCode).toBe(200);
+    expect(body.status).toBe('mismatched');
+    expect(body.mismatches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          diagnosticCode: 'inventory_mismatch',
+          detail: 'undeclared_runtime_processor',
+          processorId: undeclared.processorId,
+        }),
+      ]),
+    );
+
+    await app.close();
+  });
 });
