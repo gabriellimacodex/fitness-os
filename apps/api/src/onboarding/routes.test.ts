@@ -1,4 +1,7 @@
-import { FixedTrustedClock } from '@fitness-os/domain';
+import {
+  FixedTrustedClock,
+  SyntheticOnboardingTransitionSink,
+} from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
   attemptDetailSchema,
@@ -1684,6 +1687,108 @@ describe('policy-refresh and claim', () => {
         },
       ]),
     );
+
+    await app.close();
+  });
+
+  it('accumulates create→policy→claim evidence via SyntheticOnboardingTransitionSink.list()', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const sink = new SyntheticOnboardingTransitionSink();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: sink,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-chain-create'),
+      },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-chain-policy'),
+      },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-chain-claim'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(claimed.json()).result,
+    ).toMatchObject({ outcome: 'completed', role: 'student' });
+
+    const reasons = sink.list().map((row) => row.reason);
+    expect(reasons).toEqual(
+      expect.arrayContaining([
+        'create_attempt',
+        'refresh_policy',
+        'claim_attempt',
+      ]),
+    );
+    expect(sink.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          aggregate: 'attempt',
+          previousState: 'unallocated',
+          nextState: 'policy_pending',
+          reason: 'create_attempt',
+        }),
+        expect.objectContaining({
+          aggregate: 'attempt',
+          previousState: 'policy_pending',
+          nextState: 'ready_to_claim',
+          reason: 'refresh_policy',
+        }),
+        expect.objectContaining({
+          aggregate: 'attempt',
+          previousState: 'ready_to_claim',
+          nextState: 'completed',
+          reason: 'claim_attempt',
+        }),
+        expect.objectContaining({
+          aggregate: 'invitation',
+          previousState: 'issued',
+          nextState: 'claimed',
+          reason: 'claim_attempt',
+        }),
+      ]),
+    );
+    const firstRead = sink.list();
+    expect(firstRead.length).toBeGreaterThanOrEqual(5);
+    // Append-only: repeated list() returns an equal snapshot.
+    expect(sink.list()).toEqual(firstRead);
 
     await app.close();
   });
