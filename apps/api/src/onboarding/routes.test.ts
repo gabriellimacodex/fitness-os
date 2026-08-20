@@ -1023,6 +1023,91 @@ describe('student invitation list/issue/revoke', () => {
     await app.close();
   });
 
+  it('accumulates issue→revoke invitation evidence via SyntheticOnboardingTransitionSink.list()', async () => {
+    const store = createOnboardingStore();
+    const sink = new SyntheticOnboardingTransitionSink();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-principal',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: sink,
+        },
+      },
+    );
+
+    const issued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse(
+          'synthetic-retry-issue-revoke-chain',
+        ),
+      },
+    });
+    const issuedBody = onboardingOperationResponseSchema.parse(issued.json());
+    if (
+      !issuedBody.result ||
+      issuedBody.result.outcome !== 'command_succeeded' ||
+      !('issued' in issuedBody.result)
+    ) {
+      throw new Error('expected issued invitation');
+    }
+    const invitationId = issuedBody.result.issued.invitationId;
+
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${invitationId}/revoke`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-revoke-sink-chain'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(revoked.json()).result,
+    ).toMatchObject({
+      outcome: 'command_succeeded',
+      command: 'revoke_student_invitation',
+      invitation: { invitationId, state: 'revoked' },
+    });
+
+    const reasons = sink.list().map((row) => row.reason);
+    expect(reasons).toEqual(
+      expect.arrayContaining([
+        'issue_student_invitation',
+        'revoke_student_invitation',
+      ]),
+    );
+    expect(sink.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          aggregate: 'invitation',
+          previousState: 'unissued',
+          nextState: 'issued',
+          reason: 'issue_student_invitation',
+          aggregateId: invitationId,
+        }),
+        expect.objectContaining({
+          aggregate: 'invitation',
+          previousState: 'issued',
+          nextState: 'revoked',
+          reason: 'revoke_student_invitation',
+          aggregateId: invitationId,
+        }),
+      ]),
+    );
+    const firstRead = sink.list();
+    expect(firstRead).toHaveLength(2);
+    expect(sink.list()).toEqual(firstRead);
+
+    await app.close();
+  });
+
   it('issues claim material through OnboardingSecretFactory and OnboardingIdFactory', async () => {
     const store = createOnboardingStore();
     const fixedSecret = 'injected-claim-secret-factory-01';
