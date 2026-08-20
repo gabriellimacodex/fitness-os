@@ -870,9 +870,32 @@ export function registerOnboardingRoutes(
         });
       }
 
-      return await commit({
+      const operationId = idFactory.operationId();
+      await appendTransition({
+        aggregate: 'attempt',
+        aggregateId: record.detail.attemptId,
+        nextState: record.detail.lifecycle,
+        operationId,
+        previousState: record.detail.lifecycle,
+        reason: 'resume_attempt',
+      });
+      const result = {
         attempt: record.detail,
-        outcome: 'current_state',
+        outcome: 'current_state' as const,
+      };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'resume_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'resume_attempt',
+        operationId,
+        result,
+        state: 'operation_committed',
       });
     },
   );
