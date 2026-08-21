@@ -71,6 +71,50 @@ const processorResolver = {
       : null,
 };
 
+const expectedInventoryArtifact = privacyExpectedProcessorInventorySchema.parse(
+  {
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '579b735',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  },
+);
+
+const expectedInventoryPort = new SyntheticPrivacyExpectedProcessorInventory(
+  expectedInventoryArtifact,
+);
+
 const actor = privacyActorContextReferenceSchema.parse({
   issuer: 'synthetic.identity.v1',
   version: 1,
@@ -141,6 +185,7 @@ function buildSyntheticPrivacyApp() {
       privacy: {
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
         processorResolver,
+        expectedInventory: expectedInventoryPort as never,
       },
     },
   );
@@ -324,6 +369,7 @@ describe('GET /v1/privacy/synthetic/readiness', () => {
         privacy: {
           clock: new SyntheticPrivacyTrustedClock(fixedUtc),
           processorResolver,
+          expectedInventory: expectedInventoryPort as never,
           ids: {
             auditEventId: () => fixedAudit,
             correlationId: () => fixedCorrelation,
@@ -370,7 +416,6 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate', () => {
       url: '/v1/privacy/synthetic/data-use-evaluate',
       payload: evaluatePayload,
     });
-
     expect(response.statusCode).toBe(200);
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.json()).toMatchObject({
@@ -387,6 +432,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          expectedInventory: expectedInventoryPort as never,
           processorResolver: {
             resolve: async () => ({
               descriptorReference: () => processor,
@@ -815,6 +861,7 @@ describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           processorResolver,
+          expectedInventory: expectedInventoryPort as never,
         },
       },
     );
@@ -1101,6 +1148,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected registries'
                 ? new SyntheticPrivacySubjectDataProcessor(processor, [])
                 : null,
           },
+          expectedInventory: expectedInventoryPort as never,
           evidence: {
             appendEvidence: async () => 'accepted' as const,
             appendWithdrawal: async () => 'accepted' as const,
@@ -1203,6 +1251,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           processorResolver,
+          expectedInventory: expectedInventoryPort as never,
         },
       },
     );
@@ -1253,6 +1302,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           processorResolver,
+          expectedInventory: expectedInventoryPort as never,
         },
       },
     );
@@ -1275,6 +1325,45 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
       policyVersionId: policy.versionId,
     });
 
+    await app.close();
+  });
+
+  it('denies and never executes when expected inventory omits the processor (H3)', async () => {
+    let executions = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                executions += 1;
+                throw new Error('must not execute');
+              },
+            }),
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: {
+        outcome: 'denied',
+        reasonCode: 'processor_undeclared',
+      },
+    });
+    expect(executions).toBe(0);
     await app.close();
   });
 
@@ -1302,6 +1391,8 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
           audit,
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
         },
       },
     );
@@ -1506,7 +1597,16 @@ describe('POST /v1/privacy/synthetic/inventory-coverage', () => {
     });
     await app.close();
 
-    const bare = buildSyntheticPrivacyApp();
+    const bare = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+        },
+      },
+    );
     const rejected = await bare.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/inventory-coverage',
@@ -1566,7 +1666,16 @@ describe('GET /v1/privacy/synthetic/expected-inventory', () => {
   });
 
   it('returns 404 when expectedInventory port is not injected', async () => {
-    const app = buildSyntheticPrivacyApp();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+        },
+      },
+    );
     const response = await app.inject({
       method: 'GET',
       url: '/v1/privacy/synthetic/expected-inventory',

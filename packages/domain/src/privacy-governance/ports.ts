@@ -175,6 +175,11 @@ export interface PrivacyDataUsePorts {
   purposes: PrivacyPurposeRegistry;
   evidence: PrivacyAuthorizationEvidenceLedger;
   processors: PrivacyRuntimeProcessorRegistry;
+  /**
+   * Reviewed expected inventory. Synthetic execution requires an exact entry
+   * binding (digest / environment / readiness / attribution metadata).
+   */
+  expectedInventory: PrivacyExpectedProcessorInventoryPort;
   processorResolver: PrivacySubjectDataProcessorResolver;
 }
 

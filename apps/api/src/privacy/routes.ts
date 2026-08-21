@@ -300,6 +300,7 @@ export function registerPrivacySyntheticRoutes(
         clock,
         // Dual zod brand across package boundaries — same pattern as privacy tests.
         ids: ids as never,
+        expectedInventory,
       });
       if (injectedPolicies === undefined) {
         syntheticPorts.policies.seed(body.data.policy);
@@ -326,6 +327,8 @@ export function registerPrivacySyntheticRoutes(
         policies: injectedPolicies ?? syntheticPorts.policies,
         purposes: injectedPurposes ?? syntheticPorts.purposes,
         processors: processors ?? syntheticPorts.processors,
+        expectedInventory:
+          expectedInventory ?? syntheticPorts.expectedInventory,
         processorResolver:
           options.processorResolver ?? syntheticPorts.processorResolver,
       };

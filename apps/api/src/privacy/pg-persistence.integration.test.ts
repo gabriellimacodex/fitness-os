@@ -88,6 +88,46 @@ const evidence = privacyEvidenceReferenceSchema.parse({
   recordedAt: '2026-08-18T11:00:00.000Z',
 });
 
+const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+  privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '579b735',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  }),
+);
+
 describe.skipIf(!process.env.TEST_DATABASE_URL)(
   'privacy PG persistence synthetic HTTP composition',
   () => {
@@ -131,6 +171,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
                   ? new SyntheticPrivacySubjectDataProcessor(processor, [])
                   : null,
             },
+            expectedInventory: expectedInventory as never,
             subjectRequests: persistence.subjectRequests,
           },
         },
@@ -208,6 +249,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             policies: persistence.policies,
             purposes: persistence.purposes,
             processors: persistence.processors,
+            processorResolver: {
+              resolve: async (processorId: string) =>
+                processorId === processor.processorId
+                  ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+                  : null,
+            },
+            expectedInventory: expectedInventory as never,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
             subjectRequests: persistence.subjectRequests,
           },
@@ -307,6 +355,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
                   ? new SyntheticPrivacySubjectDataProcessor(processor, [])
                   : null,
             },
+            expectedInventory: expectedInventory as never,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
             subjectRequests: persistence.subjectRequests,
           },
