@@ -120,6 +120,30 @@ export interface PrivacySubjectDataProcessorResolver {
   resolve(processorId: string): Promise<PrivacySubjectDataProcessor | null>;
 }
 
+/**
+ * Provider-neutral integrity check for synthetic Option A packages/evidence.
+ * Adapters verify declared content digests without exposing key material.
+ */
+export type PrivacyIntegritySubjectKind =
+  'policy_package' | 'authorization_evidence';
+
+export type PrivacyIntegrityVerificationResult =
+  { status: 'valid' } | { status: 'invalid' } | { status: 'unavailable' };
+
+export interface PrivacyIntegrityVerificationInput {
+  kind: PrivacyIntegritySubjectKind;
+  subjectId: string;
+  contentDigest: string;
+  canonicalizationVersion: string;
+  synthetic: boolean;
+}
+
+export interface PrivacyIntegrityVerifier {
+  verify(
+    input: PrivacyIntegrityVerificationInput,
+  ): Promise<PrivacyIntegrityVerificationResult>;
+}
+
 export type PrivacySubjectRequestApplyResult =
   | {
       status: 'advanced';
@@ -180,6 +204,11 @@ export interface PrivacyDataUsePorts {
    * binding (digest / environment / readiness / attribution metadata).
    */
   expectedInventory: PrivacyExpectedProcessorInventoryPort;
+  /**
+   * Verifies sealed content digests for policy/evidence after inventory bind
+   * and before processor execution. Missing/unavailable verifiers fail closed.
+   */
+  integrityVerifier: PrivacyIntegrityVerifier;
   processorResolver: PrivacySubjectDataProcessorResolver;
 }
 

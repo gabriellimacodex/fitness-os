@@ -30,6 +30,7 @@ import {
   planRetentionPreview,
   planWithdrawal,
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   transitionSubjectRequest,
@@ -372,6 +373,299 @@ describe('evaluateDataUse', () => {
       outcome: 'denied',
       reasonCode: 'processor_handler_missing',
     });
+  });
+
+  it('allows when sealed policy and evidence integrity verify (IntegrityVerifier)', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async (command) => {
+              executions += 1;
+              return privacySyntheticProcessorResultSchema.parse({
+                status: 'completed',
+                reasonCode: null,
+                capability: command.capability,
+                families: [],
+                accessLocatorDigest: 'f'.repeat(64),
+                exportManifestDigest: null,
+                operationId: command.operationId,
+                correlationId: command.correlationId,
+              });
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.status).toBe('evaluated');
+    expect(result.decision.outcome).toBe('allowed');
+    expect(executions).toBe(1);
+  });
+
+  it('denies when policy content digest diverges from sealed integrity (IntegrityVerifier)', async () => {
+    const ports = seedHappyPath();
+    const verifier = new SyntheticPrivacyIntegrityVerifier();
+    verifier.sealPolicy({ ...policy, contentDigest: '9'.repeat(64) });
+    verifier.sealEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: verifier,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_integrity_invalid',
+    });
+    expect(executions).toBe(0);
+    expect(ports.audit.events).toHaveLength(1);
+    expect(ports.audit.events[0]?.outcome).toBe('denied');
+  });
+
+  it('denies when policy package was never sealed (IntegrityVerifier absent subject)', async () => {
+    const ports = seedHappyPath();
+    const verifier = new SyntheticPrivacyIntegrityVerifier();
+    // Seal only evidence — policy subject missing.
+    verifier.sealEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: verifier,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_integrity_invalid',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('fails closed when integrity verifier is unavailable', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: {
+          verify: async () => ({ status: 'unavailable' as const }),
+        },
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'dependency_unavailable',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('fails closed when integrity verifier throws', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: {
+          verify: async () => {
+            throw new Error('raw verifier secret');
+          },
+        },
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'dependency_unavailable',
+    });
+    expect(executions).toBe(0);
+    expect(JSON.stringify(result)).not.toContain('raw verifier secret');
+  });
+
+  it('fails closed when integrity verifier port is absent', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: null as never,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'dependency_unavailable',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('denies when evidence digest diverges from sealed integrity', async () => {
+    const ports = seedHappyPath();
+    const verifier = new SyntheticPrivacyIntegrityVerifier();
+    verifier.sealPolicy(policy);
+    verifier.sealEvidence({ ...evidence, contentDigest: '8'.repeat(64) });
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        integrityVerifier: verifier,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_integrity_invalid',
+    });
+    expect(executions).toBe(0);
   });
 
   it('does not execute when expected inventory omits the processor (H3 attribution)', async () => {
