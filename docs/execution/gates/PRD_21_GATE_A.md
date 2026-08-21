@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `80415ff88f42e657aae185e653d9b4dfc606e028` (progress refresh; disposition unchanged)
+- Exact head at recording: `07822b88df5fd8d8eceb00337b79c163fe42e35d` (progress refresh; disposition unchanged)
 - Prior recorded heads: `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-20` (landed-evidence refresh only; includes #150)
+- Record timestamp: `2026-08-21` (landed-evidence refresh only; includes #152)
 
 ## Explicit non-claims
 
@@ -118,8 +118,9 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
 - Synthetic inventory fixture is mechanism-only (`synthetic_only`); not a
   production inventory review; exact-head inventory regeneration and independent
   coverage review remain required for a future Gate A package.
-- Attributable actor/subject, policy integrity, environment, and activation
-  bindings remain incomplete beyond the prebound synthetic processor slice (H3).
+- Processor expected-inventory binding (digests, owner, environment,
+  mechanism readiness) closed in #152. Remaining H3: attributable actor/subject
+  mapping and policy IntegrityVerifier/attribution package checks.
 - Subject-request orchestration, retention work persistence, and restricted
   governance-lifecycle completeness remain partial (H4).
 - Table/record-family inventory and reviewed exception coverage remain incomplete
