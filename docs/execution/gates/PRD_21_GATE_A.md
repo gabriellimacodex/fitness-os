@@ -65,6 +65,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Audit-unavailable regression / correction | `#147` exposed unsafe `allowed`; `#148` corrected to `denied/audit_unavailable`                                                  |
 | Complete fail-closed readiness            | `#149` (all components exactly once; no-probe false; requires `0011`)                                                            |
 | Audited prebound access handler           | `#150` (literal access; registry/handler binding; audit before execute)                                                          |
+| Expected-inventory execute binding        | `#152` (digests/owner/environment/mechanism readiness before execute)                                                            |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
