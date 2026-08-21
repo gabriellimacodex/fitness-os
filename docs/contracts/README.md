@@ -165,10 +165,12 @@ Privacy readiness responses contain every declared component exactly once.
 The synthetic API fails mechanism readiness closed when no complete probe is
 injected; production readiness remains false under the active legal stop.
 
-Synthetic data-use evaluation requires the explicit `access` capability and a
-processor handler bound by the composition root. The mandatory audit must be
-accepted before that handler executes; denial and audit-unavailable paths never
-invoke it.
+Synthetic data-use evaluation requires the explicit `access` capability, a
+processor handler bound by the composition root, and an exact reviewed expected
+inventory entry binding (descriptor/inventory digests, code owner, synthetic
+marker, environment applicability, and mechanism-only readiness). The mandatory
+audit must be accepted before that handler executes; denial and
+audit-unavailable paths never invoke it.
 
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
 request/audit/processor locators, tagged data-use decisions, and fail-closed

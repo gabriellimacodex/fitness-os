@@ -90,8 +90,50 @@ const subjectScopeId = privacySubjectScopeIdSchema.parse(
   '22222222-2222-4222-8222-222222222222',
 );
 
+const expectedInventory = privacyExpectedProcessorInventorySchema.parse({
+  schemaVersion: 'privacy.processor-inventory.v1',
+  inventoryId: processor.inventoryId,
+  inventoryVersionDigest: processor.inventoryVersionDigest,
+  canonicalizationVersion: 'privacy-governance.canonical.v1',
+  sourceCommit: '579b735',
+  processors: [
+    {
+      processorId: processor.processorId,
+      registrationVersion: 1,
+      inventoryId: processor.inventoryId,
+      descriptorDigest: processor.descriptorDigest,
+      codeOwner: processor.codeOwner,
+      adapterPackage: '@fitness-os/domain',
+      storageKind: 'in_memory_synthetic',
+      allowedPurposeIds: processor.allowedPurposeIds,
+      allowedCategoryIds: processor.allowedCategoryIds,
+      subjectLookupStrategy: 'synthetic_scope_id',
+      supportedCapabilities: processor.capabilities,
+      unsupportedCapabilities: [
+        {
+          capability: 'delete',
+          rationale: 'deferred_to_later_prd21_slice',
+        },
+      ],
+      recordFamilies: [
+        {
+          family: 'privacy_audit_event',
+          lifecycleAction: 'retain_until_reviewed',
+        },
+      ],
+      environmentApplicability: 'synthetic_only',
+      requiredReadiness: 'mechanism_only',
+      synthetic: true,
+    },
+  ],
+});
+
 function seedHappyPath() {
-  const ports = createSyntheticPrivacyDataUsePorts();
+  const ports = createSyntheticPrivacyDataUsePorts({
+    expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventory,
+    ),
+  });
   ports.policies.seed(policy);
   ports.purposes.seed(purpose);
   ports.processors.seed(processor);
@@ -330,6 +372,214 @@ describe('evaluateDataUse', () => {
       outcome: 'denied',
       reasonCode: 'processor_handler_missing',
     });
+  });
+
+  it('does not execute when expected inventory omits the processor (H3 attribution)', async () => {
+    const ports = createSyntheticPrivacyDataUsePorts();
+    ports.policies.seed(policy);
+    ports.purposes.seed(purpose);
+    ports.processors.seed(processor);
+    ports.evidence.seedEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_undeclared',
+    });
+    expect(executions).toBe(0);
+    expect(ports.audit.events).toHaveLength(1);
+    expect(ports.audit.events[0]?.outcome).toBe('denied');
+  });
+
+  it('does not execute when expected inventory digest binding mismatches (H3 integrity)', async () => {
+    const ports = createSyntheticPrivacyDataUsePorts({
+      expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+        privacyExpectedProcessorInventorySchema.parse({
+          ...expectedInventory,
+          processors: [
+            {
+              ...expectedInventory.processors[0]!,
+              descriptorDigest: '1'.repeat(64),
+            },
+          ],
+        }),
+      ),
+    });
+    ports.policies.seed(policy);
+    ports.purposes.seed(purpose);
+    ports.processors.seed(processor);
+    ports.evidence.seedEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_descriptor_mismatched',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('does not execute when expected inventory environment is not synthetic-compatible (H3 environment)', async () => {
+    const ports = createSyntheticPrivacyDataUsePorts({
+      expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+        privacyExpectedProcessorInventorySchema.parse({
+          ...expectedInventory,
+          processors: [
+            {
+              ...expectedInventory.processors[0]!,
+              environmentApplicability: 'production_blocked_by_legal_privacy',
+              requiredReadiness: 'production',
+              synthetic: false,
+            },
+          ],
+        }),
+      ),
+    });
+    ports.policies.seed(policy);
+    ports.purposes.seed(purpose);
+    ports.processors.seed({ ...processor, synthetic: false });
+    ports.evidence.seedEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => ({ ...processor, synthetic: false }),
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_undeclared',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('does not execute when expected inventory requires production readiness (H3 activation)', async () => {
+    const ports = createSyntheticPrivacyDataUsePorts({
+      expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+        privacyExpectedProcessorInventorySchema.parse({
+          ...expectedInventory,
+          processors: [
+            {
+              ...expectedInventory.processors[0]!,
+              requiredReadiness: 'production',
+            },
+          ],
+        }),
+      ),
+    });
+    ports.policies.seed(policy);
+    ports.purposes.seed(purpose);
+    ports.processors.seed(processor);
+    ports.evidence.seedEvidence(evidence);
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_undeclared',
+    });
+    expect(executions).toBe(0);
   });
 
   it('does not execute a handler whose descriptor digest is mismatched', async () => {

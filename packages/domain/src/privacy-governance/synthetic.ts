@@ -318,10 +318,22 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
   }
 }
 
+const emptyExpectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+  privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: '00000000-0000-4000-8000-000000000000',
+    inventoryVersionDigest: '0'.repeat(64),
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '0000000',
+    processors: [],
+  }),
+);
+
 export function createSyntheticPrivacyDataUsePorts(input?: {
   clock?: PrivacyTrustedClock;
   fixedUtcMs?: string;
   ids?: PrivacyIdFactory;
+  expectedInventory?: PrivacyExpectedProcessorInventoryPort;
 }): PrivacyDataUsePorts & {
   audit: SyntheticPrivacyAuditSink;
   evidence: SyntheticPrivacyAuthorizationEvidenceLedger;
@@ -329,6 +341,7 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
   processors: SyntheticPrivacyRuntimeProcessorRegistry;
   processorResolver: SyntheticPrivacySubjectDataProcessorResolver;
   purposes: SyntheticPrivacyPurposeRegistry;
+  expectedInventory: PrivacyExpectedProcessorInventoryPort;
 } {
   return {
     audit: new SyntheticPrivacyAuditSink(),
@@ -341,6 +354,7 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
     ids: input?.ids ?? new SyntheticPrivacyIdFactory(),
     policies: new SyntheticPrivacyPolicyPackageRepository(),
     processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
+    expectedInventory: input?.expectedInventory ?? emptyExpectedInventory,
     processorResolver: new SyntheticPrivacySubjectDataProcessorResolver(),
     purposes: new SyntheticPrivacyPurposeRegistry(),
   };

@@ -2,12 +2,16 @@ import {
   privacyActorContextReferenceSchema,
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacySubjectScopeIdSchema,
 } from '@fitness-os/schemas';
-import { SyntheticPrivacySubjectDataProcessor } from '@fitness-os/domain';
+import {
+  SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacySubjectDataProcessor,
+} from '@fitness-os/domain';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -51,6 +55,46 @@ const evidence = privacyEvidenceReferenceSchema.parse({
   contentDigest: 'f'.repeat(64),
   recordedAt: '2026-08-18T11:00:00.000Z',
 });
+
+const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+  privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '579b735',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  }),
+);
 
 const auditEvents: unknown[] = [];
 const append = async (event: unknown) => {
@@ -178,6 +222,7 @@ describe('privacy PG persistence bundle', () => {
                 ? new SyntheticPrivacySubjectDataProcessor(processor, [])
                 : null,
           },
+          expectedInventory: expectedInventory as never,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           subjectRequests: persistence.subjectRequests,
         },

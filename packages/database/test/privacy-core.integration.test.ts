@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacySubjectDataProcessor,
 } from '@fitness-os/domain';
 import {
@@ -16,6 +17,7 @@ import {
   privacyEvidenceReferenceSchema,
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
+  privacyExpectedProcessorInventorySchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacySubjectRequestIdSchema,
@@ -80,6 +82,43 @@ const actor = privacyActorContextReferenceSchema.parse({
   authorityClaims: ['data_use_evaluate'],
   synthetic: true,
 });
+
+const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+  privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '579b735',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          { capability: 'delete', rationale: 'deferred_to_later_prd21_slice' },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  }),
+);
 
 const evidence = privacyEvidenceReferenceSchema.parse({
   evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
@@ -183,6 +222,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       const synthetic = createSyntheticPrivacyDataUsePorts({
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        expectedInventory,
       });
       synthetic.policies.seed(policy);
       synthetic.purposes.seed(purpose);
@@ -199,6 +239,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purposes: synthetic.purposes,
           processors: synthetic.processors,
           processorResolver: synthetic.processorResolver,
+          expectedInventory,
           evidence: evidenceLedger,
           audit: auditSink,
         },
@@ -265,6 +306,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       const synthetic = createSyntheticPrivacyDataUsePorts({
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        expectedInventory,
       });
       synthetic.processorResolver.bind(
         new SyntheticPrivacySubjectDataProcessor(processor, []),
@@ -278,6 +320,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purposes,
           processors,
           processorResolver: synthetic.processorResolver,
+          expectedInventory,
           evidence: evidenceLedger,
           audit: auditSink,
         },

@@ -146,6 +146,73 @@ export async function evaluateDataUse(
     );
   }
 
+  let expectedInventory;
+  try {
+    expectedInventory = await ports.expectedInventory.getInventory();
+  } catch {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  const expectedEntry = expectedInventory.processors.find(
+    (entry) => entry.processorId === processor.processorId,
+  );
+  if (expectedEntry === undefined) {
+    return commitDecision(
+      ports,
+      deny('processor_undeclared', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  // Integrity: reviewed inventory must bind the same runtime descriptor.
+  if (
+    expectedEntry.inventoryId !== processor.inventoryId ||
+    expectedEntry.descriptorDigest !== processor.descriptorDigest ||
+    expectedInventory.inventoryVersionDigest !==
+      processor.inventoryVersionDigest ||
+    expectedEntry.synthetic !== processor.synthetic ||
+    expectedEntry.codeOwner !== processor.codeOwner ||
+    !expectedEntry.supportedCapabilities.includes(input.processorCapability)
+  ) {
+    return commitDecision(
+      ports,
+      deny('processor_descriptor_mismatched', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  // Environment + activation readiness bindings for synthetic execution.
+  if (input.productionMode) {
+    if (
+      expectedEntry.synthetic ||
+      expectedEntry.environmentApplicability === 'synthetic_only' ||
+      expectedEntry.environmentApplicability === 'disposable_test' ||
+      expectedEntry.environmentApplicability ===
+        'production_blocked_by_legal_privacy' ||
+      expectedEntry.requiredReadiness !== 'production'
+    ) {
+      return commitDecision(
+        ports,
+        deny('processor_undeclared', evaluatedAt, correlationId),
+        operationId,
+      );
+    }
+  } else if (
+    (expectedEntry.environmentApplicability !== 'synthetic_only' &&
+      expectedEntry.environmentApplicability !== 'disposable_test') ||
+    expectedEntry.requiredReadiness !== 'mechanism_only'
+  ) {
+    return commitDecision(
+      ports,
+      deny('processor_undeclared', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
   if (
     purpose.evidenceRequired &&
     (input.evidenceId === null || input.evidenceId.length === 0)
@@ -222,6 +289,8 @@ export async function evaluateDataUse(
     !boundDescriptor.success ||
     boundDescriptor.data.processorId !== processor.processorId ||
     boundDescriptor.data.descriptorDigest !== processor.descriptorDigest ||
+    boundDescriptor.data.descriptorDigest !== expectedEntry.descriptorDigest ||
+    boundDescriptor.data.inventoryId !== expectedEntry.inventoryId ||
     !boundDescriptor.data.capabilities.includes(input.processorCapability)
   ) {
     return commitDecision(
