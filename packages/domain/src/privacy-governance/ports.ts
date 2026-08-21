@@ -115,6 +115,11 @@ export interface PrivacySubjectDataProcessor {
   ): Promise<PrivacySyntheticProcessorResult>;
 }
 
+/** Resolves only processors that were explicitly bound by the composition root. */
+export interface PrivacySubjectDataProcessorResolver {
+  resolve(processorId: string): Promise<PrivacySubjectDataProcessor | null>;
+}
+
 export type PrivacySubjectRequestApplyResult =
   | {
       status: 'advanced';
@@ -170,6 +175,7 @@ export interface PrivacyDataUsePorts {
   purposes: PrivacyPurposeRegistry;
   evidence: PrivacyAuthorizationEvidenceLedger;
   processors: PrivacyRuntimeProcessorRegistry;
+  processorResolver: PrivacySubjectDataProcessorResolver;
 }
 
 export interface PrivacyDataUseEvaluationInput {
@@ -179,6 +185,7 @@ export interface PrivacyDataUseEvaluationInput {
   operationKind: PrivacyOperationKind;
   engineeringCategoryId: PrivacyEngineeringCategoryId;
   processorId: string;
+  processorCapability: 'access';
   evidenceId: string | null;
   subjectScopeId: PrivacySubjectScopeId;
   /** When true, synthetic actor/policy/processor inputs are denied. */

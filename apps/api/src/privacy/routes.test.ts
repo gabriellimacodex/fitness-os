@@ -24,6 +24,7 @@ import {
 import {
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyRuntimeProcessorRegistry,
+  SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
 } from '@fitness-os/domain';
@@ -63,6 +64,13 @@ const processor = privacyProcessorDescriptorReferenceSchema.parse({
   synthetic: true,
 });
 
+const processorResolver = {
+  resolve: async (processorId: string) =>
+    processorId === processor.processorId
+      ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+      : null,
+};
+
 const actor = privacyActorContextReferenceSchema.parse({
   issuer: 'synthetic.identity.v1',
   version: 1,
@@ -84,6 +92,7 @@ const evaluatePayload = {
   purpose,
   policy,
   processor,
+  processorCapability: 'access' as const,
   operationKind: 'data_use_evaluation' as const,
   engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
     '44444444-4444-4444-8444-444444444444',
@@ -129,7 +138,10 @@ function buildSyntheticPrivacyApp() {
     { logger: false },
     {
       allowSyntheticPrivacy: true,
-      privacy: { fixedUtcMs: '2026-08-18T12:00:00.000Z' },
+      privacy: {
+        fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        processorResolver,
+      },
     },
   );
 }
@@ -311,6 +323,7 @@ describe('GET /v1/privacy/synthetic/readiness', () => {
         allowSyntheticPrivacy: true,
         privacy: {
           clock: new SyntheticPrivacyTrustedClock(fixedUtc),
+          processorResolver,
           ids: {
             auditEventId: () => fixedAudit,
             correlationId: () => fixedCorrelation,
@@ -365,6 +378,41 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate', () => {
       decision: { outcome: 'allowed' },
     });
 
+    await app.close();
+  });
+
+  it('fails closed without leaking a bound processor execution error', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                throw new Error('raw processor secret');
+              },
+            }),
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      message: 'Unexpected error',
+    });
+    expect(JSON.stringify(response.json())).not.toContain(
+      'raw processor secret',
+    );
     await app.close();
   });
 
@@ -766,6 +814,7 @@ describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
         privacy: {
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
         },
       },
     );
@@ -1046,6 +1095,12 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected registries'
             listDescriptors: async () => [processor],
             put: async () => 'accepted' as const,
           },
+          processorResolver: {
+            resolve: async (processorId: string) =>
+              processorId === processor.processorId
+                ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+                : null,
+          },
           evidence: {
             appendEvidence: async () => 'accepted' as const,
             appendWithdrawal: async () => 'accepted' as const,
@@ -1147,6 +1202,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
         privacy: {
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
         },
       },
     );
@@ -1196,6 +1252,7 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
           audit,
           evidence: evidenceLedger,
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
         },
       },
     );

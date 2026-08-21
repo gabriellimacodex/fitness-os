@@ -1175,6 +1175,7 @@ export const privacySyntheticDataUseEvaluateRequestSchema = z
     purpose: privacyPurposeVersionReferenceSchema,
     policy: privacyPolicyPackageReferenceSchema,
     processor: privacyProcessorDescriptorReferenceSchema,
+    processorCapability: z.literal('access'),
     operationKind: privacyOperationKindSchema,
     engineeringCategoryId: privacyEngineeringCategoryIdSchema,
     evidence: privacyEvidenceReferenceSchema.nullable(),

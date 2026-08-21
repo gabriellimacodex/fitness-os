@@ -869,12 +869,20 @@ describe('processor descriptor and readiness contracts', () => {
         codeOwner: 'packages.domain.privacy',
         synthetic: true,
       },
+      processorCapability: 'access',
       operationKind: 'data_use_evaluation',
       engineeringCategoryId: '44444444-4444-4444-8444-444444444444',
       evidence: null,
       subjectScopeId: '22222222-2222-4222-8222-222222222222',
       productionMode: false,
     });
+    expect(request.processorCapability).toBe('access');
+    expect(
+      privacySyntheticDataUseEvaluateRequestSchema.safeParse({
+        ...request,
+        processorCapability: 'export',
+      }).success,
+    ).toBe(false);
     expect(request.productionMode).toBe(false);
     expect(
       privacySyntheticDataUseEvaluateRequestSchema.safeParse({

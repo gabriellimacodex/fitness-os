@@ -1,6 +1,9 @@
 import {
   privacyAuditEventReferenceSchema,
   privacyDataUseDecisionSchema,
+  privacyProcessorDescriptorReferenceSchema,
+  privacySyntheticProcessorCommandSchema,
+  privacySyntheticProcessorResultSchema,
   type PrivacyCorrelationId,
   type PrivacyDataUseDecision,
   type PrivacyDataUseDenyReason,
@@ -133,6 +136,17 @@ export async function evaluateDataUse(
   }
 
   if (
+    input.processorCapability !== 'access' ||
+    !processor.capabilities.includes(input.processorCapability)
+  ) {
+    return commitDecision(
+      ports,
+      deny('processor_descriptor_mismatched', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  if (
     purpose.evidenceRequired &&
     (input.evidenceId === null || input.evidenceId.length === 0)
   ) {
@@ -173,6 +187,50 @@ export async function evaluateDataUse(
     }
   }
 
+  let boundProcessor;
+  try {
+    boundProcessor = await ports.processorResolver.resolve(input.processorId);
+  } catch {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  if (boundProcessor === null) {
+    return commitDecision(
+      ports,
+      deny('processor_handler_missing', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  let boundDescriptor;
+  try {
+    boundDescriptor = privacyProcessorDescriptorReferenceSchema.safeParse(
+      boundProcessor.descriptorReference(),
+    );
+  } catch {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+  if (
+    !boundDescriptor.success ||
+    boundDescriptor.data.processorId !== processor.processorId ||
+    boundDescriptor.data.descriptorDigest !== processor.descriptorDigest ||
+    !boundDescriptor.data.capabilities.includes(input.processorCapability)
+  ) {
+    return commitDecision(
+      ports,
+      deny('processor_descriptor_mismatched', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
   const allowed = privacyDataUseDecisionSchema.parse({
     outcome: 'allowed',
     subjectScopeId: input.subjectScopeId,
@@ -187,7 +245,36 @@ export async function evaluateDataUse(
     correlationId,
   });
 
-  return commitDecision(ports, allowed, operationId);
+  const committed = await commitDecision(ports, allowed, operationId);
+  if (committed.status === 'audit_unavailable') {
+    return committed;
+  }
+
+  try {
+    const command = privacySyntheticProcessorCommandSchema.parse({
+      processorId: input.processorId,
+      capability: input.processorCapability,
+      subjectScopeId: input.subjectScopeId,
+      correlationId,
+      operationId,
+      productionMode: input.productionMode,
+    });
+    const result = privacySyntheticProcessorResultSchema.parse(
+      await boundProcessor.execute(command),
+    );
+    if (
+      result.status !== 'completed' ||
+      result.operationId !== operationId ||
+      result.correlationId !== correlationId ||
+      result.capability !== input.processorCapability
+    ) {
+      throw new Error('processor result correlation mismatch');
+    }
+  } catch {
+    throw new Error('Privacy processor execution failed');
+  }
+
+  return committed;
 }
 
 async function commitDecision(

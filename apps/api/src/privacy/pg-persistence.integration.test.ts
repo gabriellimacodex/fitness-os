@@ -1,7 +1,10 @@
 import { fileURLToPath } from 'node:url';
 
 import { createPostgresConnection } from '@fitness-os/database';
-import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
+import {
+  SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacySubjectDataProcessor,
+} from '@fitness-os/domain';
 import {
   privacyActorContextReferenceSchema,
   privacyCorrelationIdSchema,
@@ -122,6 +125,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             audit: persistence.audit,
             evidence: persistence.evidence,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            processorResolver: {
+              resolve: async (processorId: string) =>
+                processorId === processor.processorId
+                  ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+                  : null,
+            },
             subjectRequests: persistence.subjectRequests,
           },
         },
@@ -141,6 +150,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purpose,
           policy,
           processor,
+          processorCapability: 'access',
           operationKind: 'data_use_evaluation',
           engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
             '44444444-4444-4444-8444-444444444444',
@@ -249,6 +259,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purpose,
           policy,
           processor,
+          processorCapability: 'access',
           operationKind: 'data_use_evaluation',
           engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
             '44444444-4444-4444-8444-444444444444',
@@ -290,6 +301,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             policies: persistence.policies,
             purposes: persistence.purposes,
             processors: persistence.processors,
+            processorResolver: {
+              resolve: async (processorId: string) =>
+                processorId === processor.processorId
+                  ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+                  : null,
+            },
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
             subjectRequests: persistence.subjectRequests,
           },
@@ -310,6 +327,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purpose,
           policy,
           processor,
+          processorCapability: 'access',
           operationKind: 'data_use_evaluation',
           engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
             '44444444-4444-4444-8444-444444444444',
