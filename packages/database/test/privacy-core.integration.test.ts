@@ -231,6 +231,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       synthetic.processorResolver.bind(
         new SyntheticPrivacySubjectDataProcessor(processor, []),
       );
+      // PG evidence ledger bypasses synthetic seedEvidence seal hook.
+      if (
+        synthetic.integrityVerifier instanceof SyntheticPrivacyIntegrityVerifier
+      ) {
+        synthetic.integrityVerifier.sealEvidence(evidence);
+      }
 
       const allowed = await evaluateDataUse(
         {
