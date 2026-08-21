@@ -1328,6 +1328,50 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
     await app.close();
   });
 
+  it('denies when injected integrity verifier reports invalid policy digest', async () => {
+    let executions = 0;
+
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: expectedInventoryPort as never,
+          integrityVerifier: {
+            verify: async () => ({ status: 'invalid' as const }),
+          },
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                executions += 1;
+                throw new Error('must not execute');
+              },
+            }),
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'evaluated',
+      decision: {
+        outcome: 'denied',
+        reasonCode: 'policy_integrity_invalid',
+      },
+    });
+    expect(executions).toBe(0);
+    await app.close();
+  });
+
   it('denies and never executes when expected inventory omits the processor (H3)', async () => {
     let executions = 0;
     const app = buildApp(

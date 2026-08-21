@@ -6,6 +6,7 @@ import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
 } from '@fitness-os/domain';
 import {
@@ -230,6 +231,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       synthetic.processorResolver.bind(
         new SyntheticPrivacySubjectDataProcessor(processor, []),
       );
+      // PG evidence ledger bypasses synthetic seedEvidence seal hook.
+      if (
+        synthetic.integrityVerifier instanceof SyntheticPrivacyIntegrityVerifier
+      ) {
+        synthetic.integrityVerifier.sealEvidence(evidence);
+      }
 
       const allowed = await evaluateDataUse(
         {
@@ -240,6 +247,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           processors: synthetic.processors,
           processorResolver: synthetic.processorResolver,
           expectedInventory,
+          integrityVerifier: synthetic.integrityVerifier,
           evidence: evidenceLedger,
           audit: auditSink,
         },
@@ -311,6 +319,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       synthetic.processorResolver.bind(
         new SyntheticPrivacySubjectDataProcessor(processor, []),
       );
+      if (
+        synthetic.integrityVerifier instanceof SyntheticPrivacyIntegrityVerifier
+      ) {
+        synthetic.integrityVerifier.sealPolicy(policy);
+        synthetic.integrityVerifier.sealEvidence(evidence);
+      }
 
       const allowed = await evaluateDataUse(
         {
@@ -321,6 +335,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           processors,
           processorResolver: synthetic.processorResolver,
           expectedInventory,
+          integrityVerifier: synthetic.integrityVerifier,
           evidence: evidenceLedger,
           audit: auditSink,
         },

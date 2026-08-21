@@ -25,6 +25,9 @@ import type {
   PrivacyDataUsePorts,
   PrivacyExpectedProcessorInventoryPort,
   PrivacyIdFactory,
+  PrivacyIntegrityVerificationInput,
+  PrivacyIntegrityVerificationResult,
+  PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
@@ -329,11 +332,58 @@ const emptyExpectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
   }),
 );
 
+/**
+ * Seals admitted package/evidence digests for later verify(). Production
+ * readiness must continue to reject synthetic integrity adapters.
+ */
+export class SyntheticPrivacyIntegrityVerifier implements PrivacyIntegrityVerifier {
+  private readonly sealed = new Map<
+    string,
+    { contentDigest: string; synthetic: boolean }
+  >();
+
+  sealPolicy(policy: PrivacyPolicyPackageReference): void {
+    this.sealed.set(`policy_package:${policy.versionId}`, {
+      contentDigest: policy.contentDigest,
+      synthetic: policy.synthetic,
+    });
+  }
+
+  sealEvidence(evidence: PrivacyEvidenceReference): void {
+    this.sealed.set(`authorization_evidence:${evidence.evidenceId}`, {
+      contentDigest: evidence.contentDigest,
+      // Evidence locators are mechanism metadata; mark synthetic for Option A.
+      synthetic: true,
+    });
+  }
+
+  clear(): void {
+    this.sealed.clear();
+  }
+
+  async verify(
+    input: PrivacyIntegrityVerificationInput,
+  ): Promise<PrivacyIntegrityVerificationResult> {
+    const sealed = this.sealed.get(`${input.kind}:${input.subjectId}`);
+    if (sealed === undefined) {
+      return { status: 'invalid' };
+    }
+    if (
+      sealed.contentDigest !== input.contentDigest ||
+      sealed.synthetic !== input.synthetic
+    ) {
+      return { status: 'invalid' };
+    }
+    return { status: 'valid' };
+  }
+}
+
 export function createSyntheticPrivacyDataUsePorts(input?: {
   clock?: PrivacyTrustedClock;
   fixedUtcMs?: string;
   ids?: PrivacyIdFactory;
   expectedInventory?: PrivacyExpectedProcessorInventoryPort;
+  integrityVerifier?: PrivacyIntegrityVerifier;
 }): PrivacyDataUsePorts & {
   audit: SyntheticPrivacyAuditSink;
   evidence: SyntheticPrivacyAuthorizationEvidenceLedger;
@@ -342,7 +392,30 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
   processorResolver: SyntheticPrivacySubjectDataProcessorResolver;
   purposes: SyntheticPrivacyPurposeRegistry;
   expectedInventory: PrivacyExpectedProcessorInventoryPort;
+  integrityVerifier:
+    SyntheticPrivacyIntegrityVerifier | PrivacyIntegrityVerifier;
 } {
+  const integrityVerifier =
+    input?.integrityVerifier ?? new SyntheticPrivacyIntegrityVerifier();
+  const policies = new SyntheticPrivacyPolicyPackageRepository();
+  const evidence = new SyntheticPrivacyAuthorizationEvidenceLedger();
+
+  const originalPolicySeed = policies.seed.bind(policies);
+  policies.seed = (policy) => {
+    originalPolicySeed(policy);
+    if (integrityVerifier instanceof SyntheticPrivacyIntegrityVerifier) {
+      integrityVerifier.sealPolicy(policy);
+    }
+  };
+
+  const originalEvidenceSeed = evidence.seedEvidence.bind(evidence);
+  evidence.seedEvidence = (record) => {
+    originalEvidenceSeed(record);
+    if (integrityVerifier instanceof SyntheticPrivacyIntegrityVerifier) {
+      integrityVerifier.sealEvidence(record);
+    }
+  };
+
   return {
     audit: new SyntheticPrivacyAuditSink(),
     clock:
@@ -350,11 +423,12 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
       new SyntheticPrivacyTrustedClock(
         input?.fixedUtcMs ?? '2026-08-18T12:00:00.000Z',
       ),
-    evidence: new SyntheticPrivacyAuthorizationEvidenceLedger(),
+    evidence,
     ids: input?.ids ?? new SyntheticPrivacyIdFactory(),
-    policies: new SyntheticPrivacyPolicyPackageRepository(),
+    policies,
     processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
     expectedInventory: input?.expectedInventory ?? emptyExpectedInventory,
+    integrityVerifier,
     processorResolver: new SyntheticPrivacySubjectDataProcessorResolver(),
     purposes: new SyntheticPrivacyPurposeRegistry(),
   };

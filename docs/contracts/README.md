@@ -166,10 +166,13 @@ The synthetic API fails mechanism readiness closed when no complete probe is
 injected; production readiness remains false under the active legal stop.
 
 Synthetic data-use evaluation requires the explicit `access` capability, a
-processor handler bound by the composition root, and an exact reviewed expected
+processor handler bound by the composition root, an exact reviewed expected
 inventory entry binding (descriptor/inventory digests, code owner, synthetic
-marker, environment applicability, and mechanism-only readiness). The mandatory
-audit must be accepted before that handler executes; denial and
+marker, environment applicability, and mechanism-only readiness), and a sealed
+`IntegrityVerifier` check of policy/evidence content digests after inventory
+bind and before execute. Missing, diverging, or unavailable integrity evidence
+denies with `policy_integrity_invalid` or `dependency_unavailable`. The
+mandatory audit must be accepted before that handler executes; denial and
 audit-unavailable paths never invoke it.
 
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/

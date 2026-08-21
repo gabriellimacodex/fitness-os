@@ -7,7 +7,9 @@ import {
   type PrivacyCorrelationId,
   type PrivacyDataUseDecision,
   type PrivacyDataUseDenyReason,
+  type PrivacyEvidenceReference,
   type PrivacyOperationId,
+  type PrivacyPolicyPackageReference,
 } from '@fitness-os/schemas';
 
 import type {
@@ -27,6 +29,91 @@ const deny = (
     evaluatedAt,
     correlationId,
   });
+
+async function verifyIntegrityOrDeny(
+  ports: PrivacyDataUsePorts,
+  policy: PrivacyPolicyPackageReference,
+  evidence: PrivacyEvidenceReference | null,
+  evaluatedAt: string,
+  correlationId: PrivacyCorrelationId,
+  operationId: PrivacyOperationId,
+): Promise<PrivacyDataUseEvaluationResult | null> {
+  if (ports.integrityVerifier == null) {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  let policyResult;
+  try {
+    policyResult = await ports.integrityVerifier.verify({
+      kind: 'policy_package',
+      subjectId: policy.versionId,
+      contentDigest: policy.contentDigest,
+      canonicalizationVersion: policy.canonicalizationVersion,
+      synthetic: policy.synthetic,
+    });
+  } catch {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  if (policyResult.status === 'unavailable') {
+    return commitDecision(
+      ports,
+      deny('dependency_unavailable', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+  if (policyResult.status !== 'valid') {
+    return commitDecision(
+      ports,
+      deny('policy_integrity_invalid', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  if (evidence !== null) {
+    let evidenceResult;
+    try {
+      evidenceResult = await ports.integrityVerifier.verify({
+        kind: 'authorization_evidence',
+        subjectId: evidence.evidenceId,
+        contentDigest: evidence.contentDigest,
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        synthetic: true,
+      });
+    } catch {
+      return commitDecision(
+        ports,
+        deny('dependency_unavailable', evaluatedAt, correlationId),
+        operationId,
+      );
+    }
+
+    if (evidenceResult.status === 'unavailable') {
+      return commitDecision(
+        ports,
+        deny('dependency_unavailable', evaluatedAt, correlationId),
+        operationId,
+      );
+    }
+    if (evidenceResult.status !== 'valid') {
+      return commitDecision(
+        ports,
+        deny('policy_integrity_invalid', evaluatedAt, correlationId),
+        operationId,
+      );
+    }
+  }
+
+  return null;
+}
 
 export async function evaluateDataUse(
   ports: PrivacyDataUsePorts,
@@ -224,6 +311,7 @@ export async function evaluateDataUse(
     );
   }
 
+  let loadedEvidence = null;
   if (input.evidenceId !== null) {
     const evidence = await ports.evidence.getEvidence(input.evidenceId);
     if (evidence === null) {
@@ -252,6 +340,20 @@ export async function evaluateDataUse(
         operationId,
       );
     }
+    loadedEvidence = evidence;
+  }
+
+  // IntegrityVerifier runs after inventory bind + evidence resolve, before execute.
+  const integrity = await verifyIntegrityOrDeny(
+    ports,
+    policy,
+    loadedEvidence,
+    evaluatedAt,
+    correlationId,
+    operationId,
+  );
+  if (integrity !== null) {
+    return integrity;
   }
 
   let boundProcessor;

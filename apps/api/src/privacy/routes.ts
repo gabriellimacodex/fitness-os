@@ -7,6 +7,7 @@ import {
   planWithdrawal,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyIdFactory,
+  SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
@@ -14,6 +15,7 @@ import {
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
   type PrivacyIdFactory,
+  type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRuntimeProcessorRegistry,
@@ -100,6 +102,11 @@ export interface PrivacySyntheticOptions {
   processors?: PrivacyRuntimeProcessorRegistry;
   /** Explicitly bound processor handlers; descriptors never create handlers. */
   processorResolver?: PrivacySubjectDataProcessorResolver;
+  /**
+   * Optional integrity verifier. Defaults to a synthetic sealer that production
+   * readiness continues to reject.
+   */
+  integrityVerifier?: PrivacyIntegrityVerifier;
 }
 
 function sendError(
@@ -301,6 +308,7 @@ export function registerPrivacySyntheticRoutes(
         // Dual zod brand across package boundaries — same pattern as privacy tests.
         ids: ids as never,
         expectedInventory,
+        integrityVerifier: options.integrityVerifier,
       });
       if (injectedPolicies === undefined) {
         syntheticPorts.policies.seed(body.data.policy);
@@ -320,6 +328,20 @@ export function registerPrivacySyntheticRoutes(
         syntheticPorts.evidence.seedEvidence(body.data.evidence);
       }
 
+      // Admit request-local digests into the default synthetic sealer when
+      // PG/injected repositories skip seed hooks. Injected verifiers are left
+      // untouched so tests can force invalid/unavailable results.
+      if (
+        options.integrityVerifier === undefined &&
+        syntheticPorts.integrityVerifier instanceof
+          SyntheticPrivacyIntegrityVerifier
+      ) {
+        syntheticPorts.integrityVerifier.sealPolicy(body.data.policy);
+        if (body.data.evidence !== null) {
+          syntheticPorts.integrityVerifier.sealEvidence(body.data.evidence);
+        }
+      }
+
       const ports = {
         ...syntheticPorts,
         audit: injectedAudit ?? syntheticPorts.audit,
@@ -329,6 +351,7 @@ export function registerPrivacySyntheticRoutes(
         processors: processors ?? syntheticPorts.processors,
         expectedInventory:
           expectedInventory ?? syntheticPorts.expectedInventory,
+        integrityVerifier: syntheticPorts.integrityVerifier,
         processorResolver:
           options.processorResolver ?? syntheticPorts.processorResolver,
       };
