@@ -19,6 +19,7 @@ import {
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
+  type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
@@ -92,6 +93,35 @@ const evaluatePayload = {
     '22222222-2222-4222-8222-222222222222',
   ),
   productionMode: false,
+};
+
+const readyPrivacyComponentIds: PrivacyReadinessResult['components'][number]['componentId'][] =
+  [
+    'contracts',
+    'migrations',
+    'repositories',
+    'audit_sink',
+    'expected_inventory',
+    'runtime_processors',
+    'governance_lifecycle',
+    'identity_boundary',
+    'policy_package',
+    'recovery',
+  ];
+
+const completeSyntheticReadiness: PrivacyReadinessResult = {
+  mechanismReady: true,
+  productionReady: false,
+  canonicalizationVersion: 'privacy-governance.canonical.v1',
+  schemaDigest: 'a'.repeat(64),
+  inventoryVersionDigest: 'b'.repeat(64),
+  components: readyPrivacyComponentIds.map((componentId) => ({
+    componentId,
+    state: 'ready',
+    diagnosticCode: null,
+  })),
+  diagnosticCodes: ['legal_privacy_decision_required'],
+  evaluatedAt: '2026-08-18T12:00:00.000Z',
 };
 
 function buildSyntheticPrivacyApp() {
@@ -190,7 +220,7 @@ describe('synthetic privacy composition seam', () => {
 });
 
 describe('GET /v1/privacy/synthetic/readiness', () => {
-  it('reports mechanism ready while production stays blocked by LEGAL_PRIVACY', async () => {
+  it('fails mechanism readiness closed when complete evidence is not injected', async () => {
     const app = buildSyntheticPrivacyApp();
 
     const response = await app.inject({
@@ -201,10 +231,63 @@ describe('GET /v1/privacy/synthetic/readiness', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(body.mechanismReady).toBe(true);
+    expect(body.mechanismReady).toBe(false);
     expect(body.productionReady).toBe(false);
+    expect(body.components).toHaveLength(10);
+    expect(body.diagnosticCodes).toContain('migration_missing');
     expect(body.diagnosticCodes).toContain('legal_privacy_decision_required');
 
+    await app.close();
+  });
+
+  it('reports mechanism ready only from complete injected evidence', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          readiness: { evaluate: async () => completeSyntheticReadiness },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/readiness',
+    });
+
+    expect(privacyReadinessResultSchema.parse(response.json())).toEqual(
+      completeSyntheticReadiness,
+    );
+    await app.close();
+  });
+
+  it('does not let an injected synthetic probe clear the active legal stop', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          readiness: {
+            evaluate: async () => ({
+              ...completeSyntheticReadiness,
+              productionReady: true,
+              diagnosticCodes: [],
+            }),
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/privacy/synthetic/readiness',
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'INTERNAL_ERROR',
+    );
     await app.close();
   });
 

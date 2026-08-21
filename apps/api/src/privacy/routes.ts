@@ -45,6 +45,10 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 export interface PrivacySyntheticOptions {
+  /** Complete, fail-closed mechanism evidence. Omission is never ready. */
+  readiness?: {
+    evaluate(): Promise<PrivacyReadinessResult>;
+  };
   /**
    * Optional trusted clock. Defaults to `SyntheticPrivacyTrustedClock` using
    * `clock.nowUtcMs()` (or the synthetic default instant).
@@ -115,13 +119,11 @@ function sendError(
   );
 }
 
-function syntheticMechanismReadiness(
+function unavailableSyntheticMechanismReadiness(
   evaluatedAt: string,
 ): PrivacyReadinessResult {
-  // Mechanism may be healthy while production activation stays false under
-  // LEGAL_PRIVACY_DECISION_REQUIRED.
   return privacyReadinessResultSchema.parse({
-    mechanismReady: true,
+    mechanismReady: false,
     productionReady: false,
     canonicalizationVersion: 'privacy-governance.canonical.v1',
     schemaDigest: 'a'.repeat(64),
@@ -133,12 +135,63 @@ function syntheticMechanismReadiness(
         diagnosticCode: null,
       },
       {
+        componentId: 'migrations',
+        state: 'not_ready',
+        diagnosticCode: 'migration_missing',
+      },
+      {
+        componentId: 'repositories',
+        state: 'unavailable',
+        diagnosticCode: 'repository_unavailable',
+      },
+      {
+        componentId: 'audit_sink',
+        state: 'unavailable',
+        diagnosticCode: 'audit_unavailable',
+      },
+      {
+        componentId: 'expected_inventory',
+        state: 'not_ready',
+        diagnosticCode: 'inventory_mismatch',
+      },
+      {
+        componentId: 'runtime_processors',
+        state: 'not_ready',
+        diagnosticCode: 'processor_missing',
+      },
+      {
+        componentId: 'governance_lifecycle',
+        state: 'not_ready',
+        diagnosticCode: 'governance_table_lifecycle_missing',
+      },
+      {
+        componentId: 'identity_boundary',
+        state: 'not_ready',
+        diagnosticCode: 'identity_boundary_missing',
+      },
+      {
         componentId: 'policy_package',
-        state: 'ready',
-        diagnosticCode: null,
+        state: 'not_ready',
+        diagnosticCode: 'policy_missing',
+      },
+      {
+        componentId: 'recovery',
+        state: 'not_ready',
+        diagnosticCode: 'recovery_unverified',
       },
     ],
-    diagnosticCodes: ['legal_privacy_decision_required'],
+    diagnosticCodes: [
+      'audit_unavailable',
+      'governance_table_lifecycle_missing',
+      'identity_boundary_missing',
+      'inventory_mismatch',
+      'legal_privacy_decision_required',
+      'migration_missing',
+      'policy_missing',
+      'processor_missing',
+      'recovery_unverified',
+      'repository_unavailable',
+    ],
     evaluatedAt,
   });
 }
@@ -162,6 +215,7 @@ export function registerPrivacySyntheticRoutes(
   const injectedPurposes = options.purposes;
   const expectedInventory = options.expectedInventory;
   const processors = options.processors;
+  const readiness = options.readiness;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -171,9 +225,20 @@ export function registerPrivacySyntheticRoutes(
     return payload;
   });
 
-  app.get('/v1/privacy/synthetic/readiness', async () =>
-    syntheticMechanismReadiness(clock.nowUtcMs()),
-  );
+  app.get('/v1/privacy/synthetic/readiness', async () => {
+    const result = privacyReadinessResultSchema.parse(
+      readiness === undefined
+        ? unavailableSyntheticMechanismReadiness(clock.nowUtcMs())
+        : await readiness.evaluate(),
+    );
+    if (
+      result.productionReady ||
+      !result.diagnosticCodes.includes('legal_privacy_decision_required')
+    ) {
+      throw new Error('Synthetic privacy cannot clear the active legal stop');
+    }
+    return result;
+  });
 
   app.get(
     '/v1/privacy/synthetic/expected-inventory',

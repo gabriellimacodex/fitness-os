@@ -743,24 +743,29 @@ describe('processor descriptor and readiness contracts', () => {
   });
 
   it('keeps productionReady false under legal_privacy_decision_required', () => {
+    const readyComponents = [
+      'contracts',
+      'migrations',
+      'repositories',
+      'audit_sink',
+      'expected_inventory',
+      'runtime_processors',
+      'governance_lifecycle',
+      'identity_boundary',
+      'policy_package',
+      'recovery',
+    ].map((componentId) => ({
+      componentId,
+      state: 'ready' as const,
+      diagnosticCode: null,
+    }));
     const stopped = privacyReadinessResultSchema.parse({
       mechanismReady: true,
       productionReady: false,
       canonicalizationVersion: 'privacy-governance.canonical.v1',
       schemaDigest: '5'.repeat(64),
       inventoryVersionDigest: '6'.repeat(64),
-      components: [
-        {
-          componentId: 'contracts',
-          state: 'ready',
-          diagnosticCode: null,
-        },
-        {
-          componentId: 'policy_package',
-          state: 'ready',
-          diagnosticCode: null,
-        },
-      ],
+      components: readyComponents,
       diagnosticCodes: ['legal_privacy_decision_required'],
       evaluatedAt: '2026-08-18T12:00:00.000Z',
     });
@@ -778,14 +783,38 @@ describe('processor descriptor and readiness contracts', () => {
     expect(
       privacyReadinessResultSchema.safeParse({
         ...stopped,
+        mechanismReady: false,
+        productionReady: true,
+        diagnosticCodes: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
         mechanismReady: true,
-        components: [
-          {
-            componentId: 'audit_sink',
-            state: 'not_ready',
-            diagnosticCode: 'audit_unavailable',
-          },
-        ],
+        components: readyComponents.map((component) =>
+          component.componentId === 'audit_sink'
+            ? {
+                ...component,
+                state: 'not_ready' as const,
+                diagnosticCode: 'audit_unavailable' as const,
+              }
+            : component,
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        mechanismReady: false,
+        components: readyComponents.slice(1),
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyReadinessResultSchema.safeParse({
+        ...stopped,
+        mechanismReady: false,
+        components: [...readyComponents, readyComponents[0]],
       }).success,
     ).toBe(false);
     expect(

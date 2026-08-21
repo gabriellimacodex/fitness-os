@@ -22,6 +22,7 @@ const REQUIRED_PRIVACY_CORE_MIGRATION_FILES = [
   '0004_prd21_privacy_subject_request.sql',
   '0005_prd21_privacy_subject_request_transition.sql',
   '0006_prd21_privacy_append_only_guards.sql',
+  '0011_prd21_privacy_ordinary_schema_usage.sql',
 ] as const;
 
 function hashMigrationFile(relativePath: string): string {

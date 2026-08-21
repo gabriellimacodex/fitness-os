@@ -1110,6 +1110,24 @@ export const privacyReadinessResultSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    const componentCounts = new Map<PrivacyReadinessComponentId, number>();
+    for (const component of value.components) {
+      componentCounts.set(
+        component.componentId,
+        (componentCounts.get(component.componentId) ?? 0) + 1,
+      );
+    }
+    if (
+      privacyReadinessComponentIdSchema.options.some(
+        (componentId) => componentCounts.get(componentId) !== 1,
+      )
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'readiness requires every component exactly once',
+        path: ['components'],
+      });
+    }
     if (
       value.mechanismReady &&
       value.components.some((component) => component.state !== 'ready')
@@ -1128,6 +1146,13 @@ export const privacyReadinessResultSchema = z
         code: 'custom',
         message:
           'productionReady cannot be true while legal_privacy_decision_required is reported',
+        path: ['productionReady'],
+      });
+    }
+    if (value.productionReady && !value.mechanismReady) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'productionReady requires mechanismReady',
         path: ['productionReady'],
       });
     }
