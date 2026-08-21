@@ -161,6 +161,10 @@ is backend-only and must never appear on a public request or response schema.
 | Synthetic retention preview               | `privacySyntheticRetentionPreviewRequestSchema` / response in `privacy-governance.ts`                                 | Synthetic API only                                                    | Disposable `allowSyntheticPrivacy` tests                       | Frozen |
 | Synthetic retention execution authorize   | `privacySyntheticRetentionExecutionAuthorizeRequestSchema` / response in `privacy-governance.ts`                      | Synthetic API only                                                    | Disposable `allowSyntheticPrivacy` tests                       | Frozen |
 
+Privacy readiness responses contain every declared component exactly once.
+The synthetic API fails mechanism readiness closed when no complete probe is
+injected; production readiness remains false under the active legal stop.
+
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
 request/audit/processor locators, tagged data-use decisions, and fail-closed
 readiness: every declared operation kind has exactly one versioned canonical
