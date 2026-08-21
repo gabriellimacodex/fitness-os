@@ -14,6 +14,7 @@ import {
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
+  privacySyntheticProcessorResultSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
 } from '@fitness-os/schemas';
@@ -101,27 +102,60 @@ function seedHappyPath() {
 describe('evaluateDataUse', () => {
   it('allows a synthetic evaluation and appends a succeeded audit event', async () => {
     const ports = seedHappyPath();
+    const calls: string[] = [];
 
-    const result = await evaluateDataUse(ports, {
-      actor,
-      purposeVersionId: purpose.purposeVersionId,
-      policyVersionId: policy.versionId,
-      operationKind: 'data_use_evaluation',
-      engineeringCategoryId: categoryId,
-      processorId: processor.processorId,
-      evidenceId: evidence.evidenceId,
-      subjectScopeId,
-      productionMode: false,
-    });
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        audit: {
+          append: async (event) => {
+            calls.push('audit');
+            return ports.audit.append(event);
+          },
+        },
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async (command) => {
+              calls.push(`execute:${command.capability}`);
+              return privacySyntheticProcessorResultSchema.parse({
+                status: 'completed',
+                reasonCode: null,
+                capability: command.capability,
+                families: [],
+                accessLocatorDigest: 'f'.repeat(64),
+                exportManifestDigest: null,
+                operationId: command.operationId,
+                correlationId: command.correlationId,
+              });
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
 
     expect(result.status).toBe('evaluated');
     expect(result.decision.outcome).toBe('allowed');
     expect(ports.audit.events).toHaveLength(1);
     expect(ports.audit.events[0]?.outcome).toBe('succeeded');
+    expect(calls).toEqual(['audit', 'execute:access']);
   });
 
   it('denies withdrawn evidence and still audits the denial', async () => {
     const ports = seedHappyPath();
+    let executions = 0;
     ports.evidence.seedWithdrawal(
       privacyWithdrawalReferenceSchema.parse({
         withdrawalId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
@@ -133,17 +167,32 @@ describe('evaluateDataUse', () => {
       }),
     );
 
-    const result = await evaluateDataUse(ports, {
-      actor,
-      purposeVersionId: purpose.purposeVersionId,
-      policyVersionId: policy.versionId,
-      operationKind: 'data_use_evaluation',
-      engineeringCategoryId: categoryId,
-      processorId: processor.processorId,
-      evidenceId: evidence.evidenceId,
-      subjectScopeId,
-      productionMode: false,
-    });
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
 
     expect(result.status).toBe('evaluated');
     expect(result.decision).toMatchObject({
@@ -151,6 +200,7 @@ describe('evaluateDataUse', () => {
       reasonCode: 'evidence_withdrawn',
     });
     expect(ports.audit.events[0]?.outcome).toBe('denied');
+    expect(executions).toBe(0);
   });
 
   it('denies synthetic actor in production mode', async () => {
@@ -163,6 +213,7 @@ describe('evaluateDataUse', () => {
       operationKind: 'data_use_evaluation',
       engineeringCategoryId: categoryId,
       processorId: processor.processorId,
+      processorCapability: 'access',
       evidenceId: evidence.evidenceId,
       subjectScopeId,
       productionMode: true,
@@ -177,18 +228,43 @@ describe('evaluateDataUse', () => {
   it('never allows when the audit sink is unavailable', async () => {
     const ports = seedHappyPath();
     ports.audit.unavailable = true;
+    let executions = 0;
 
-    const result = await evaluateDataUse(ports, {
-      actor,
-      purposeVersionId: purpose.purposeVersionId,
-      policyVersionId: policy.versionId,
-      operationKind: 'data_use_evaluation',
-      engineeringCategoryId: categoryId,
-      processorId: processor.processorId,
-      evidenceId: evidence.evidenceId,
-      subjectScopeId,
-      productionMode: false,
-    });
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async (command) => {
+              executions += 1;
+              return privacySyntheticProcessorResultSchema.parse({
+                status: 'completed',
+                reasonCode: null,
+                capability: command.capability,
+                families: [],
+                accessLocatorDigest: 'f'.repeat(64),
+                exportManifestDigest: null,
+                operationId: command.operationId,
+                correlationId: command.correlationId,
+              });
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
 
     expect(result.status).toBe('audit_unavailable');
     expect(result.decision).toMatchObject({
@@ -196,6 +272,200 @@ describe('evaluateDataUse', () => {
       reasonCode: 'audit_unavailable',
     });
     expect(ports.audit.events).toHaveLength(0);
+    expect(executions).toBe(0);
+  });
+
+  it('fails closed without leaking a bound handler descriptor error', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => {
+              throw new Error('raw adapter secret');
+            },
+            execute: async () => {
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'dependency_unavailable',
+    });
+  });
+
+  it('fails closed when no processor handler is bound', async () => {
+    const result = await evaluateDataUse(seedHappyPath(), {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_handler_missing',
+    });
+  });
+
+  it('does not execute a handler whose descriptor digest is mismatched', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => ({
+              ...processor,
+              descriptorDigest: '0'.repeat(64),
+            }),
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_descriptor_mismatched',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('does not infer processor capability from data-use evaluation', async () => {
+    const ports = seedHappyPath();
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'export' as never,
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_descriptor_mismatched',
+    });
+  });
+
+  it('fails closed when the bound processor returns an invalid result', async () => {
+    const ports = seedHappyPath();
+    const execution = evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => ({ raw: 'adapter secret' }) as never,
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    await expect(execution).rejects.toThrow(
+      'Privacy processor execution failed',
+    );
+    expect(ports.audit.events).toHaveLength(1);
+    expect(ports.audit.events[0]?.outcome).toBe('succeeded');
+  });
+
+  it('fails closed on processor operation and correlation mismatch', async () => {
+    const ports = seedHappyPath();
+    const execution = evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async (command) =>
+              privacySyntheticProcessorResultSchema.parse({
+                status: 'completed',
+                reasonCode: null,
+                capability: command.capability,
+                families: [],
+                accessLocatorDigest: 'f'.repeat(64),
+                exportManifestDigest: null,
+                operationId: '11111111-1111-4111-8111-111111111111',
+                correlationId: '77777777-7777-4777-8777-777777777777',
+              }),
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    await expect(execution).rejects.toThrow(
+      'Privacy processor execution failed',
+    );
+    expect(ports.audit.events).toHaveLength(1);
   });
 
   it('denies missing required evidence', async () => {
@@ -208,6 +478,7 @@ describe('evaluateDataUse', () => {
       operationKind: 'data_use_evaluation',
       engineeringCategoryId: categoryId,
       processorId: processor.processorId,
+      processorCapability: 'access',
       evidenceId: null,
       subjectScopeId,
       productionMode: false,

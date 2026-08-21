@@ -7,6 +7,7 @@ import {
   privacyPurposeVersionReferenceSchema,
   privacySubjectScopeIdSchema,
 } from '@fitness-os/schemas';
+import { SyntheticPrivacySubjectDataProcessor } from '@fitness-os/domain';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildApp } from '../app.js';
@@ -171,6 +172,12 @@ describe('privacy PG persistence bundle', () => {
           policies: persistence.policies,
           purposes: persistence.purposes,
           processors: persistence.processors,
+          processorResolver: {
+            resolve: async (processorId: string) =>
+              processorId === processor.processorId
+                ? new SyntheticPrivacySubjectDataProcessor(processor, [])
+                : null,
+          },
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           subjectRequests: persistence.subjectRequests,
         },
@@ -191,6 +198,7 @@ describe('privacy PG persistence bundle', () => {
         purpose,
         policy,
         processor,
+        processorCapability: 'access',
         operationKind: 'data_use_evaluation',
         engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
           '44444444-4444-4444-8444-444444444444',
@@ -265,6 +273,7 @@ describe('privacy PG persistence bundle', () => {
         purpose,
         policy,
         processor,
+        processorCapability: 'access',
         operationKind: 'data_use_evaluation',
         engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
           '44444444-4444-4444-8444-444444444444',

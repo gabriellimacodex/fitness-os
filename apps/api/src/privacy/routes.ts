@@ -18,6 +18,7 @@ import {
   type PrivacyPurposeRegistry,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
+  type PrivacySubjectDataProcessorResolver,
   type PrivacyTrustedClock,
 } from '@fitness-os/domain';
 import {
@@ -97,6 +98,8 @@ export interface PrivacySyntheticOptions {
    * data-use-evaluate also loads the processor from this port instead of seeding.
    */
   processors?: PrivacyRuntimeProcessorRegistry;
+  /** Explicitly bound processor handlers; descriptors never create handlers. */
+  processorResolver?: PrivacySubjectDataProcessorResolver;
 }
 
 function sendError(
@@ -323,6 +326,8 @@ export function registerPrivacySyntheticRoutes(
         policies: injectedPolicies ?? syntheticPorts.policies,
         purposes: injectedPurposes ?? syntheticPorts.purposes,
         processors: processors ?? syntheticPorts.processors,
+        processorResolver:
+          options.processorResolver ?? syntheticPorts.processorResolver,
       };
 
       const result = await evaluateDataUse(ports, {
@@ -332,6 +337,7 @@ export function registerPrivacySyntheticRoutes(
         operationKind: body.data.operationKind,
         engineeringCategoryId: body.data.engineeringCategoryId,
         processorId: body.data.processor.processorId,
+        processorCapability: body.data.processorCapability,
         evidenceId: body.data.evidence?.evidenceId ?? null,
         subjectScopeId: body.data.subjectScopeId,
         productionMode: body.data.productionMode,

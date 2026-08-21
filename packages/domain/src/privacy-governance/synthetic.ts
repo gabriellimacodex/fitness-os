@@ -29,6 +29,8 @@ import type {
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
+  PrivacySubjectDataProcessor,
+  PrivacySubjectDataProcessorResolver,
   PrivacyTrustedClock,
 } from './ports.js';
 import { transitionSubjectRequest } from './request.js';
@@ -218,6 +220,20 @@ export class SyntheticPrivacyRuntimeProcessorRegistry implements PrivacyRuntimeP
   }
 }
 
+export class SyntheticPrivacySubjectDataProcessorResolver implements PrivacySubjectDataProcessorResolver {
+  private readonly byId = new Map<string, PrivacySubjectDataProcessor>();
+
+  bind(processor: PrivacySubjectDataProcessor): void {
+    this.byId.set(processor.descriptorReference().processorId, processor);
+  }
+
+  async resolve(
+    processorId: string,
+  ): Promise<PrivacySubjectDataProcessor | null> {
+    return this.byId.get(processorId) ?? null;
+  }
+}
+
 export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectRequestRepository {
   private readonly byId = new Map<string, PrivacySubjectRequestReference>();
   private readonly transitions = new Map<
@@ -311,6 +327,7 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
   evidence: SyntheticPrivacyAuthorizationEvidenceLedger;
   policies: SyntheticPrivacyPolicyPackageRepository;
   processors: SyntheticPrivacyRuntimeProcessorRegistry;
+  processorResolver: SyntheticPrivacySubjectDataProcessorResolver;
   purposes: SyntheticPrivacyPurposeRegistry;
 } {
   return {
@@ -324,6 +341,7 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
     ids: input?.ids ?? new SyntheticPrivacyIdFactory(),
     policies: new SyntheticPrivacyPolicyPackageRepository(),
     processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
+    processorResolver: new SyntheticPrivacySubjectDataProcessorResolver(),
     purposes: new SyntheticPrivacyPurposeRegistry(),
   };
 }

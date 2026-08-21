@@ -18,6 +18,7 @@ export type {
   PrivacyReferencePutResult,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectDataProcessor,
+  PrivacySubjectDataProcessorResolver,
   PrivacySubjectRequestApplyResult,
   PrivacySubjectRequestRepository,
   PrivacyTrustedClock,
@@ -48,6 +49,7 @@ export {
   SyntheticPrivacyPurposeRegistry,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectRequestRepository,
+  SyntheticPrivacySubjectDataProcessorResolver,
   SyntheticPrivacyTrustedClock,
 } from './synthetic.js';
 export {

@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  SyntheticPrivacySubjectDataProcessor,
 } from '@fitness-os/domain';
 import {
   privacyActorContextReferenceSchema,
@@ -186,6 +187,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       synthetic.policies.seed(policy);
       synthetic.purposes.seed(purpose);
       synthetic.processors.seed(processor);
+      synthetic.processorResolver.bind(
+        new SyntheticPrivacySubjectDataProcessor(processor, []),
+      );
 
       const allowed = await evaluateDataUse(
         {
@@ -194,6 +198,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           policies: synthetic.policies,
           purposes: synthetic.purposes,
           processors: synthetic.processors,
+          processorResolver: synthetic.processorResolver,
           evidence: evidenceLedger,
           audit: auditSink,
         },
@@ -206,6 +211,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             '44444444-4444-4444-8444-444444444444',
           ),
           processorId: processor.processorId,
+          processorCapability: 'access',
           evidenceId: evidence.evidenceId,
           subjectScopeId: privacySubjectScopeIdSchema.parse(
             '22222222-2222-4222-8222-222222222222',
@@ -260,6 +266,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       const synthetic = createSyntheticPrivacyDataUsePorts({
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
       });
+      synthetic.processorResolver.bind(
+        new SyntheticPrivacySubjectDataProcessor(processor, []),
+      );
 
       const allowed = await evaluateDataUse(
         {
@@ -268,6 +277,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           policies,
           purposes,
           processors,
+          processorResolver: synthetic.processorResolver,
           evidence: evidenceLedger,
           audit: auditSink,
         },
@@ -280,6 +290,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             '44444444-4444-4444-8444-444444444444',
           ),
           processorId: processor.processorId,
+          processorCapability: 'access',
           evidenceId: evidence.evidenceId,
           subjectScopeId: privacySubjectScopeIdSchema.parse(
             '22222222-2222-4222-8222-222222222222',
