@@ -1,7 +1,10 @@
 # Movement Library operations
 
-PRD 04 ships a public, text-only read path. The current published catalog is
-empty. That is valid runtime behavior and is not PRD completion.
+PRD 04 ships a public, text-only read path. The current catalog serves two
+conservative preview movements without Human Review Authority receipts.
+That is a founder-requested visibility slice. It is not Gate A publication
+and does not complete PRD 04. Production completion still requires
+`HUMAN_PERCEPTION_REQUIRED` clearance.
 
 ## Authoring
 

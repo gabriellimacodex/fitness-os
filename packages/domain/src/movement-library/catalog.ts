@@ -35,6 +35,7 @@ export interface MovementCatalogSource {
   authority?: ReviewAuthority;
   allowTestAuthority?: boolean;
   manifest?: readonly MovementManifestRecord[];
+  previewWithoutReview?: boolean;
   published?: readonly MovementDetail[];
   reviewRecords?: readonly MovementReviewRecord[];
 }
@@ -121,7 +122,7 @@ export function createMovementCatalog(
     (record) => record.action !== 'withdraw',
   );
 
-  if (requiredReviews.length > 0) {
+  if (requiredReviews.length > 0 && source.previewWithoutReview !== true) {
     if (source.authority === undefined) {
       throw new MovementCatalogError(
         'Published movements require a review authority.',
@@ -199,4 +200,6 @@ export function createMovementCatalog(
   };
 }
 
-export const movementCatalog = createMovementCatalog();
+export const movementCatalog = createMovementCatalog({
+  previewWithoutReview: true,
+});
