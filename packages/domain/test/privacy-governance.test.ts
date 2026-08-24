@@ -1859,7 +1859,7 @@ describe('subject request transitions', () => {
     ),
     requestType: 'export',
     state: 'received',
-      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+    subjectScopeId: '22222222-2222-4222-8222-222222222222',
     verification: null,
     policyVersionId: policy.versionId,
     inventoryVersionDigest: '1'.repeat(64),
