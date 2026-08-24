@@ -6,6 +6,7 @@ import type {
 } from '@fitness-os/domain';
 import { transitionSubjectRequest } from '@fitness-os/domain';
 import {
+  privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
   type PrivacyCorrelationId,
@@ -44,9 +45,17 @@ function isUniqueViolation(error: unknown, constraint: string): boolean {
   );
 }
 
+/**
+ * Fail-closed for pre-migration rows lacking subject_scope_id: treat as
+ * unreadable rather than inventing a scope.
+ */
 function toReference(
   row: typeof privacySubjectRequest.$inferSelect,
-): PrivacySubjectRequestReference {
+): PrivacySubjectRequestReference | null {
+  if (row.subjectScopeId === null) {
+    return null;
+  }
+
   const verification =
     row.verificationRefDigest === null || row.verificationSynthetic === null
       ? null
@@ -59,6 +68,7 @@ function toReference(
     requestId: row.requestId,
     requestType: row.requestType,
     state: row.state,
+    subjectScopeId: row.subjectScopeId,
     verification,
     policyVersionId: row.policyVersionId,
     inventoryVersionDigest: row.inventoryVersionDigest,
@@ -88,6 +98,7 @@ function toRow(record: PrivacySubjectRequestReference) {
     requestId: record.requestId,
     requestType: record.requestType,
     state: record.state,
+    subjectScopeId: record.subjectScopeId,
     verificationRefDigest: record.verification?.verificationRefDigest ?? null,
     verificationSynthetic: record.verification?.synthetic ?? null,
     policyVersionId: record.policyVersionId,
@@ -107,7 +118,10 @@ export function createPostgresPrivacySubjectRequestRepository(
         .from(privacySubjectRequest)
         .where(eq(privacySubjectRequest.requestId, requestId))
         .limit(1);
-      return row ? toReference(row) : null;
+      if (!row) {
+        return null;
+      }
+      return toReference(row);
     },
 
     put: async (record): Promise<PrivacyReferencePutResult> => {
@@ -156,6 +170,11 @@ export function createPostgresPrivacySubjectRequestRepository(
           }
 
           const current = toReference(row);
+          if (current === null) {
+            // Incomplete legacy row without subject scope — fail closed.
+            return { reason: 'not_found' as const, status: 'invalid' as const };
+          }
+
           const result = transitionSubjectRequest({
             request: current,
             next: input.next,
@@ -166,6 +185,11 @@ export function createPostgresPrivacySubjectRequestRepository(
 
           if (result.status !== 'advanced') {
             return result;
+          }
+
+          // Immutable identity must survive transitions (subject scope etc.).
+          if (!privacySubjectRequestIdentityEquals(result.request, current)) {
+            return { status: 'conflict' as const };
           }
 
           const transition =
@@ -189,6 +213,10 @@ export function createPostgresPrivacySubjectRequestRepository(
               and(
                 eq(privacySubjectRequest.requestId, result.request.requestId),
                 eq(privacySubjectRequest.state, current.state),
+                eq(
+                  privacySubjectRequest.subjectScopeId,
+                  current.subjectScopeId,
+                ),
               ),
             )
             .returning({ requestId: privacySubjectRequest.requestId });

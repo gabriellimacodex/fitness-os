@@ -417,6 +417,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         requestType: 'export',
         state: 'verification_required',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
         inventoryVersionDigest: '1'.repeat(64),
