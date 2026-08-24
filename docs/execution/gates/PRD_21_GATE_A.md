@@ -67,6 +67,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Audited prebound access handler           | `#150` (literal access; registry/handler binding; audit before execute)                                                          |
 | Expected-inventory execute binding        | `#152` (digests/owner/environment/mechanism readiness before execute)                                                            |
 | Synthetic IntegrityVerifier               | `#154` (sealed policy/evidence digests after inventory; before execute)                                                          |
+| Synthetic actor/subject attribution       | `#156` (opaque digest/scope seals; `policy_unattributed` fail-closed)                                                            |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
