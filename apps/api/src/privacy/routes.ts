@@ -7,10 +7,12 @@ import {
   planWithdrawal,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyIdFactory,
+  SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
+  type PrivacyAttributionVerifier,
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
@@ -107,6 +109,10 @@ export interface PrivacySyntheticOptions {
    * readiness continues to reject.
    */
   integrityVerifier?: PrivacyIntegrityVerifier;
+  /**
+   * Optional attribution verifier for opaque synthetic actor/subject bindings.
+   */
+  attributionVerifier?: PrivacyAttributionVerifier;
 }
 
 function sendError(
@@ -309,6 +315,7 @@ export function registerPrivacySyntheticRoutes(
         ids: ids as never,
         expectedInventory,
         integrityVerifier: options.integrityVerifier,
+        attributionVerifier: options.attributionVerifier,
       });
       if (injectedPolicies === undefined) {
         syntheticPorts.policies.seed(body.data.policy);
@@ -342,6 +349,30 @@ export function registerPrivacySyntheticRoutes(
         }
       }
 
+      if (
+        options.attributionVerifier === undefined &&
+        syntheticPorts.attributionVerifier instanceof
+          SyntheticPrivacyAttributionVerifier
+      ) {
+        syntheticPorts.attributionVerifier.sealPolicyAttribution(
+          body.data.policy.versionId,
+          {
+            actorPrincipalDigest: body.data.actor.principalReferenceDigest,
+            synthetic: body.data.actor.synthetic,
+          },
+        );
+        if (body.data.evidence !== null) {
+          syntheticPorts.attributionVerifier.sealEvidenceAttribution(
+            body.data.evidence.evidenceId,
+            {
+              actorPrincipalDigest: body.data.actor.principalReferenceDigest,
+              subjectScopeId: body.data.subjectScopeId,
+              synthetic: body.data.actor.synthetic,
+            },
+          );
+        }
+      }
+
       const ports = {
         ...syntheticPorts,
         audit: injectedAudit ?? syntheticPorts.audit,
@@ -352,6 +383,7 @@ export function registerPrivacySyntheticRoutes(
         expectedInventory:
           expectedInventory ?? syntheticPorts.expectedInventory,
         integrityVerifier: syntheticPorts.integrityVerifier,
+        attributionVerifier: syntheticPorts.attributionVerifier,
         processorResolver:
           options.processorResolver ?? syntheticPorts.processorResolver,
       };

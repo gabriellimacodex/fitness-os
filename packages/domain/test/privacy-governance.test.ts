@@ -29,6 +29,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
@@ -139,6 +140,19 @@ function seedHappyPath() {
   ports.purposes.seed(purpose);
   ports.processors.seed(processor);
   ports.evidence.seedEvidence(evidence);
+  if (
+    ports.attributionVerifier instanceof SyntheticPrivacyAttributionVerifier
+  ) {
+    ports.attributionVerifier.sealPolicyAttribution(policy.versionId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      synthetic: actor.synthetic,
+    });
+    ports.attributionVerifier.sealEvidenceAttribution(evidence.evidenceId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      subjectScopeId,
+      synthetic: actor.synthetic,
+    });
+  }
   return ports;
 }
 
@@ -373,6 +387,368 @@ describe('evaluateDataUse', () => {
       outcome: 'denied',
       reasonCode: 'processor_handler_missing',
     });
+  });
+
+  it('allows when synthetic actor/subject attribution matches sealed bindings', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async (command) => {
+              executions += 1;
+              return privacySyntheticProcessorResultSchema.parse({
+                status: 'completed',
+                reasonCode: null,
+                capability: command.capability,
+                families: [],
+                accessLocatorDigest: 'f'.repeat(64),
+                exportManifestDigest: null,
+                operationId: command.operationId,
+                correlationId: command.correlationId,
+              });
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.status).toBe('evaluated');
+    expect(result.decision.outcome).toBe('allowed');
+    if (result.decision.outcome === 'allowed') {
+      expect(result.decision.actorContextDigest).toBe(
+        actor.principalReferenceDigest,
+      );
+      expect(result.decision.subjectScopeId).toBe(subjectScopeId);
+    }
+    expect(executions).toBe(1);
+  });
+
+  it('denies when policy attribution seal is absent (actor unattributed)', async () => {
+    const ports = seedHappyPath();
+    const attribution = new SyntheticPrivacyAttributionVerifier();
+    attribution.sealEvidenceAttribution(evidence.evidenceId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      subjectScopeId,
+      synthetic: true,
+    });
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        attributionVerifier: attribution,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+    expect(ports.audit.events).toHaveLength(1);
+    expect(ports.audit.events[0]?.outcome).toBe('denied');
+  });
+
+  it('denies when evidence attribution seal is absent (subject unattributed)', async () => {
+    const ports = seedHappyPath();
+    const attribution = new SyntheticPrivacyAttributionVerifier();
+    attribution.sealPolicyAttribution(policy.versionId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      synthetic: true,
+    });
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        attributionVerifier: attribution,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('denies when request actor digests diverge from sealed evidence attribution', async () => {
+    const ports = seedHappyPath();
+    const attribution = new SyntheticPrivacyAttributionVerifier();
+    attribution.sealPolicyAttribution(policy.versionId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      synthetic: true,
+    });
+    attribution.sealEvidenceAttribution(evidence.evidenceId, {
+      actorPrincipalDigest: 'a'.repeat(64),
+      subjectScopeId,
+      synthetic: true,
+    });
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        attributionVerifier: attribution,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('denies when request subject diverges from sealed evidence attribution', async () => {
+    const ports = seedHappyPath();
+    const otherSubject = privacySubjectScopeIdSchema.parse(
+      '33333333-3333-4333-8333-333333333333',
+    );
+    const attribution = new SyntheticPrivacyAttributionVerifier();
+    attribution.sealPolicyAttribution(policy.versionId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      synthetic: true,
+    });
+    attribution.sealEvidenceAttribution(evidence.evidenceId, {
+      actorPrincipalDigest: actor.principalReferenceDigest,
+      subjectScopeId: otherSubject,
+      synthetic: true,
+    });
+    let executions = 0;
+
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        attributionVerifier: attribution,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('denies empty/malformed actor principal digest as unattributed', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor: {
+          ...actor,
+          principalReferenceDigest: '0'.repeat(64),
+        },
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('denies non-synthetic actor in synthetic environment as unattributed', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor: { ...actor, synthetic: false },
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+  });
+
+  it('maps attribution verifier throw to policy_unattributed not technical unavailability', async () => {
+    const ports = seedHappyPath();
+    let executions = 0;
+    const result = await evaluateDataUse(
+      {
+        ...ports,
+        attributionVerifier: {
+          verify: async () => {
+            throw new Error('raw attribution secret');
+          },
+        },
+        processorResolver: {
+          resolve: async () => ({
+            descriptorReference: () => processor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+      },
+      {
+        actor,
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        operationKind: 'data_use_evaluation',
+        engineeringCategoryId: categoryId,
+        processorId: processor.processorId,
+        processorCapability: 'access',
+        evidenceId: evidence.evidenceId,
+        subjectScopeId,
+        productionMode: false,
+      },
+    );
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'policy_unattributed',
+    });
+    expect(executions).toBe(0);
+    expect(JSON.stringify(result)).not.toContain('raw attribution secret');
   });
 
   it('allows when sealed policy and evidence integrity verify (IntegrityVerifier)', async () => {
