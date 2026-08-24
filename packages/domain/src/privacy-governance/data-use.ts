@@ -115,6 +115,51 @@ async function verifyIntegrityOrDeny(
   return null;
 }
 
+async function verifyAttributionOrDeny(
+  ports: PrivacyDataUsePorts,
+  input: PrivacyDataUseEvaluationInput,
+  evaluatedAt: string,
+  correlationId: PrivacyCorrelationId,
+  operationId: PrivacyOperationId,
+): Promise<PrivacyDataUseEvaluationResult | null> {
+  // Attribution failures stay policy_unattributed — not technical unavailability
+  // (except mandatory audit unavailability handled later in commitDecision).
+  if (ports.attributionVerifier == null) {
+    return commitDecision(
+      ports,
+      deny('policy_unattributed', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  let result;
+  try {
+    result = await ports.attributionVerifier.verify({
+      actor: input.actor,
+      subjectScopeId: input.subjectScopeId,
+      policyVersionId: input.policyVersionId,
+      evidenceId: input.evidenceId,
+      productionMode: input.productionMode,
+    });
+  } catch {
+    return commitDecision(
+      ports,
+      deny('policy_unattributed', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  if (result.status !== 'attributed') {
+    return commitDecision(
+      ports,
+      deny('policy_unattributed', evaluatedAt, correlationId),
+      operationId,
+    );
+  }
+
+  return null;
+}
+
 export async function evaluateDataUse(
   ports: PrivacyDataUsePorts,
   input: PrivacyDataUseEvaluationInput,
@@ -354,6 +399,18 @@ export async function evaluateDataUse(
   );
   if (integrity !== null) {
     return integrity;
+  }
+
+  // Attribution (opaque actor/subject) after integrity, before execute.
+  const attribution = await verifyAttributionOrDeny(
+    ports,
+    input,
+    evaluatedAt,
+    correlationId,
+    operationId,
+  );
+  if (attribution !== null) {
+    return attribution;
   }
 
   let boundProcessor;

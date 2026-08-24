@@ -20,6 +20,10 @@ import {
 } from '@fitness-os/schemas';
 
 import type {
+  PrivacyAttributionBinding,
+  PrivacyAttributionVerificationInput,
+  PrivacyAttributionVerificationResult,
+  PrivacyAttributionVerifier,
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
   PrivacyDataUsePorts,
@@ -378,12 +382,103 @@ export class SyntheticPrivacyIntegrityVerifier implements PrivacyIntegrityVerifi
   }
 }
 
+/**
+ * Seals opaque synthetic actor/subject attribution for later verify().
+ * Never stores PII — digests and subject-scope IDs only.
+ */
+export class SyntheticPrivacyAttributionVerifier implements PrivacyAttributionVerifier {
+  private readonly evidenceBindings = new Map<
+    string,
+    PrivacyAttributionBinding
+  >();
+  private readonly policyBindings = new Map<
+    string,
+    { actorPrincipalDigest: string; synthetic: boolean }
+  >();
+
+  sealPolicyAttribution(
+    policyVersionId: string,
+    binding: Pick<
+      PrivacyAttributionBinding,
+      'actorPrincipalDigest' | 'synthetic'
+    >,
+  ): void {
+    this.policyBindings.set(policyVersionId, {
+      actorPrincipalDigest: binding.actorPrincipalDigest,
+      synthetic: binding.synthetic,
+    });
+  }
+
+  sealEvidenceAttribution(
+    evidenceId: string,
+    binding: PrivacyAttributionBinding,
+  ): void {
+    this.evidenceBindings.set(evidenceId, { ...binding });
+  }
+
+  clear(): void {
+    this.evidenceBindings.clear();
+    this.policyBindings.clear();
+  }
+
+  async verify(
+    input: PrivacyAttributionVerificationInput,
+  ): Promise<PrivacyAttributionVerificationResult> {
+    if (!input.productionMode && !input.actor.synthetic) {
+      return { status: 'unattributed' };
+    }
+
+    const actorDigest = input.actor.principalReferenceDigest;
+    if (
+      typeof actorDigest !== 'string' ||
+      actorDigest.length !== 64 ||
+      actorDigest === '0'.repeat(64) ||
+      !/^[a-f0-9]{64}$/.test(actorDigest)
+    ) {
+      return { status: 'unattributed' };
+    }
+
+    const subjectScopeId = String(input.subjectScopeId ?? '');
+    if (subjectScopeId.length === 0) {
+      return { status: 'unattributed' };
+    }
+
+    const policyBind = this.policyBindings.get(input.policyVersionId);
+    if (policyBind === undefined) {
+      return { status: 'unattributed' };
+    }
+    if (
+      policyBind.actorPrincipalDigest !== actorDigest ||
+      policyBind.synthetic !== input.actor.synthetic
+    ) {
+      return { status: 'unattributed' };
+    }
+
+    if (input.evidenceId !== null) {
+      const evidenceBind = this.evidenceBindings.get(input.evidenceId);
+      if (evidenceBind === undefined) {
+        return { status: 'unattributed' };
+      }
+      if (
+        evidenceBind.actorPrincipalDigest !== actorDigest ||
+        evidenceBind.subjectScopeId !== subjectScopeId ||
+        evidenceBind.synthetic !== input.actor.synthetic
+      ) {
+        return { status: 'unattributed' };
+      }
+    }
+
+    return { status: 'attributed' };
+  }
+}
+
 export function createSyntheticPrivacyDataUsePorts(input?: {
   clock?: PrivacyTrustedClock;
   fixedUtcMs?: string;
   ids?: PrivacyIdFactory;
   expectedInventory?: PrivacyExpectedProcessorInventoryPort;
   integrityVerifier?: PrivacyIntegrityVerifier;
+  attributionVerifier?: PrivacyAttributionVerifier;
 }): PrivacyDataUsePorts & {
   audit: SyntheticPrivacyAuditSink;
   evidence: SyntheticPrivacyAuthorizationEvidenceLedger;
@@ -394,9 +489,13 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
   expectedInventory: PrivacyExpectedProcessorInventoryPort;
   integrityVerifier:
     SyntheticPrivacyIntegrityVerifier | PrivacyIntegrityVerifier;
+  attributionVerifier:
+    SyntheticPrivacyAttributionVerifier | PrivacyAttributionVerifier;
 } {
   const integrityVerifier =
     input?.integrityVerifier ?? new SyntheticPrivacyIntegrityVerifier();
+  const attributionVerifier =
+    input?.attributionVerifier ?? new SyntheticPrivacyAttributionVerifier();
   const policies = new SyntheticPrivacyPolicyPackageRepository();
   const evidence = new SyntheticPrivacyAuthorizationEvidenceLedger();
 
@@ -429,6 +528,7 @@ export function createSyntheticPrivacyDataUsePorts(input?: {
     processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
     expectedInventory: input?.expectedInventory ?? emptyExpectedInventory,
     integrityVerifier,
+    attributionVerifier,
     processorResolver: new SyntheticPrivacySubjectDataProcessorResolver(),
     purposes: new SyntheticPrivacyPurposeRegistry(),
   };

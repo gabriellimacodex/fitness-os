@@ -144,6 +144,35 @@ export interface PrivacyIntegrityVerifier {
   ): Promise<PrivacyIntegrityVerificationResult>;
 }
 
+/**
+ * Opaque synthetic actor/subject attribution binding. Digests and scope IDs
+ * only — never names, emails, documents, or other PII.
+ */
+export type PrivacyAttributionBinding = {
+  actorPrincipalDigest: string;
+  subjectScopeId: string;
+  synthetic: boolean;
+};
+
+export type PrivacyAttributionVerificationResult =
+  | { status: 'attributed' }
+  | { status: 'unattributed' }
+  | { status: 'unavailable' };
+
+export interface PrivacyAttributionVerificationInput {
+  actor: PrivacyActorContextReference;
+  subjectScopeId: PrivacySubjectScopeId;
+  policyVersionId: string;
+  evidenceId: string | null;
+  productionMode: boolean;
+}
+
+export interface PrivacyAttributionVerifier {
+  verify(
+    input: PrivacyAttributionVerificationInput,
+  ): Promise<PrivacyAttributionVerificationResult>;
+}
+
 export type PrivacySubjectRequestApplyResult =
   | {
       status: 'advanced';
@@ -209,6 +238,11 @@ export interface PrivacyDataUsePorts {
    * and before processor execution. Missing/unavailable verifiers fail closed.
    */
   integrityVerifier: PrivacyIntegrityVerifier;
+  /**
+   * Verifies sealed synthetic actor/subject attribution after integrity and
+   * before processor execution. Failures deny as `policy_unattributed`.
+   */
+  attributionVerifier: PrivacyAttributionVerifier;
   processorResolver: PrivacySubjectDataProcessorResolver;
 }
 

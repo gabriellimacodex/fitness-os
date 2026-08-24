@@ -5,6 +5,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
+  SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacySubjectDataProcessor,
@@ -237,6 +238,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ) {
         synthetic.integrityVerifier.sealEvidence(evidence);
       }
+      if (
+        synthetic.attributionVerifier instanceof
+        SyntheticPrivacyAttributionVerifier
+      ) {
+        synthetic.attributionVerifier.sealPolicyAttribution(policy.versionId, {
+          actorPrincipalDigest: actor.principalReferenceDigest,
+          synthetic: actor.synthetic,
+        });
+        synthetic.attributionVerifier.sealEvidenceAttribution(
+          evidence.evidenceId,
+          {
+            actorPrincipalDigest: actor.principalReferenceDigest,
+            subjectScopeId: privacySubjectScopeIdSchema.parse(
+              '22222222-2222-4222-8222-222222222222',
+            ),
+            synthetic: actor.synthetic,
+          },
+        );
+      }
 
       const allowed = await evaluateDataUse(
         {
@@ -248,6 +268,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           processorResolver: synthetic.processorResolver,
           expectedInventory,
           integrityVerifier: synthetic.integrityVerifier,
+          attributionVerifier: synthetic.attributionVerifier,
           evidence: evidenceLedger,
           audit: auditSink,
         },
@@ -325,6 +346,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         synthetic.integrityVerifier.sealPolicy(policy);
         synthetic.integrityVerifier.sealEvidence(evidence);
       }
+      if (
+        synthetic.attributionVerifier instanceof
+        SyntheticPrivacyAttributionVerifier
+      ) {
+        synthetic.attributionVerifier.sealPolicyAttribution(policy.versionId, {
+          actorPrincipalDigest: actor.principalReferenceDigest,
+          synthetic: actor.synthetic,
+        });
+        synthetic.attributionVerifier.sealEvidenceAttribution(
+          evidence.evidenceId,
+          {
+            actorPrincipalDigest: actor.principalReferenceDigest,
+            subjectScopeId: privacySubjectScopeIdSchema.parse(
+              '22222222-2222-4222-8222-222222222222',
+            ),
+            synthetic: actor.synthetic,
+          },
+        );
+      }
 
       const allowed = await evaluateDataUse(
         {
@@ -336,6 +376,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           processorResolver: synthetic.processorResolver,
           expectedInventory,
           integrityVerifier: synthetic.integrityVerifier,
+          attributionVerifier: synthetic.attributionVerifier,
           evidence: evidenceLedger,
           audit: auditSink,
         },

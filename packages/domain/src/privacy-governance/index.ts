@@ -5,6 +5,10 @@ export {
   type InventoryCoverageResult,
 } from './inventory-coverage.js';
 export type {
+  PrivacyAttributionBinding,
+  PrivacyAttributionVerificationInput,
+  PrivacyAttributionVerificationResult,
+  PrivacyAttributionVerifier,
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
   PrivacyDataUseEvaluationInput,
@@ -45,6 +49,7 @@ export {
 } from './retention.js';
 export {
   createSyntheticPrivacyDataUsePorts,
+  SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyAuditSink,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyExpectedProcessorInventory,

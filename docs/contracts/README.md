@@ -168,12 +168,12 @@ injected; production readiness remains false under the active legal stop.
 Synthetic data-use evaluation requires the explicit `access` capability, a
 processor handler bound by the composition root, an exact reviewed expected
 inventory entry binding (descriptor/inventory digests, code owner, synthetic
-marker, environment applicability, and mechanism-only readiness), and a sealed
-`IntegrityVerifier` check of policy/evidence content digests after inventory
-bind and before execute. Missing, diverging, or unavailable integrity evidence
-denies with `policy_integrity_invalid` or `dependency_unavailable`. The
-mandatory audit must be accepted before that handler executes; denial and
-audit-unavailable paths never invoke it.
+marker, environment applicability, and mechanism-only readiness), a sealed
+`IntegrityVerifier` check of policy/evidence content digests, and a sealed
+`AttributionVerifier` check that opaque synthetic actor/subject digests match
+admitted policy/evidence bindings (`policy_unattributed` on failure — not
+technical unavailability). The mandatory audit must be accepted before that
+handler executes; denial and audit-unavailable paths never invoke it.
 
 Option A foundation plus reference-only policy/evidence/withdrawal/actor/purpose/
 request/audit/processor locators, tagged data-use decisions, and fail-closed
