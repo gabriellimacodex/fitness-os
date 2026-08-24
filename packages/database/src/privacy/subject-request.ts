@@ -6,6 +6,7 @@ import type {
 } from '@fitness-os/domain';
 import { transitionSubjectRequest } from '@fitness-os/domain';
 import {
+  privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
   type PrivacyCorrelationId,
@@ -187,14 +188,7 @@ export function createPostgresPrivacySubjectRequestRepository(
           }
 
           // Immutable identity must survive transitions (subject scope etc.).
-          if (
-            result.request.subjectScopeId !== current.subjectScopeId ||
-            result.request.requestType !== current.requestType ||
-            result.request.policyVersionId !== current.policyVersionId ||
-            result.request.inventoryVersionDigest !==
-              current.inventoryVersionDigest ||
-            result.request.requestId !== current.requestId
-          ) {
+          if (!privacySubjectRequestIdentityEquals(result.request, current)) {
             return { status: 'conflict' as const };
           }
 

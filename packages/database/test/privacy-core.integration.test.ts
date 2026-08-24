@@ -508,6 +508,87 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(conflict).toEqual({ status: 'conflict' });
     });
 
+    it('fail-closes legacy subject-request rows missing subject_scope_id', async () => {
+      await policies.put(policy);
+
+      const requestId = privacySubjectRequestIdSchema.parse(
+        '86868686-8686-4868-8868-868686868686',
+      );
+      const correlationId = privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      );
+
+      // Simulate a pre-0012 / incomplete row: column exists but scope is NULL.
+      // Do not invent a sentinel scope — repository must treat as unreadable.
+      await connection.db.execute(sql`
+        INSERT INTO privacy_subject_request (
+          request_id,
+          request_type,
+          state,
+          subject_scope_id,
+          verification_ref_digest,
+          verification_synthetic,
+          policy_version_id,
+          inventory_version_digest,
+          correlation_id,
+          updated_at
+        ) VALUES (
+          ${requestId}::uuid,
+          'export',
+          'verification_required',
+          NULL,
+          NULL,
+          NULL,
+          ${policy.versionId}::uuid,
+          ${'1'.repeat(64)},
+          ${correlationId}::uuid,
+          ${'2026-08-18T12:00:00.000Z'}::timestamptz
+        )
+      `);
+
+      await expect(subjectRequests.get(requestId)).resolves.toBeNull();
+
+      const beforeTransitions =
+        await subjectRequests.listTransitions(requestId);
+      expect(beforeTransitions).toEqual([]);
+
+      const denied = await subjectRequests.applyTransition({
+        requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T12:02:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          'a8686868-8686-4868-8868-868686868686',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          'b8686868-8686-4868-8868-868686868686',
+        ),
+        correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      });
+      expect(denied).toEqual({ status: 'invalid', reason: 'not_found' });
+
+      const remaining = await connection.db.execute<{
+        subject_scope_id: string | null;
+        state: string;
+      }>(sql`
+        SELECT subject_scope_id, state
+        FROM privacy_subject_request
+        WHERE request_id = ${requestId}::uuid
+      `);
+      expect(remaining[0]).toEqual({
+        subject_scope_id: null,
+        state: 'verification_required',
+      });
+      await expect(subjectRequests.listTransitions(requestId)).resolves.toEqual(
+        [],
+      );
+    });
+
     it('serializes concurrent transitions so only one advances the pointer', async () => {
       await policies.put(policy);
 

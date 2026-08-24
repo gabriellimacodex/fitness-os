@@ -40,6 +40,7 @@ import {
   privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticRetentionPreviewResponseSchema,
+  privacySubjectRequestIdentityEquals,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticSubjectRequestTransitionResponseSchema,
   privacySyntheticWithdrawalPlanRequestSchema,
@@ -435,10 +436,7 @@ export function registerPrivacySyntheticRoutes(
           const raced = await subjectRequests.get(incoming.requestId);
           if (
             raced === null ||
-            raced.subjectScopeId !== incoming.subjectScopeId ||
-            raced.requestType !== incoming.requestType ||
-            raced.policyVersionId !== incoming.policyVersionId ||
-            raced.inventoryVersionDigest !== incoming.inventoryVersionDigest
+            !privacySubjectRequestIdentityEquals(raced, incoming)
           ) {
             return privacySyntheticSubjectRequestTransitionResponseSchema.parse(
               {
@@ -447,12 +445,7 @@ export function registerPrivacySyntheticRoutes(
             );
           }
         }
-      } else if (
-        existing.subjectScopeId !== incoming.subjectScopeId ||
-        existing.requestType !== incoming.requestType ||
-        existing.policyVersionId !== incoming.policyVersionId ||
-        existing.inventoryVersionDigest !== incoming.inventoryVersionDigest
-      ) {
+      } else if (!privacySubjectRequestIdentityEquals(existing, incoming)) {
         // Same requestId must never bind a different subject/policy/type.
         return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
           status: 'conflict',

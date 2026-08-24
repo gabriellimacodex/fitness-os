@@ -532,10 +532,21 @@ export type PrivacySubjectRequestReference = z.infer<
   typeof privacySubjectRequestReferenceSchema
 >;
 
-/** Immutable identity fields that must match for requestId reuse / replay. */
+/**
+ * Immutable identity fields that must match for requestId reuse / replay.
+ * Structural (string) inputs avoid dual-Zod brand mismatches across packages.
+ */
+export type PrivacySubjectRequestIdentityFields = {
+  requestId: string;
+  subjectScopeId: string;
+  requestType: string;
+  policyVersionId: string;
+  inventoryVersionDigest: string;
+};
+
 export const privacySubjectRequestIdentityEquals = (
-  left: PrivacySubjectRequestReference,
-  right: PrivacySubjectRequestReference,
+  left: PrivacySubjectRequestIdentityFields,
+  right: PrivacySubjectRequestIdentityFields,
 ): boolean =>
   left.requestId === right.requestId &&
   left.subjectScopeId === right.subjectScopeId &&
