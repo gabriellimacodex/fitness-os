@@ -27,6 +27,7 @@ import {
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
+  privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
@@ -410,6 +411,7 @@ describe('subject request and audit event references', () => {
       requestId: '66666666-6666-4666-8666-666666666666',
       requestType: 'export',
       state: 'verification_required',
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
       verification: {
         verificationRefDigest: '1'.repeat(64),
         synthetic: true,
@@ -420,6 +422,20 @@ describe('subject request and audit event references', () => {
       updatedAt: '2026-08-18T12:00:00.000Z',
     });
     expect(parsed.state).toBe('verification_required');
+    expect(parsed.subjectScopeId).toBe('22222222-2222-4222-8222-222222222222');
+
+    expect(
+      privacySubjectRequestReferenceSchema.safeParse({
+        requestId: parsed.requestId,
+        requestType: parsed.requestType,
+        state: parsed.state,
+        verification: parsed.verification,
+        policyVersionId: parsed.policyVersionId,
+        inventoryVersionDigest: parsed.inventoryVersionDigest,
+        correlationId: parsed.correlationId,
+        updatedAt: parsed.updatedAt,
+      }).success,
+    ).toBe(false);
 
     expect(
       privacySubjectRequestReferenceSchema.safeParse({
@@ -438,6 +454,26 @@ describe('subject request and audit event references', () => {
         ...parsed,
         state: 'legally_approved',
       }).success,
+    ).toBe(false);
+
+    expect(
+      privacySubjectRequestIdentityEquals(
+        parsed,
+        privacySubjectRequestReferenceSchema.parse({
+          ...parsed,
+          state: 'ready',
+          updatedAt: '2026-08-18T13:00:00.000Z',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      privacySubjectRequestIdentityEquals(
+        parsed,
+        privacySubjectRequestReferenceSchema.parse({
+          ...parsed,
+          subjectScopeId: '33333333-3333-4333-8333-333333333333',
+        }),
+      ),
     ).toBe(false);
   });
 
@@ -919,6 +955,7 @@ describe('processor descriptor and readiness contracts', () => {
         requestId: '66666666-6666-4666-8666-666666666666',
         requestType: 'export' as const,
         state: 'verification_required' as const,
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         inventoryVersionDigest: '1'.repeat(64),

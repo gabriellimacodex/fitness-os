@@ -19,4 +19,16 @@ describe('privacy readiness migration coverage', () => {
 
     expect(requiredPrivacyCoreMigrationHashes()).toContain(expectedHash);
   });
+
+  it('requires the subject-request scope binding migration', () => {
+    const migration = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        '../drizzle/0012_prd21_privacy_subject_request_scope.sql',
+      ),
+    );
+    const expectedHash = createHash('sha256').update(migration).digest('hex');
+
+    expect(requiredPrivacyCoreMigrationHashes()).toContain(expectedHash);
+  });
 });

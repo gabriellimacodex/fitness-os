@@ -231,6 +231,11 @@ export const privacySubjectRequest = pgTable(
     requestId: uuid('request_id').primaryKey(),
     requestType: text('request_type').notNull(),
     state: text('state').notNull(),
+    /**
+     * Opaque synthetic subject scope. Nullable only for pre-migration rows;
+     * application fail-closed treats NULL as unreadable/incomplete (no backfill).
+     */
+    subjectScopeId: uuid('subject_scope_id'),
     verificationRefDigest: text('verification_ref_digest'),
     verificationSynthetic: boolean('verification_synthetic'),
     policyVersionId: uuid('policy_version_id').notNull(),
@@ -278,6 +283,9 @@ export const privacySubjectRequest = pgTable(
     ),
     index('privacy_subject_request_state_idx').on(table.state),
     index('privacy_subject_request_updated_at_idx').on(table.updatedAt),
+    index('privacy_subject_request_subject_scope_id_idx').on(
+      table.subjectScopeId,
+    ),
   ],
 );
 

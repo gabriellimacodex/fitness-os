@@ -224,7 +224,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       const synthetic = createSyntheticPrivacyDataUsePorts({
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
-        expectedInventory,
+        expectedInventory: expectedInventory as never,
       });
       synthetic.policies.seed(policy);
       synthetic.purposes.seed(purpose);
@@ -266,7 +266,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purposes: synthetic.purposes,
           processors: synthetic.processors,
           processorResolver: synthetic.processorResolver,
-          expectedInventory,
+          expectedInventory: expectedInventory as never,
           integrityVerifier: synthetic.integrityVerifier,
           attributionVerifier: synthetic.attributionVerifier,
           evidence: evidenceLedger,
@@ -335,7 +335,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       const synthetic = createSyntheticPrivacyDataUsePorts({
         fixedUtcMs: '2026-08-18T12:00:00.000Z',
-        expectedInventory,
+        expectedInventory: expectedInventory as never,
       });
       synthetic.processorResolver.bind(
         new SyntheticPrivacySubjectDataProcessor(processor, []),
@@ -374,7 +374,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           purposes,
           processors,
           processorResolver: synthetic.processorResolver,
-          expectedInventory,
+          expectedInventory: expectedInventory as never,
           integrityVerifier: synthetic.integrityVerifier,
           attributionVerifier: synthetic.attributionVerifier,
           evidence: evidenceLedger,
@@ -411,6 +411,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         requestType: 'export',
         state: 'verification_required',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
         inventoryVersionDigest: '1'.repeat(64),
@@ -516,6 +517,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         requestType: 'export',
         state: 'ready',
+        subjectScopeId: privacySubjectScopeIdSchema.parse(
+          '22222222-2222-4222-8222-222222222222',
+        ),
         verification: {
           verificationRefDigest: '2'.repeat(64),
           synthetic: true,
@@ -637,6 +641,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         requestType: 'export',
         state: 'verification_required',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
         inventoryVersionDigest: '1'.repeat(64),

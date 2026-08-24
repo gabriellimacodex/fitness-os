@@ -512,12 +512,15 @@ export type PrivacyVerificationReference = z.infer<
 /**
  * Data-subject request current pointer. Append-only transition history is a
  * separate reference; this freezes the request identity and pinned versions.
+ * `subjectScopeId` is opaque synthetic scope — never PII — and is immutable
+ * for the lifetime of a requestId.
  */
 export const privacySubjectRequestReferenceSchema = z
   .object({
     requestId: privacySubjectRequestIdSchema,
     requestType: privacySubjectRequestTypeSchema,
     state: privacySubjectRequestStateSchema,
+    subjectScopeId: privacySubjectScopeIdSchema,
     verification: privacyVerificationReferenceSchema.nullable(),
     policyVersionId: privacyPolicyVersionIdSchema,
     inventoryVersionDigest: privacySha256DigestSchema,
@@ -528,6 +531,17 @@ export const privacySubjectRequestReferenceSchema = z
 export type PrivacySubjectRequestReference = z.infer<
   typeof privacySubjectRequestReferenceSchema
 >;
+
+/** Immutable identity fields that must match for requestId reuse / replay. */
+export const privacySubjectRequestIdentityEquals = (
+  left: PrivacySubjectRequestReference,
+  right: PrivacySubjectRequestReference,
+): boolean =>
+  left.requestId === right.requestId &&
+  left.subjectScopeId === right.subjectScopeId &&
+  left.requestType === right.requestType &&
+  left.policyVersionId === right.policyVersionId &&
+  left.inventoryVersionDigest === right.inventoryVersionDigest;
 
 export const privacySubjectRequestTransitionIdSchema = z
   .uuidv4()

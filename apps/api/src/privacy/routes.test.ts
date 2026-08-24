@@ -514,6 +514,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
     ),
     requestType: 'export',
     state: 'verification_required',
+    subjectScopeId: '22222222-2222-4222-8222-222222222222',
     verification: null,
     policyVersionId: policy.versionId,
     inventoryVersionDigest: '1'.repeat(64),
@@ -539,6 +540,74 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
       'd4444444-4444-4444-8444-444444444444',
     ),
   };
+
+  it('conflicts when the same requestId is reused for another subject scope', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: baseRequest,
+        next: 'ready',
+        transitionId: transitionIds.first,
+        operationId: operationIds.first,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({ status: 'advanced' });
+    const before = await subjectRequests.listTransitions(baseRequest.requestId);
+
+    const conflicted = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/subject-request-transition',
+      payload: {
+        request: {
+          ...baseRequest,
+          subjectScopeId: privacySubjectScopeIdSchema.parse(
+            '33333333-3333-4333-8333-333333333333',
+          ),
+          state: 'verification_required',
+        },
+        next: 'ready',
+        transitionId: transitionIds.second,
+        operationId: operationIds.second,
+        correlationId: baseRequest.correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      },
+    });
+    expect(conflicted.statusCode).toBe(200);
+    expect(conflicted.json()).toEqual({ status: 'conflict' });
+    await expect(
+      subjectRequests.listTransitions(baseRequest.requestId),
+    ).resolves.toHaveLength(before.length);
+    const stored = await subjectRequests.get(baseRequest.requestId);
+    expect(stored?.subjectScopeId).toBe(baseRequest.subjectScopeId);
+
+    await app.close();
+  });
 
   it('advances through the repository and returns append-only history', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();

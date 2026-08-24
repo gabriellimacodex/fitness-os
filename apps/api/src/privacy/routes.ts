@@ -426,15 +426,41 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const existing = await subjectRequests.get(body.data.request.requestId);
+      const incoming = body.data.request;
+      const existing = await subjectRequests.get(incoming.requestId);
       if (existing === null) {
-        // Concurrent seed may lose the race; proceed to applyTransition on the
-        // winner rather than mapping "already exists" as a transition conflict.
-        await subjectRequests.put(body.data.request);
+        const putResult = await subjectRequests.put(incoming);
+        if (putResult === 'conflict') {
+          // Concurrent seed: only continue when the winner shares identity.
+          const raced = await subjectRequests.get(incoming.requestId);
+          if (
+            raced === null ||
+            raced.subjectScopeId !== incoming.subjectScopeId ||
+            raced.requestType !== incoming.requestType ||
+            raced.policyVersionId !== incoming.policyVersionId ||
+            raced.inventoryVersionDigest !== incoming.inventoryVersionDigest
+          ) {
+            return privacySyntheticSubjectRequestTransitionResponseSchema.parse(
+              {
+                status: 'conflict',
+              },
+            );
+          }
+        }
+      } else if (
+        existing.subjectScopeId !== incoming.subjectScopeId ||
+        existing.requestType !== incoming.requestType ||
+        existing.policyVersionId !== incoming.policyVersionId ||
+        existing.inventoryVersionDigest !== incoming.inventoryVersionDigest
+      ) {
+        // Same requestId must never bind a different subject/policy/type.
+        return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+          status: 'conflict',
+        });
       }
 
       const result = await subjectRequests.applyTransition({
-        requestId: body.data.request.requestId,
+        requestId: incoming.requestId,
         next: body.data.next,
         updatedAt: clock.nowUtcMs(),
         transitionId: body.data.transitionId,
