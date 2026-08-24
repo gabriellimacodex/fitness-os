@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `ea40d855d4b1a474586a30b6c77e3e424559d35e` (progress refresh; disposition unchanged)
-- Prior recorded heads: `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `a611e35c0f6e999e820a9db1581b55dab6791d73` (progress refresh; disposition unchanged)
+- Prior recorded heads: `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-24` (landed-evidence refresh only; includes #156)
+- Record timestamp: `2026-08-24` (landed-evidence refresh only; includes #158)
 
 ## Explicit non-claims
 
@@ -21,18 +21,18 @@
 
 ## Disposition by area
 
-| Area                         | Result                      | Notes                                                               |
-| ---------------------------- | --------------------------- | ------------------------------------------------------------------- |
-| CI on Option A PRs           | `UNVERIFIED_IN_THIS_RECORD` | Authoritative evidence is each PR’s Agent 90 + Actions run at merge |
-| Synthetic / mechanism tests  | `PASS` (slice-level)        | Schemas, domain, disposable PG, synthetic API seams on merged PRs   |
-| Architecture (Option A)      | `PASS` (slice-level)        | Binding decision `docs/execution/decisions/PRD_21_OPTION_A.md`      |
-| Security / privacy           | `BLOCKED`                   | Production paths stopped; synthetic-only seams                      |
-| Scope                        | `PASS` (slice-level)        | Disposable/synthetic Option A only                                  |
-| Contracts                    | `CONSISTENT` (slice-level)  | Frozen rows in `docs/contracts/README.md`                           |
-| Migrations                   | `VALIDATED` (slice-level)   | `0002`–`0006` + `0011` privacy migrations and readiness coverage    |
-| Production policy activation | `BLOCKED`                   | `LEGAL_PRIVACY_DECISION_REQUIRED`                                   |
-| Destructive lifecycle        | `BLOCKED`                   | Synthetic deny `requires_legal_privacy_decision` (#58)              |
-| Gate A package review        | `PENDING`                   | Requires independent Agent 90 on a future **completion** candidate  |
+| Area                         | Result                      | Notes                                                                   |
+| ---------------------------- | --------------------------- | ----------------------------------------------------------------------- |
+| CI on Option A PRs           | `UNVERIFIED_IN_THIS_RECORD` | Authoritative evidence is each PR’s Agent 90 + Actions run at merge     |
+| Synthetic / mechanism tests  | `PASS` (slice-level)        | Schemas, domain, disposable PG, synthetic API seams on merged PRs       |
+| Architecture (Option A)      | `PASS` (slice-level)        | Binding decision `docs/execution/decisions/PRD_21_OPTION_A.md`          |
+| Security / privacy           | `BLOCKED`                   | Production paths stopped; synthetic-only seams                          |
+| Scope                        | `PASS` (slice-level)        | Disposable/synthetic Option A only                                      |
+| Contracts                    | `CONSISTENT` (slice-level)  | Frozen rows in `docs/contracts/README.md`                               |
+| Migrations                   | `VALIDATED` (slice-level)   | `0002`–`0006` + `0011`–`0012` privacy migrations and readiness coverage |
+| Production policy activation | `BLOCKED`                   | `LEGAL_PRIVACY_DECISION_REQUIRED`                                       |
+| Destructive lifecycle        | `BLOCKED`                   | Synthetic deny `requires_legal_privacy_decision` (#58)                  |
+| Gate A package review        | `PENDING`                   | Requires independent Agent 90 on a future **completion** candidate      |
 
 ## Landed Option A evidence (merged)
 
@@ -68,6 +68,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Expected-inventory execute binding        | `#152` (digests/owner/environment/mechanism readiness before execute)                                                            |
 | Synthetic IntegrityVerifier               | `#154` (sealed policy/evidence digests after inventory; before execute)                                                          |
 | Synthetic actor/subject attribution       | `#156` (opaque digest/scope seals; `policy_unattributed` fail-closed)                                                            |
+| Subject-request `subjectScopeId` binding  | `#158` (immutable opaque scope on identity; conflict zero-transition; migration `0012` fail-closed NULL)                         |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -122,10 +123,14 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   production inventory review; exact-head inventory regeneration and independent
   coverage review remain required for a future Gate A package.
 - H3 closed for synthetic Option A data-use: expected-inventory (#152),
-  IntegrityVerifier (#154), and actor/subject attribution (#156). Remaining
-  work is H4–H6 (not attribution of legal identity).
-- Subject-request orchestration, retention work persistence, and restricted
-  governance-lifecycle completeness remain partial (H4).
+  IntegrityVerifier (#154), and actor/subject attribution (#156).
+- H4 subject-request **scope binding** prerequisite landed (#158): immutable
+  opaque `subjectScopeId` on persistent identity, identity conflict with zero
+  transitions, additive `0012` without sentinel backfill. Remaining H4 work is
+  subject-request orchestration, retention work persistence, and restricted
+  governance-lifecycle completeness — **not** closed by #158.
+- Remaining open residual bands: H4 (orchestration/retention/lifecycle), H5,
+  H6 (not attribution of legal identity).
 - Table/record-family inventory and reviewed exception coverage remain incomplete
   (H5).
 - Migration rollback/forward-correction and destructive synthetic recovery
