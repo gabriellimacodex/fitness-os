@@ -1,7 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type {
-  PrivacyReferencePutResult,
   PrivacySubjectRequestApplyResult,
+  PrivacySubjectRequestCreateResult,
   PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
 import { transitionSubjectRequest } from '@fitness-os/domain';
@@ -124,10 +124,18 @@ export function createPostgresPrivacySubjectRequestRepository(
       return toReference(row);
     },
 
-    put: async (record): Promise<PrivacyReferencePutResult> => {
+    createReceived: async (
+      record,
+      receivedAt,
+    ): Promise<PrivacySubjectRequestCreateResult> => {
       const valid = privacySubjectRequestReferenceSchema.parse(record);
+      if (valid.state !== 'received') {
+        return 'invalid_initial_state';
+      }
       try {
-        await connection.db.insert(privacySubjectRequest).values(toRow(valid));
+        await connection.db
+          .insert(privacySubjectRequest)
+          .values(toRow({ ...valid, updatedAt: receivedAt }));
         return 'accepted';
       } catch (error) {
         if (isUniqueViolation(error, 'privacy_subject_request_pkey')) {

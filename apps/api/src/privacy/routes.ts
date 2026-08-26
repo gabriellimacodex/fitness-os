@@ -438,10 +438,16 @@ export function registerPrivacySyntheticRoutes(
           });
         }
 
-        const putResult = await subjectRequests.put({
-          ...incoming,
-          updatedAt: transitionAt,
-        });
+        const putResult = await subjectRequests.createReceived(
+          incoming,
+          transitionAt,
+        );
+        if (putResult === 'invalid_initial_state') {
+          return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+            status: 'invalid',
+            reason: 'illegal_transition',
+          });
+        }
         if (putResult === 'conflict') {
           // Concurrent seed: only continue when the winner shares identity.
           const raced = await subjectRequests.get(incoming.requestId);

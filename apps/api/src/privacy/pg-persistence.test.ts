@@ -108,9 +108,9 @@ const getEvidence = async (evidenceId: string) => {
 };
 const subjectRequests = {
   applyTransition: async () => ({ status: 'conflict' as const }),
+  createReceived: async () => 'accepted' as const,
   get: async () => null,
   listTransitions: async () => [],
-  put: async () => 'accepted' as const,
 };
 
 let getActiveCalls = 0;

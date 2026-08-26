@@ -254,12 +254,23 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     return this.byId.get(requestId) ?? null;
   }
 
-  async put(record: PrivacySubjectRequestReference) {
+  async createReceived(
+    record: PrivacySubjectRequestReference,
+    receivedAt: string,
+  ) {
+    if (record.state !== 'received') {
+      return 'invalid_initial_state' as const;
+    }
     if (this.byId.has(record.requestId)) {
       return 'conflict' as const;
     }
-    this.byId.set(record.requestId, record);
+    this.byId.set(record.requestId, { ...record, updatedAt: receivedAt });
     return 'accepted' as const;
+  }
+
+  /** Explicit fixture hydration; not part of the production repository port. */
+  seedForTest(record: PrivacySubjectRequestReference): void {
+    this.byId.set(record.requestId, record);
   }
 
   async listTransitions(requestId: string) {

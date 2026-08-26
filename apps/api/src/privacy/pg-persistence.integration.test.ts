@@ -416,7 +416,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           '66666666-6666-4666-8666-666666666666',
         ),
         requestType: 'export',
-        state: 'verification_required',
+        state: 'received',
         subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
@@ -426,9 +426,28 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         updatedAt: '2026-08-18T11:00:00.000Z',
       });
-      await expect(persistence.subjectRequests.put(baseRequest)).resolves.toBe(
-        'accepted',
-      );
+      await expect(
+        persistence.subjectRequests.createReceived(
+          baseRequest,
+          '2026-08-18T11:30:00.000Z',
+        ),
+      ).resolves.toBe('accepted');
+      const verificationRequired =
+        await persistence.subjectRequests.applyTransition({
+          requestId: baseRequest.requestId,
+          next: 'verification_required',
+          updatedAt: '2026-08-18T11:45:00.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            '99999999-9999-4999-8999-999999999999',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            '88888888-8888-4888-8888-888888888888',
+          ),
+          correlationId: baseRequest.correlationId,
+          reasonCode: 'forward',
+          productionMode: false,
+        });
+      expect(verificationRequired.status).toBe('advanced');
 
       const app = buildApp(
         { logger: false },
@@ -496,6 +515,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ORDER BY recorded_at
       `);
       expect(transitionRows).toEqual([
+        {
+          previous_state: 'received',
+          next_state: 'verification_required',
+        },
         {
           previous_state: 'verification_required',
           next_state: 'ready',

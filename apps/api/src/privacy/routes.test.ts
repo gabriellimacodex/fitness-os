@@ -622,7 +622,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
 
   it('conflicts when the same requestId is reused for another subject scope', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
-    await subjectRequests.put(baseRequest);
+    subjectRequests.seedForTest(baseRequest);
     const app = buildApp(
       { logger: false },
       {
@@ -691,7 +691,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
 
   it('advances through the repository and returns append-only history', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
-    await subjectRequests.put(baseRequest);
+    subjectRequests.seedForTest(baseRequest);
     const app = buildApp(
       { logger: false },
       {
@@ -741,7 +741,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
 
   it('rejects synthetic verification in productionMode', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
-    await subjectRequests.put(baseRequest);
+    subjectRequests.seedForTest(baseRequest);
     const app = buildApp(
       { logger: false },
       {
@@ -776,7 +776,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
     await app.close();
   });
 
-  it('continues to applyTransition when seed put loses a create race', async () => {
+  it('continues to applyTransition when received creation loses a race', async () => {
     const pointer = { ...baseRequest, state: 'received' as const };
     let gets = 0;
     const subjectRequests = {
@@ -784,7 +784,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
         gets += 1;
         return gets === 1 ? null : pointer;
       },
-      put: async () => 'conflict' as const,
+      createReceived: async () => 'conflict' as const,
       listTransitions: async () => [],
       applyTransition: async (input: {
         requestId: string;
@@ -853,7 +853,7 @@ describe('POST /v1/privacy/synthetic/subject-request-transition', () => {
 
   it('returns conflict when operationId is reused', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
-    await subjectRequests.put(baseRequest);
+    subjectRequests.seedForTest(baseRequest);
     const app = buildApp(
       { logger: false },
       {

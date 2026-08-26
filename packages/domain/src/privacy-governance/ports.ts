@@ -196,14 +196,22 @@ export type PrivacySubjectRequestApplyResult =
       status: 'conflict';
     };
 
+export type PrivacySubjectRequestCreateResult =
+  PrivacyReferencePutResult | 'invalid_initial_state';
+
 /**
  * Current-pointer repository plus append-only transition history.
  */
 export interface PrivacySubjectRequestRepository {
   get(requestId: string): Promise<PrivacySubjectRequestReference | null>;
-  put(
+  /**
+   * Creates the only valid initial pointer and replaces its untrusted
+   * `updatedAt` value with a timestamp supplied by the trusted coordinator.
+   */
+  createReceived(
     record: PrivacySubjectRequestReference,
-  ): Promise<PrivacyReferencePutResult>;
+    receivedAt: string,
+  ): Promise<PrivacySubjectRequestCreateResult>;
   listTransitions(
     requestId: string,
   ): Promise<readonly PrivacySubjectRequestTransitionReference[]>;
