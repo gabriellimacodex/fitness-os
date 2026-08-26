@@ -1776,7 +1776,7 @@ describe('synthetic expected processor inventory', () => {
 });
 
 describe('synthetic subject request repository', () => {
-  it('puts and applies transitions against the current pointer', async () => {
+  it('rejects a first pointer that bypasses the received state', async () => {
     const repo = new SyntheticPrivacySubjectRequestRepository();
     const request = privacySubjectRequestReferenceSchema.parse({
       requestId: privacySubjectRequestIdSchema.parse(
@@ -1794,11 +1794,41 @@ describe('synthetic subject request repository', () => {
       updatedAt: '2026-08-18T12:00:00.000Z',
     });
 
-    await expect(repo.put(request)).resolves.toBe('accepted');
+    await expect(
+      repo.createReceived(request, '2026-08-18T12:01:00.000Z'),
+    ).resolves.toBe('invalid_initial_state');
+    await expect(repo.get(request.requestId)).resolves.toBeNull();
+  });
+
+  it('puts and applies transitions against the current pointer', async () => {
+    const repo = new SyntheticPrivacySubjectRequestRepository();
+    const request = privacySubjectRequestReferenceSchema.parse({
+      requestId: privacySubjectRequestIdSchema.parse(
+        '66666666-6666-4666-8666-666666666666',
+      ),
+      requestType: 'export',
+      state: 'received',
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      verification: null,
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: '1'.repeat(64),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      updatedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+    await expect(
+      repo.createReceived(request, '2026-08-18T12:01:00.000Z'),
+    ).resolves.toBe('accepted');
+    await expect(repo.get(request.requestId)).resolves.toMatchObject({
+      state: 'received',
+      updatedAt: '2026-08-18T12:01:00.000Z',
+    });
     const advanced = await repo.applyTransition({
       requestId: request.requestId,
-      next: 'ready',
-      updatedAt: '2026-08-18T12:01:00.000Z',
+      next: 'verification_required',
+      updatedAt: '2026-08-18T12:02:00.000Z',
       transitionId: privacySubjectRequestTransitionIdSchema.parse(
         'a1111111-1111-4111-8111-111111111111',
       ),
@@ -1808,11 +1838,7 @@ describe('synthetic subject request repository', () => {
       correlationId: privacyCorrelationIdSchema.parse(
         '55555555-5555-4555-8555-555555555555',
       ),
-      reasonCode: 'verification_accepted',
-      verification: {
-        verificationRefDigest: '2'.repeat(64),
-        synthetic: true,
-      },
+      reasonCode: 'forward',
       productionMode: false,
     });
     expect(advanced.status).toBe('advanced');
@@ -1820,15 +1846,15 @@ describe('synthetic subject request repository', () => {
       throw new Error('expected advanced');
     }
     expect(advanced.transition).toMatchObject({
-      previousState: 'verification_required',
-      nextState: 'ready',
-      reasonCode: 'verification_accepted',
+      previousState: 'received',
+      nextState: 'verification_required',
+      reasonCode: 'forward',
     });
     await expect(repo.listTransitions(request.requestId)).resolves.toEqual([
       advanced.transition,
     ]);
     await expect(repo.get(request.requestId)).resolves.toMatchObject({
-      state: 'ready',
+      state: 'verification_required',
     });
 
     await expect(

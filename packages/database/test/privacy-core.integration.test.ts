@@ -410,7 +410,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           '66666666-6666-4666-8666-666666666666',
         ),
         requestType: 'export',
-        state: 'verification_required',
+        state: 'received',
         subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
@@ -418,14 +418,41 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         correlationId: privacyCorrelationIdSchema.parse(
           '55555555-5555-4555-8555-555555555555',
         ),
+        updatedAt: '1999-01-01T00:00:00.000Z',
+      });
+
+      await expect(
+        subjectRequests.createReceived(
+          { ...request, state: 'verification_required' },
+          '2026-08-18T12:00:00.000Z',
+        ),
+      ).resolves.toBe('invalid_initial_state');
+      await expect(
+        subjectRequests.createReceived(request, '2026-08-18T12:00:00.000Z'),
+      ).resolves.toBe('accepted');
+      await expect(
+        subjectRequests.createReceived(request, '2026-08-18T12:00:00.000Z'),
+      ).resolves.toBe('conflict');
+      await expect(subjectRequests.get(request.requestId)).resolves.toEqual({
+        ...request,
         updatedAt: '2026-08-18T12:00:00.000Z',
       });
 
-      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
-      await expect(subjectRequests.put(request)).resolves.toBe('conflict');
-      await expect(subjectRequests.get(request.requestId)).resolves.toEqual(
-        request,
-      );
+      const verificationRequired = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'verification_required',
+        updatedAt: '2026-08-18T12:00:30.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '99999999-9999-4999-8999-999999999999',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '88888888-8888-4888-8888-888888888888',
+        ),
+        correlationId: request.correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+      expect(verificationRequired.status).toBe('advanced');
 
       const blocked = await subjectRequests.applyTransition({
         requestId: request.requestId,
@@ -487,7 +514,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       );
       await expect(
         subjectRequests.listTransitions(request.requestId),
-      ).resolves.toEqual([advanced.transition]);
+      ).resolves.toHaveLength(2);
 
       const conflict = await subjectRequests.applyTransition({
         requestId: request.requestId,
@@ -597,14 +624,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           '77777777-7777-4777-8777-777777777777',
         ),
         requestType: 'export',
-        state: 'ready',
+        state: 'received',
         subjectScopeId: privacySubjectScopeIdSchema.parse(
           '22222222-2222-4222-8222-222222222222',
         ),
-        verification: {
-          verificationRefDigest: '2'.repeat(64),
-          synthetic: true,
-        },
+        verification: null,
         policyVersionId: policy.versionId,
         inventoryVersionDigest: '1'.repeat(64),
         correlationId: privacyCorrelationIdSchema.parse(
@@ -612,7 +636,41 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         updatedAt: '2026-08-18T12:00:00.000Z',
       });
-      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
+      await expect(
+        subjectRequests.createReceived(request, '2026-08-18T12:00:00.000Z'),
+      ).resolves.toBe('accepted');
+      await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'verification_required',
+        updatedAt: '2026-08-18T12:01:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '11111111-1111-4111-8111-111111111111',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '22222222-2222-4222-8222-222222222222',
+        ),
+        correlationId: request.correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+      await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T12:02:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '33333333-3333-4333-8333-333333333333',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '44444444-4444-4444-8444-444444444444',
+        ),
+        correlationId: request.correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      });
 
       const results = await Promise.all([
         subjectRequests.applyTransition({
@@ -666,8 +724,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         advanced.request,
       );
       const history = await subjectRequests.listTransitions(request.requestId);
-      expect(history).toEqual([advanced.transition]);
-      expect(history.every((row) => row.previousState === 'ready')).toBe(true);
+      expect(history).toHaveLength(3);
+      expect(history.at(-1)).toEqual(advanced.transition);
+      expect(history.at(-1)?.previousState).toBe('ready');
     });
 
     it('rejects ad hoc UPDATE/DELETE on append-only privacy ledgers', async () => {
@@ -721,7 +780,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           '66666666-6666-4666-8666-666666666666',
         ),
         requestType: 'export',
-        state: 'verification_required',
+        state: 'received',
         subjectScopeId: '22222222-2222-4222-8222-222222222222',
         verification: null,
         policyVersionId: policy.versionId,
@@ -731,7 +790,24 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         updatedAt: '2026-08-18T12:00:00.000Z',
       });
-      await expect(subjectRequests.put(request)).resolves.toBe('accepted');
+      await expect(
+        subjectRequests.createReceived(request, '2026-08-18T12:00:00.000Z'),
+      ).resolves.toBe('accepted');
+      const verificationRequired = await subjectRequests.applyTransition({
+        requestId: request.requestId,
+        next: 'verification_required',
+        updatedAt: '2026-08-18T12:00:30.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '99999999-9999-4999-8999-999999999999',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '88888888-8888-4888-8888-888888888888',
+        ),
+        correlationId: request.correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+      expect(verificationRequired.status).toBe('advanced');
       const advanced = await subjectRequests.applyTransition({
         requestId: request.requestId,
         next: 'ready',

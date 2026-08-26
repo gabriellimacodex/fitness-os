@@ -428,9 +428,26 @@ export function registerPrivacySyntheticRoutes(
       }
 
       const incoming = body.data.request;
+      const transitionAt = clock.nowUtcMs();
       const existing = await subjectRequests.get(incoming.requestId);
       if (existing === null) {
-        const putResult = await subjectRequests.put(incoming);
+        if (incoming.state !== 'received') {
+          return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+            status: 'invalid',
+            reason: 'illegal_transition',
+          });
+        }
+
+        const putResult = await subjectRequests.createReceived(
+          incoming,
+          transitionAt,
+        );
+        if (putResult === 'invalid_initial_state') {
+          return privacySyntheticSubjectRequestTransitionResponseSchema.parse({
+            status: 'invalid',
+            reason: 'illegal_transition',
+          });
+        }
         if (putResult === 'conflict') {
           // Concurrent seed: only continue when the winner shares identity.
           const raced = await subjectRequests.get(incoming.requestId);
@@ -455,7 +472,7 @@ export function registerPrivacySyntheticRoutes(
       const result = await subjectRequests.applyTransition({
         requestId: incoming.requestId,
         next: body.data.next,
-        updatedAt: clock.nowUtcMs(),
+        updatedAt: transitionAt,
         transitionId: body.data.transitionId,
         operationId: body.data.operationId,
         correlationId: body.data.correlationId,

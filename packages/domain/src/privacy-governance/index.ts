@@ -28,6 +28,7 @@ export type {
   PrivacySubjectDataProcessor,
   PrivacySubjectDataProcessorResolver,
   PrivacySubjectRequestApplyResult,
+  PrivacySubjectRequestCreateResult,
   PrivacySubjectRequestRepository,
   PrivacyTrustedClock,
   PrivacyWithdrawalAppendResult,
