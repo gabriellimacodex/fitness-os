@@ -7,8 +7,8 @@
 - Explicitly excluded: **PRD 25 — Pilot Release** (`PROPOSED`; needs separate
   authorization)
 - Date recorded: 2026-08-18
-- Last refreshed: 2026-08-24 (landed-evidence refresh through #158)
-- Progress snapshot head: `a611e35` (PR #158 merged; see Progress)
+- Last refreshed: 2026-08-26 (landed-evidence refresh through #160)
+- Progress snapshot head: `0d5880c` (PR #160 merged; see Progress)
 - Original baseline when first recorded: `789f407`
 
 ## Paste into `/goal`
@@ -96,7 +96,7 @@ integrated after its POC gate.
 | PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                                                                                                                                                          |
 | PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                                                                                                                                                       |
 | PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 ports composed in API through #137 (IdentitySession, PrincipalBinding/Reference, ClaimRepository, TransitionSink lifecycle + create→claim / issue→revoke / resume→abandon / create→resume→policy→claim `list()` chain tests, Id/Secret factories, SecretVerifier, TrustedClock). Real-user still `LEGAL_PRIVACY`. Tip `e4a4132`. |
-| PRD 21               | `IN_PROGRESS` — Option A synthetic through #158: inventory #152; IntegrityVerifier #154; attribution #156; **subject-request `subjectScopeId` binding** #158. Gate A `PENDING` (not PASS); production `BLOCKED` by `LEGAL_PRIVACY`; **H3 closed**; **H4 binding prerequisite landed** (orchestration/retention/lifecycle still open); H5–H6 open. See `gates/PRD_21_GATE_A.md`.            |
+| PRD 21               | `IN_PROGRESS` — Option A synthetic through #160. H3 closed. H4 groundwork: scope #158; trusted `received` intake/history #160. Gate A `PENDING`; production `BLOCKED` by `LEGAL_PRIVACY`; H4 orchestration/retention/lifecycle + H5–H6 open. See `gates/PRD_21_GATE_A.md`.                                                                                                                 |
 | PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                                                                                                                                                   |
 | PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                                                                                                                                                                  |
 
@@ -113,9 +113,10 @@ invitation/attempt/operation/role-mapping.
 Immediate next authorized Wave 3 work:
 
 1. Continue remaining PRD 07/21 synthetic/disposable mechanics — next smallest
-   open H4 composition after subject-request scope binding (orchestration /
-   retention persistence / governance lifecycle), without inventing Gate A PASS
-   or registry `COMPLETED` under active stops.
+   open H4 composition after trusted subject-request admission
+   (processor-plan/step orchestration, partial-failure resume and completion
+   guards, retention persistence, governance lifecycle), without inventing
+   Gate A PASS or registry `COMPLETED` under active stops.
 2. Optional later: synthetic-only Gate A package for PRD 21 **only** if resume
    conditions in `gates/PRD_21_GATE_A.md` are met — never invent PASS/COMPLETED.
 3. Resume PRD 04 content publication only after human perception receipts.
@@ -154,10 +155,11 @@ Work the DAG; use safe wave parallelism only when ownership and contracts allow.
    factories and chain tests through #137); keep real-user activation blocked
    by `LEGAL_PRIVACY` until cleared.
 4. **PRD 21** — continue Option A from current `main` (composition through
-   #158 subject-request scope binding):
+   #160 trusted subject-request admission and transition history):
    - keep destructive/lifecycle paths denied under `LEGAL_PRIVACY`;
-   - H4 residuals remain (orchestration, retention persistence, governance
-     lifecycle); H5–H6 remain open;
+   - H4 residuals remain (processor-plan/step orchestration, partial-failure
+     resume and completion guards, retention persistence, governance lifecycle);
+     H5–H6 remain open;
    - Gate A status remains `PENDING` until resume conditions in
      `gates/PRD_21_GATE_A.md` are met — never invent PASS or COMPLETED.
 5. **PRD 05** Training Core — only after 03+04 `COMPLETED`; then Gate A /
