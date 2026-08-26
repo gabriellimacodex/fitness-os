@@ -426,6 +426,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
         updatedAt: '2026-08-18T11:00:00.000Z',
       });
+      await expect(persistence.subjectRequests.put(baseRequest)).resolves.toBe(
+        'accepted',
+      );
 
       const app = buildApp(
         { logger: false },
