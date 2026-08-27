@@ -1,0 +1,55 @@
+import {
+  type PrivacyProcessorCapability,
+  type PrivacyProcessorStepReference,
+} from '@fitness-os/schemas';
+
+/**
+ * Whether the request has finished all expected processor work. `incomplete`
+ * covers both "no attempt yet" and "latest attempt is retryable_failure" —
+ * both keep the request `in_progress`, never `completed`/`partially_failed`.
+ */
+export type RequestCompletionStatus =
+  'incomplete' | 'completed' | 'partially_failed';
+
+export interface ExpectedProcessorStep {
+  processorId: string;
+  capability: PrivacyProcessorCapability;
+}
+
+const pairKey = (processorId: string, capability: string): string =>
+  `${processorId}:${capability}`;
+
+/**
+ * Derives request completion from the full append-only step history plus the
+ * expected (processorId, capability) set. `steps` must be supplied in
+ * recorded order; only the last step per pair is authoritative. A pair with
+ * no step yet, or whose latest outcome is `retryable_failure`, keeps the
+ * request `incomplete`. Once every pair has a terminal outcome, the request
+ * is `completed` only when every pair `completed`; any `permanent_failure`
+ * makes it `partially_failed`. Mirrors the coordinator, not a legal
+ * entitlement decision.
+ */
+export function deriveRequestCompletionFromSteps(input: {
+  expected: readonly ExpectedProcessorStep[];
+  steps: readonly PrivacyProcessorStepReference[];
+}): RequestCompletionStatus {
+  const latestByPair = new Map<string, PrivacyProcessorStepReference>();
+  for (const step of input.steps) {
+    latestByPair.set(pairKey(step.processorId, step.capability), step);
+  }
+
+  let anyPermanentFailure = false;
+  for (const expected of input.expected) {
+    const latest = latestByPair.get(
+      pairKey(expected.processorId, expected.capability),
+    );
+    if (latest === undefined || latest.outcome === 'retryable_failure') {
+      return 'incomplete';
+    }
+    if (latest.outcome === 'permanent_failure') {
+      anyPermanentFailure = true;
+    }
+  }
+
+  return anyPermanentFailure ? 'partially_failed' : 'completed';
+}
