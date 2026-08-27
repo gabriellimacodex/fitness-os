@@ -28,6 +28,7 @@ import {
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
+  privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
@@ -199,6 +200,53 @@ describe('policy and evidence reference contracts', () => {
       privacyEvidenceReferenceSchema.safeParse({
         ...parsed,
         consentAnswer: true,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('retention rule reference contracts', () => {
+  const baseRule = {
+    ruleId: '11111111-1111-4111-8111-111111111111',
+    ruleVersionId: '22222222-2222-4222-8222-222222222222',
+    engineeringCategoryId: '33333333-3333-4333-8333-333333333333',
+    purposeVersionId: '44444444-4444-4444-8444-444444444444',
+    policyVersionId: '55555555-5555-4555-8555-555555555555',
+    action: 'delete' as const,
+    parametersDigest: 'c'.repeat(64),
+    canonicalizationVersion: 'privacy-governance.canonical.v1' as const,
+    synthetic: true,
+  };
+
+  it('accepts a versioned retention-rule reference without exact period fields', () => {
+    const parsed = privacyRetentionRuleReferenceSchema.parse(baseRule);
+    expect(parsed.action).toBe('delete');
+    expect(parsed.parametersDigest).toHaveLength(64);
+  });
+
+  it('rejects an unknown key such as an inlined retention duration', () => {
+    expect(
+      privacyRetentionRuleReferenceSchema.safeParse({
+        ...baseRule,
+        retentionDays: 90,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an action outside the closed vocabulary', () => {
+    expect(
+      privacyRetentionRuleReferenceSchema.safeParse({
+        ...baseRule,
+        action: 'archive',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-hex parametersDigest', () => {
+    expect(
+      privacyRetentionRuleReferenceSchema.safeParse({
+        ...baseRule,
+        parametersDigest: 'not-a-digest',
       }).success,
     ).toBe(false);
   });

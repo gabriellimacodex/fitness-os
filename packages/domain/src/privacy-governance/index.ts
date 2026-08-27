@@ -25,6 +25,7 @@ export type {
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
+  PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectDataProcessor,
   PrivacySubjectDataProcessorResolver,
@@ -38,6 +39,11 @@ export {
   composeSyntheticProcessorSimulation,
   SyntheticPrivacySubjectDataProcessor,
 } from './processor.js';
+export {
+  buildRequestProcessorPlan,
+  type BuildRequestProcessorPlanResult,
+  type ProcessorPlanExclusion,
+} from './processor-plan.js';
 export {
   deriveRequestCompletionFromSteps,
   type ExpectedProcessorStep,
@@ -65,6 +71,7 @@ export {
   SyntheticPrivacyPolicyPackageRepository,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyPurposeRegistry,
+  SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacySubjectDataProcessorResolver,
