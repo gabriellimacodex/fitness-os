@@ -48,7 +48,9 @@ export {
 } from './processor-plan.js';
 export {
   deriveRequestCompletionFromSteps,
+  recordProcessorStepAndAdvanceRequest,
   type ExpectedProcessorStep,
+  type ProcessorStepAdvanceResult,
   type RequestCompletionStatus,
 } from './processor-step.js';
 export {
