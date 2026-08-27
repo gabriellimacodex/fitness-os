@@ -27,6 +27,7 @@ import {
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyProcessorIdSchema,
+  privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
@@ -567,6 +568,44 @@ describe('subject request and audit event references', () => {
       privacySubjectRequestTransitionReferenceSchema.safeParse({
         ...parsed,
         note: 'operator comment',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts append-only processor step records and rejects free text/unknown outcomes', () => {
+    const parsed = privacyProcessorStepReferenceSchema.parse({
+      stepId: 'e1111111-1111-4111-8111-111111111111',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      outcome: 'completed',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      recordedAt: '2026-08-18T12:02:00.000Z',
+    });
+    expect(parsed.outcome).toBe('completed');
+
+    expect(
+      privacyProcessorStepReferenceSchema.safeParse({
+        ...parsed,
+        outcome: 'deleted',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorStepReferenceSchema.safeParse({
+        ...parsed,
+        note: 'operator comment',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorStepReferenceSchema.safeParse({
+        stepId: parsed.stepId,
+        requestId: parsed.requestId,
+        capability: parsed.capability,
+        outcome: parsed.outcome,
+        operationId: parsed.operationId,
+        correlationId: parsed.correlationId,
+        recordedAt: parsed.recordedAt,
       }).success,
     ).toBe(false);
   });

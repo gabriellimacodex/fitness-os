@@ -24,6 +24,7 @@ export type {
   PrivacyIntegrityVerificationResult,
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
+  PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
   PrivacyRuntimeProcessorRegistry,
@@ -39,6 +40,11 @@ export {
   composeSyntheticProcessorSimulation,
   SyntheticPrivacySubjectDataProcessor,
 } from './processor.js';
+export {
+  deriveRequestCompletionFromSteps,
+  type ExpectedProcessorStep,
+  type RequestCompletionStatus,
+} from './processor-step.js';
 export {
   isTerminalSubjectRequestState,
   transitionSubjectRequest,
@@ -60,6 +66,7 @@ export {
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyPolicyPackageRepository,
+  SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyPurposeRegistry,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectRequestRepository,

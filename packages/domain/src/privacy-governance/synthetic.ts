@@ -13,6 +13,7 @@ import {
   type PrivacyGovernanceLifecycleProofReference,
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
+  type PrivacyProcessorStepReference,
   type PrivacyPurposeVersionReference,
   type PrivacySubjectRequestReference,
   type PrivacySubjectRequestTransitionReference,
@@ -35,6 +36,7 @@ import type {
   PrivacyIntegrityVerificationResult,
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
+  PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
@@ -360,6 +362,29 @@ export class SyntheticPrivacySubjectRequestRepository implements PrivacySubjectR
     this.operationIds.add(transition.operationId);
 
     return { ...result, transition };
+  }
+}
+
+export class SyntheticPrivacyProcessorStepRepository implements PrivacyProcessorStepRepository {
+  private readonly stepIds = new Set<string>();
+  private readonly byRequest = new Map<
+    string,
+    PrivacyProcessorStepReference[]
+  >();
+
+  async append(step: PrivacyProcessorStepReference) {
+    if (this.stepIds.has(step.stepId)) {
+      return 'conflict' as const;
+    }
+    this.stepIds.add(step.stepId);
+    const history = this.byRequest.get(step.requestId) ?? [];
+    history.push(step);
+    this.byRequest.set(step.requestId, history);
+    return 'accepted' as const;
+  }
+
+  async listForRequest(requestId: string) {
+    return [...(this.byRequest.get(requestId) ?? [])];
   }
 }
 
