@@ -72,6 +72,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'onboarding_attempt',
         'onboarding_invitation',
         'onboarding_operation',
+        'onboarding_principal_binding',
         'onboarding_role_mapping',
         'onboarding_transition',
         'privacy_audit_event',
