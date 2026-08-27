@@ -33,6 +33,7 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyIntegrityVerifier,
@@ -2104,6 +2105,291 @@ describe('deriveRequestCompletionFromSteps', () => {
         steps: [firstAttempt, retrySucceeded],
       }),
     ).toBe('completed');
+  });
+});
+
+describe('recordProcessorStepAndAdvanceRequest', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    '66666666-6666-4666-8666-666666666666',
+  );
+  const processorA = '99999999-9999-4999-8999-999999999999';
+  const processorB = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const expectedOnePair = [
+    { processorId: processorA, capability: 'export' as const },
+  ];
+  const expectedTwoPairs = [
+    { processorId: processorA, capability: 'export' as const },
+    { processorId: processorB, capability: 'access' as const },
+  ];
+
+  const requestInState = (
+    state:
+      'received' | 'ready' | 'in_progress' | 'partially_failed' | 'completed',
+  ) =>
+    privacySubjectRequestReferenceSchema.parse({
+      requestId,
+      requestType: 'export',
+      state,
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      verification: null,
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: '1'.repeat(64),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      updatedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+  const step = (
+    overrides: Partial<PrivacyProcessorStepReference> = {},
+  ): PrivacyProcessorStepReference =>
+    privacyProcessorStepReferenceSchema.parse({
+      stepId: 'e1111111-1111-4111-8111-111111111111',
+      requestId,
+      processorId: processorA,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: privacyOperationIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      recordedAt: '2026-08-18T12:02:00.000Z',
+      ...overrides,
+    });
+
+  type AdvanceInput = Parameters<
+    typeof recordProcessorStepAndAdvanceRequest
+  >[0];
+
+  const advanceInput = (
+    base: Pick<AdvanceInput, 'requests' | 'steps'>,
+    overrides: Partial<Omit<AdvanceInput, 'requests' | 'steps'>> = {},
+  ): AdvanceInput => ({
+    correlationId: privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    ),
+    expected: expectedOnePair,
+    operationId: privacyOperationIdSchema.parse(
+      'b2222222-2222-4222-8222-222222222222',
+    ),
+    productionMode: false,
+    step: step(),
+    transitionId: privacySubjectRequestTransitionIdSchema.parse(
+      'a1111111-1111-4111-8111-111111111111',
+    ),
+    updatedAt: '2026-08-18T12:03:00.000Z',
+    ...base,
+    ...overrides,
+  });
+
+  it('reports request_not_found and appends nothing for an unknown request', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result).toEqual({ status: 'request_not_found' });
+    await expect(steps.listForRequest(requestId)).resolves.toEqual([]);
+  });
+
+  it('records the step but stays incomplete while an expected pair has not reported', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }, { expected: expectedTwoPairs }),
+    );
+
+    expect(result).toMatchObject({
+      completion: 'incomplete',
+      status: 'recorded',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'in_progress',
+    });
+  });
+
+  it('advances in_progress to completed once the derived status is terminal', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result.status).toBe('advanced');
+    if (result.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(result.completion).toBe('completed');
+    expect(result.request.state).toBe('completed');
+    expect(result.transition).toMatchObject({
+      previousState: 'in_progress',
+      nextState: 'completed',
+      reasonCode: 'forward',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'completed',
+    });
+  });
+
+  it('advances in_progress to partially_failed on a permanent failure', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput(
+        { requests, steps },
+        { step: step({ outcome: 'permanent_failure' }) },
+      ),
+    );
+
+    expect(result.status).toBe('advanced');
+    if (result.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(result.completion).toBe('partially_failed');
+    expect(result.request.state).toBe('partially_failed');
+  });
+
+  it('never derives a next state from anything but the recorded step history', async () => {
+    // Two pairs expected; only one step is ever appended, so the request
+    // must stay in_progress no matter what outcome that single step reports.
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }, { expected: expectedTwoPairs }),
+    );
+
+    expect(result).toMatchObject({
+      completion: 'incomplete',
+      status: 'recorded',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'in_progress',
+    });
+  });
+
+  it('records evidence without transitioning when the request is not yet executing', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('ready'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result).toMatchObject({
+      completion: 'completed',
+      status: 'recorded',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'ready',
+    });
+    await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
+  });
+
+  it('reports already_terminal and appends no further transition for a terminal request', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('completed'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result).toMatchObject({
+      completion: 'completed',
+      status: 'already_terminal',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'completed',
+    });
+  });
+
+  it('treats a repeated exact stepId as an idempotent replay with no duplicate transition', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const first = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+    expect(first.status).toBe('advanced');
+
+    const replay = await recordProcessorStepAndAdvanceRequest(
+      advanceInput(
+        { requests, steps },
+        {
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'c3333333-3333-4333-8333-333333333333',
+          ),
+        },
+      ),
+    );
+
+    expect(replay).toMatchObject({
+      completion: 'completed',
+      status: 'step_conflict',
+    });
+    await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
+  });
+
+  it('surfaces illegal_transition rather than silently no-opping a repeated permanent failure', async () => {
+    // The request state machine has no partially_failed -> partially_failed
+    // self-transition; a second independent permanent failure on an already
+    // partially_failed request must not be misreported as a fresh advance.
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('partially_failed'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput(
+        { requests, steps },
+        { step: step({ outcome: 'permanent_failure' }) },
+      ),
+    );
+
+    expect(result).toEqual({
+      reason: 'illegal_transition',
+      status: 'invalid_transition',
+    });
+  });
+
+  it('advances partially_failed to completed once a retry clears the failure', async () => {
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('partially_failed'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+    // Seed the prior permanent-failure attempt directly in the step store so
+    // only the retry goes through the coordinator.
+    await steps.append(
+      step({
+        outcome: 'permanent_failure',
+        stepId: privacyProcessorStepIdSchema.parse(
+          'e2222222-2222-4222-8222-222222222222',
+        ),
+      }),
+    );
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result.status).toBe('advanced');
+    if (result.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(result.completion).toBe('completed');
+    expect(result.request.state).toBe('completed');
   });
 });
 

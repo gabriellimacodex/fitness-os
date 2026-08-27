@@ -1,7 +1,18 @@
 import {
+  type PrivacyCorrelationId,
+  type PrivacyOperationId,
   type PrivacyProcessorCapability,
   type PrivacyProcessorStepReference,
+  type PrivacySubjectRequestReference,
+  type PrivacySubjectRequestTransitionId,
+  type PrivacySubjectRequestTransitionReference,
 } from '@fitness-os/schemas';
+
+import { isTerminalSubjectRequestState } from './request.js';
+import type {
+  PrivacyProcessorStepRepository,
+  PrivacySubjectRequestRepository,
+} from './ports.js';
 
 /**
  * Whether the request has finished all expected processor work. `incomplete`
@@ -52,4 +63,130 @@ export function deriveRequestCompletionFromSteps(input: {
   }
 
   return anyPermanentFailure ? 'partially_failed' : 'completed';
+}
+
+/**
+ * Outcome of recording one processor step and, when the full expected set is
+ * now terminal, guarding the request's forward transition on the derived
+ * completion status rather than a caller-supplied `next` state.
+ */
+export type ProcessorStepAdvanceResult =
+  | {
+      /** Step recorded; expected work is not yet terminal, or the request
+       * is not currently `in_progress`/`partially_failed` so no automatic
+       * transition is attempted. */
+      status: 'recorded';
+      completion: RequestCompletionStatus;
+      request: PrivacySubjectRequestReference;
+    }
+  | {
+      /** The exact `stepId` was already recorded; treated as an idempotent
+       * replay. No duplicate step and no duplicate transition attempt. */
+      status: 'step_conflict';
+      completion: RequestCompletionStatus;
+      request: PrivacySubjectRequestReference;
+    }
+  | {
+      status: 'advanced';
+      completion: 'completed' | 'partially_failed';
+      request: PrivacySubjectRequestReference;
+      transition: PrivacySubjectRequestTransitionReference;
+    }
+  | {
+      status: 'already_terminal';
+      completion: RequestCompletionStatus;
+      request: PrivacySubjectRequestReference;
+    }
+  | {
+      status: 'invalid_transition';
+      // `not_found` is part of the repository's own invalid-reason contract;
+      // it cannot occur here because `request` was already resolved above,
+      // but the type is not narrowed across the repository call.
+      reason:
+        | 'illegal_transition'
+        | 'verification_required'
+        | 'synthetic_verification_in_production'
+        | 'terminal_state'
+        | 'not_found';
+    }
+  | { status: 'transition_conflict' }
+  | { status: 'request_not_found' };
+
+/**
+ * Appends one append-only processor-step attempt and, only when the full
+ * expected (processorId, capability) set is now terminal, advances the
+ * subject request to the derived `completed`/`partially_failed` state
+ * through the repository's own state-machine-enforcing `applyTransition`.
+ *
+ * The derived completion status is the sole source of the `next` state — no
+ * caller may request an arbitrary terminal state directly through this path.
+ * A request that is not currently `in_progress` or `partially_failed` (not
+ * yet executing, or already terminal) records the step as evidence without
+ * attempting a transition; an already-terminal request is reported as such.
+ */
+export async function recordProcessorStepAndAdvanceRequest(input: {
+  requests: PrivacySubjectRequestRepository;
+  steps: PrivacyProcessorStepRepository;
+  step: PrivacyProcessorStepReference;
+  expected: readonly ExpectedProcessorStep[];
+  updatedAt: string;
+  transitionId: PrivacySubjectRequestTransitionId;
+  operationId: PrivacyOperationId;
+  correlationId: PrivacyCorrelationId;
+  productionMode?: boolean;
+}): Promise<ProcessorStepAdvanceResult> {
+  const request = await input.requests.get(input.step.requestId);
+  if (request === null) {
+    return { status: 'request_not_found' };
+  }
+
+  const appendResult = await input.steps.append(input.step);
+  const history = await input.steps.listForRequest(input.step.requestId);
+  const completion = deriveRequestCompletionFromSteps({
+    expected: input.expected,
+    steps: history,
+  });
+
+  if (appendResult === 'conflict') {
+    return { completion, request, status: 'step_conflict' };
+  }
+
+  if (isTerminalSubjectRequestState(request.state)) {
+    return { completion, request, status: 'already_terminal' };
+  }
+
+  if (completion === 'incomplete') {
+    return { completion, request, status: 'recorded' };
+  }
+
+  if (request.state !== 'in_progress' && request.state !== 'partially_failed') {
+    return { completion, request, status: 'recorded' };
+  }
+
+  const applied = await input.requests.applyTransition({
+    correlationId: input.correlationId,
+    next: completion,
+    operationId: input.operationId,
+    productionMode: input.productionMode,
+    reasonCode: 'forward',
+    requestId: request.requestId,
+    transitionId: input.transitionId,
+    updatedAt: input.updatedAt,
+  });
+
+  if (applied.status === 'advanced') {
+    return {
+      completion,
+      request: applied.request,
+      status: 'advanced',
+      transition: applied.transition,
+    };
+  }
+  if (applied.status === 'already_terminal') {
+    return { completion, request: applied.request, status: 'already_terminal' };
+  }
+  if (applied.status === 'invalid') {
+    return { reason: applied.reason, status: 'invalid_transition' };
+  }
+  return { status: 'transition_conflict' };
 }
