@@ -6,6 +6,8 @@ import {
   asOnboardingOperationRepository,
   createPostgresOnboardingOperationRepository,
   asOnboardingInvitationRepository,
+  asPrincipalBindingRepository,
+  createPostgresPrincipalBindingRepository,
   asPrincipalRoleMappingRepository,
   createPostgresOnboardingRoleMappingRepository,
   type StoredOnboardingAttempt,
@@ -17,6 +19,7 @@ import type {
   OnboardingAttemptRepository,
   OnboardingInvitationRepository,
   OnboardingOperationRepository,
+  PrincipalBindingRepository,
   PrincipalRoleMappingRepository,
   ProposedRole,
   TrustedClock,
@@ -38,6 +41,7 @@ export type OnboardingPgPersistence = {
   mappings: PrincipalRoleMappingRepository;
   nowUtcMs: () => string;
   operations: OnboardingOperationRepository;
+  principalBinding: PrincipalBindingRepository;
 };
 
 export function createOnboardingPgPersistence(
@@ -58,6 +62,9 @@ export function createOnboardingPgPersistence(
     nowUtcMs: options.nowUtcMs ?? (() => clock.nowUtcMs()),
     operations: asOnboardingOperationRepository(
       createPostgresOnboardingOperationRepository(connection),
+    ),
+    principalBinding: asPrincipalBindingRepository(
+      createPostgresPrincipalBindingRepository(connection),
     ),
   };
 }

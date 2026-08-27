@@ -19,6 +19,7 @@ import {
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
+  privacySyntheticProcessorStepRecordResponseSchema,
 } from '@fitness-os/schemas';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -522,6 +523,153 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         {
           previous_state: 'verification_required',
           next_state: 'ready',
+        },
+      ]);
+
+      await app.close();
+    });
+
+    it('records a processor step over disposable Postgres and advances the request to completed', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      // policy_version_id on privacy_subject_request FKs to policy package.
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+      const requestId = privacySubjectRequestIdSchema.parse(
+        '77777777-7777-4777-8777-777777777777',
+      );
+      const correlationId = privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      );
+      const baseRequest = privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'export',
+        state: 'received',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId,
+        updatedAt: '2026-08-18T11:00:00.000Z',
+      });
+      await expect(
+        persistence.subjectRequests.createReceived(
+          baseRequest,
+          '2026-08-18T11:30:00.000Z',
+        ),
+      ).resolves.toBe('accepted');
+      await expect(
+        persistence.subjectRequests.applyTransition({
+          requestId,
+          next: 'verification_required',
+          updatedAt: '2026-08-18T11:45:00.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'a2222222-2222-4222-8222-222222222222',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'b3333333-3333-4333-8333-333333333333',
+          ),
+          correlationId,
+          reasonCode: 'forward',
+          productionMode: false,
+        }),
+      ).resolves.toMatchObject({ status: 'advanced' });
+      await expect(
+        persistence.subjectRequests.applyTransition({
+          requestId,
+          next: 'ready',
+          updatedAt: '2026-08-18T11:50:00.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'a3333333-3333-4333-8333-333333333333',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'b4444444-4444-4444-8444-444444444444',
+          ),
+          correlationId,
+          reasonCode: 'verification_accepted',
+          verification: {
+            verificationRefDigest: '2'.repeat(64),
+            synthetic: true,
+          },
+          productionMode: false,
+        }),
+      ).resolves.toMatchObject({ status: 'advanced' });
+      await expect(
+        persistence.subjectRequests.applyTransition({
+          requestId,
+          next: 'in_progress',
+          updatedAt: '2026-08-18T11:55:00.000Z',
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'a4444444-4444-4444-8444-444444444444',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'b5555555-5555-4555-8555-555555555555',
+          ),
+          correlationId,
+          reasonCode: 'forward',
+          productionMode: false,
+        }),
+      ).resolves.toMatchObject({ status: 'advanced' });
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            subjectRequests: persistence.subjectRequests,
+            processorSteps: persistence.processorSteps,
+          },
+        },
+      );
+
+      const processorId = '99999999-9999-4999-8999-999999999999';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/processor-step-record',
+        payload: {
+          step: {
+            stepId: 'e2222222-2222-4222-8222-222222222222',
+            requestId,
+            processorId,
+            capability: 'export',
+            outcome: 'completed',
+            operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+            correlationId,
+            recordedAt: '2026-08-18T12:02:00.000Z',
+          },
+          expected: [{ processorId, capability: 'export' }],
+          transitionId: privacySubjectRequestTransitionIdSchema.parse(
+            'a5555555-5555-4555-8555-555555555555',
+          ),
+          operationId: privacyOperationIdSchema.parse(
+            'b6666666-6666-4666-8666-666666666666',
+          ),
+          correlationId,
+          productionMode: false,
+        },
+      });
+      const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+        response.json(),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(body).toMatchObject({
+        status: 'advanced',
+        completion: 'completed',
+        request: { state: 'completed' },
+      });
+
+      const stepRows = await connection.db.execute<{
+        step_id: string;
+        outcome: string;
+      }>(sql`
+        SELECT step_id, outcome
+        FROM privacy_processor_step
+        WHERE request_id = ${requestId}
+      `);
+      expect(stepRows).toEqual([
+        {
+          step_id: 'e2222222-2222-4222-8222-222222222222',
+          outcome: 'completed',
         },
       ]);
 
