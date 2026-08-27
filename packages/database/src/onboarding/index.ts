@@ -3,6 +3,7 @@ export {
   onboardingInvitation,
   onboardingOperation,
   onboardingRoleMapping,
+  onboardingTransition,
 } from './tables.js';
 export {
   asOnboardingAttemptRepository,
@@ -35,3 +36,4 @@ export {
   type PostgresOnboardingRoleMappingRepository,
   type StoredOnboardingRoleMapping,
 } from './mappings.js';
+export { createPostgresOnboardingTransitionSink } from './transitions.js';

@@ -207,3 +207,49 @@ export const onboardingOperation = pgTable(
     index('onboarding_operation_namespace_idx').on(table.namespace),
   ],
 );
+
+/**
+ * Disposable synthetic append-only onboarding transition evidence.
+ * Aggregate rows (invitation/attempt/role_mapping/operation) are polymorphic,
+ * so aggregateId intentionally carries no single foreign key. Ordinary
+ * application repositories only insert; there is no update/delete method.
+ */
+export const onboardingTransition = pgTable(
+  'onboarding_transition',
+  {
+    transitionId: uuid('transition_id').primaryKey(),
+    aggregate: text('aggregate').notNull(),
+    aggregateId: text('aggregate_id').notNull(),
+    previousState: text('previous_state').notNull(),
+    nextState: text('next_state').notNull(),
+    operationId: uuid('operation_id').notNull(),
+    reason: text('reason').notNull(),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    check(
+      'onboarding_transition_aggregate_check',
+      sql`${table.aggregate} IN (
+        'invitation',
+        'attempt',
+        'role_mapping',
+        'operation'
+      )`,
+    ),
+    uniqueIndex('onboarding_transition_dedupe_unique').on(
+      table.aggregate,
+      table.aggregateId,
+      table.operationId,
+      table.previousState,
+      table.nextState,
+    ),
+    index('onboarding_transition_aggregate_id_idx').on(
+      table.aggregate,
+      table.aggregateId,
+    ),
+    index('onboarding_transition_recorded_at_idx').on(table.recordedAt),
+  ],
+);
