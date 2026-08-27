@@ -17,6 +17,7 @@ import {
   privacySubjectScopeIdSchema,
   privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
+  privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
   type PrivacyReadinessResult,
@@ -235,6 +236,11 @@ describe('synthetic privacy composition seam', () => {
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {},
     });
+    const processorPlan = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: {},
+    });
     const processorExecute = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-execute',
@@ -261,6 +267,7 @@ describe('synthetic privacy composition seam', () => {
       withdrawal,
       retentionPreview,
       retentionAuthorize,
+      processorPlan,
       processorExecute,
       inventoryCoverage,
       expectedInventoryGet,
@@ -1652,6 +1659,160 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate with injected evidence le
         reasonCode: 'audit_unavailable',
       },
     });
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/processor-plan', () => {
+  const expected = privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: 'ebab024',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          {
+            capability: 'delete',
+            rationale: 'deferred_to_later_prd21_slice',
+          },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+          {
+            family: 'privacy_subject_request',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  });
+
+  it('plans a step for a supported capability', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: { requestType: 'access', expected },
+    });
+    const body = privacySyntheticProcessorPlanResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body).toMatchObject({
+      status: 'planned',
+      steps: [{ processorId: processor.processorId, capability: 'access' }],
+      excluded: [],
+    });
+
+    await app.close();
+  });
+
+  it('excludes a processor with a declared exemption rationale', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: { requestType: 'deletion', expected },
+    });
+    const body = privacySyntheticProcessorPlanResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'planned',
+      steps: [],
+      excluded: [
+        {
+          processorId: processor.processorId,
+          capability: 'delete',
+          rationale: 'deferred_to_later_prd21_slice',
+        },
+      ],
+    });
+
+    await app.close();
+  });
+
+  it('reports undeclared processors as incomplete', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: { requestType: 'export', expected },
+    });
+    const body = privacySyntheticProcessorPlanResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'incomplete',
+      undeclaredProcessorIds: [processor.processorId],
+    });
+
+    await app.close();
+  });
+
+  it('reports empty_inventory for a zero-processor inventory', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: {
+        requestType: 'access',
+        expected: { ...expected, processors: [] },
+      },
+    });
+    const body = privacySyntheticProcessorPlanResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({ status: 'empty_inventory' });
+
+    await app.close();
+  });
+
+  it('rejects a malformed request body', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-plan',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
 
     await app.close();
   });
