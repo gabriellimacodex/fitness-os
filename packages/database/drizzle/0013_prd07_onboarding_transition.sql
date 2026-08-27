@@ -1,3 +1,11 @@
+-- Agent 90 R1 (PR #171): append-only is enforced only by application code
+-- (the repository exposes no update/delete method) — there is deliberately
+-- no database-level guard trigger/role-revoke here yet, unlike PRD 21's
+-- privacy_reject_append_only_mutation() pattern in migration 0006. Explicitly
+-- deferred: none of the four prior onboarding tables (migrations 0007-0010)
+-- have this guard either, so adding it here alone would be inconsistent: a
+-- DB-enforced guard for onboarding history tables is a follow-on slice that
+-- should cover all of them together, not just this one.
 CREATE TABLE "onboarding_transition" (
 	"transition_id" uuid PRIMARY KEY NOT NULL,
 	"aggregate" text NOT NULL,
