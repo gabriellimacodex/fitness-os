@@ -30,9 +30,29 @@ Do not proceed on instinct or memory of a prior run — read these fresh every t
 - `gh issue list --state open --label meta-stop 2>/dev/null || gh issue list --state open --search "[STOP:" ` — check which STOP conditions are already recorded and unresolved, so you don't re-attempt work you already correctly stopped on, and don't file a duplicate issue for the same condition.
 - Re-read `docs/prds/PRD_REGISTRY.md` state column as ground truth for what's `IN_PROGRESS`/`APPROVED`/`COMPLETED`/`PROPOSED`.
 
-## 3. Fix rejected PRs before picking new work
+## 3. Clear the merge queue before picking new work
 
-For every open PR on an `agent/` branch (from `gh pr list` in step 2), check its reviews:
+Multiple builder cycles (including any concurrent `/goal` run) can open several PRs before the reviewer gets to merge them, and every merge invalidates the "up to date with `main`" status of every other open PR under this repo's branch protection. Left alone, approved PRs pile up waiting on a rebase nobody does. Handle this first, every cycle:
+
+### 3a. Rebase PRs that already passed review but are stale
+
+For every open PR on an `agent/` branch:
+
+```
+gh pr view <n> --json mergeStateStatus,reviews --jq '{mergeStateStatus, lastReview: (.reviews[-1].body // "")}'
+```
+
+If the last `AGENT-90-REVIEW:` says `PASS`/approved with 0 BLOCKER and 0 HIGH, but `mergeStateStatus` is not `CLEAN`/current (stale against `main`, e.g. because another PR merged since its last CI run), that PR just needs a rebase, not new work:
+
+1. `git fetch origin`, check out the branch, merge or rebase `origin/main` into it.
+2. If the only conflict is a mechanical one this repo is known to produce — two PRs claiming the same Drizzle migration number/snapshot filename (check `packages/database/drizzle/*.sql` and `drizzle/meta/_journal.json` on `main` for what's actually taken) — renumber this PR's migration file(s) and snapshot to the next free slot, update the journal entry, and keep the migration's SQL content unchanged. Do not touch any other PR's files to do this.
+3. Push the rebased branch. Do not open a new PR for this — the existing PR updates automatically.
+
+Do this for every stale-but-passed PR you find this cycle — it's mechanical and cheap, not "the one atomic task" this command is otherwise limited to. It directly unblocks `/meta-review`'s next pass.
+
+### 3b. Fix PRs that were rejected
+
+For every open PR on an `agent/` branch, check its reviews:
 
 ```
 gh pr view <n> --json reviews,commits --jq '.reviews[] | select(.body | startswith("AGENT-90-REVIEW:")) | {body, submittedAt}'
@@ -40,9 +60,9 @@ gh pr view <n> --json reviews,commits --jq '.reviews[] | select(.body | startswi
 
 If the most recent `AGENT-90-REVIEW:` comment requests changes or contains a finding marked `CORRECTION_REQUIRED`/BLOCKER/HIGH, and no commit has been pushed to that branch after that review's timestamp, **this PR's fix is your task for this cycle** — skip step 4 entirely. Read the review findings, make the smallest correction that addresses them (do not scope-creep into unrelated changes on the same branch), push a new commit to the same branch (do not open a second PR for the same task), and let CI and `/meta-review` re-check it.
 
-If a PR already has a fixing commit newer than its last review, it's just waiting on the next `/meta-review` cycle — leave it alone and proceed to step 4 for a genuinely new task instead of piling up parallel work against it.
+If a PR already has a fixing commit newer than its last review, it's just waiting on the next `/meta-review` cycle — leave it alone.
 
-Only proceed to step 4 if no open `agent/` PR is in a "reviewed, needs correction, not yet fixed" state.
+Only proceed to step 4 if, after 3a and 3b, no open `agent/` PR is left in a "reviewed, needs correction, not yet fixed" state. (Rebasing in 3a doesn't block step 4 — do 3a regardless, then still pick a step-4 task this cycle unless 3b found something to fix.)
 
 ## 4. Pick exactly ONE atomic task
 
