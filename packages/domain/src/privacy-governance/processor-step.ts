@@ -44,6 +44,12 @@ export function deriveRequestCompletionFromSteps(input: {
   expected: readonly ExpectedProcessorStep[];
   steps: readonly PrivacyProcessorStepReference[];
 }): RequestCompletionStatus {
+  if (input.expected.length === 0) {
+    // An unpopulated expected set is not fulfilled work; it must never
+    // vacuously read as `completed`.
+    return 'incomplete';
+  }
+
   const latestByPair = new Map<string, PrivacyProcessorStepReference>();
   for (const step of input.steps) {
     latestByPair.set(pairKey(step.processorId, step.capability), step);
@@ -81,7 +87,13 @@ export type ProcessorStepAdvanceResult =
     }
   | {
       /** The exact `stepId` was already recorded; treated as an idempotent
-       * replay. No duplicate step and no duplicate transition attempt. */
+       * replay. No duplicate step is written. If the transition that should
+       * have followed the original append never committed (e.g. a crash
+       * between append and transition), this replay still evaluates and
+       * attempts it — see `advanced`/`already_terminal`/`invalid_transition`
+       * for that outcome. `step_conflict` itself is reported only when no
+       * transition applies (work is still incomplete, or the request is not
+       * currently `in_progress`/`partially_failed`). */
       status: 'step_conflict';
       completion: RequestCompletionStatus;
       request: PrivacySubjectRequestReference;
@@ -123,6 +135,13 @@ export type ProcessorStepAdvanceResult =
  * A request that is not currently `in_progress` or `partially_failed` (not
  * yet executing, or already terminal) records the step as evidence without
  * attempting a transition; an already-terminal request is reported as such.
+ *
+ * A replay of the exact same `stepId` (append `conflict`) still evaluates
+ * and, if needed, attempts the transition — it does not assume the earlier
+ * call's transition ever committed. This lets a caller recover a request
+ * left stranded `in_progress`/`partially_failed` by a crash (or thrown
+ * `applyTransition`) between the original append and its transition attempt,
+ * simply by resubmitting the same step.
  */
 export async function recordProcessorStepAndAdvanceRequest(input: {
   requests: PrivacySubjectRequestRepository;
@@ -147,20 +166,27 @@ export async function recordProcessorStepAndAdvanceRequest(input: {
     steps: history,
   });
 
-  if (appendResult === 'conflict') {
-    return { completion, request, status: 'step_conflict' };
-  }
+  // A `conflict` means this exact stepId was already recorded — but it does
+  // NOT mean the transition that should have followed it ever ran. A crash
+  // (or thrown `applyTransition`) between a successful append and its
+  // transition attempt leaves the step durably recorded with the request
+  // still `in_progress`/`partially_failed`. Falling through to the same
+  // terminal/completion/transition evaluation below (instead of returning
+  // early) lets a replay of that exact step recover the dropped transition,
+  // rather than reporting `step_conflict` forever with no way to advance.
+  const recordedStatus: 'recorded' | 'step_conflict' =
+    appendResult === 'conflict' ? 'step_conflict' : 'recorded';
 
   if (isTerminalSubjectRequestState(request.state)) {
     return { completion, request, status: 'already_terminal' };
   }
 
   if (completion === 'incomplete') {
-    return { completion, request, status: 'recorded' };
+    return { completion, request, status: recordedStatus };
   }
 
   if (request.state !== 'in_progress' && request.state !== 'partially_failed') {
-    return { completion, request, status: 'recorded' };
+    return { completion, request, status: recordedStatus };
   }
 
   const applied = await input.requests.applyTransition({

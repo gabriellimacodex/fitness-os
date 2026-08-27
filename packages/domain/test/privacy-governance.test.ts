@@ -2090,6 +2090,12 @@ describe('deriveRequestCompletionFromSteps', () => {
     ).toBe('partially_failed');
   });
 
+  it('never treats an unpopulated expected set as completed', () => {
+    expect(deriveRequestCompletionFromSteps({ expected: [], steps: [] })).toBe(
+      'incomplete',
+    );
+  });
+
   it('uses only the latest step per (processorId, capability) pair', () => {
     const firstAttempt = step({ outcome: 'retryable_failure' });
     const retrySucceeded = step({
@@ -2316,7 +2322,7 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     });
   });
 
-  it('treats a repeated exact stepId as an idempotent replay with no duplicate transition', async () => {
+  it('reports already_terminal for a repeated exact stepId once the earlier transition already committed', async () => {
     const requests = new SyntheticPrivacySubjectRequestRepository();
     requests.seedForTest(requestInState('in_progress'));
     const steps = new SyntheticPrivacyProcessorStepRepository();
@@ -2339,9 +2345,55 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
 
     expect(replay).toMatchObject({
       completion: 'completed',
-      status: 'step_conflict',
+      status: 'already_terminal',
     });
     await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
+  });
+
+  it('recovers a transition dropped after a crash between append and transition, on replay of the same step', async () => {
+    // Simulates a process that crashed (or threw) after the step append
+    // committed but before applyTransition ran: the step is durably
+    // recorded, yet the request is still sitting in_progress. Replaying the
+    // exact same step must not just report step_conflict forever — it must
+    // still evaluate and attempt the transition that was dropped.
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+    await steps.append(step());
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result.status).toBe('advanced');
+    if (result.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(result.completion).toBe('completed');
+    expect(result.request.state).toBe('completed');
+    await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
+  });
+
+  it('still reports step_conflict when a replayed step needs no transition', async () => {
+    // The request is not yet executing, so neither the original call nor a
+    // replay ever attempts a transition — step_conflict remains the correct,
+    // reachable outcome for a duplicate that genuinely needs no recovery.
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('ready'));
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+    await steps.append(step());
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result).toMatchObject({
+      completion: 'completed',
+      status: 'step_conflict',
+    });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'ready',
+    });
   });
 
   it('surfaces illegal_transition rather than silently no-opping a repeated permanent failure', async () => {
