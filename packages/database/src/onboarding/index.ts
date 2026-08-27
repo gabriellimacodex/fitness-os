@@ -2,6 +2,7 @@ export {
   onboardingAttempt,
   onboardingInvitation,
   onboardingOperation,
+  onboardingPrincipalBinding,
   onboardingRoleMapping,
 } from './tables.js';
 export {
@@ -35,6 +36,11 @@ export {
   type PostgresOnboardingRoleMappingRepository,
   type StoredOnboardingRoleMapping,
 } from './mappings.js';
+export {
+  asPrincipalBindingRepository,
+  createPostgresPrincipalBindingRepository,
+  type PostgresPrincipalBindingRepository,
+} from './principal-binding.js';
 export {
   checkOnboardingSchemaReadiness,
   requiredOnboardingMigrationHashes,
