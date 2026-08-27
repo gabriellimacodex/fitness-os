@@ -14,12 +14,40 @@ function createRecordingPersistence(): OnboardingPgPersistence & {
   const invitationPuts: unknown[] = [];
   const mappingPuts: unknown[] = [];
   const operationPuts: unknown[] = [];
+  const bindingsByPrincipal = new Map<
+    string,
+    { bindingId: string; principalKey: string; createdAt: string }
+  >();
 
   return {
     invitationPuts,
     mappingPuts,
     operationPuts,
     nowUtcMs: () => '2026-08-19T15:00:00.000Z',
+    principalBinding: {
+      getByPrincipalKey: async (principalKey) =>
+        bindingsByPrincipal.get(principalKey) ?? null,
+      resolveOrEstablish: async ({
+        principalKey,
+        nowUtcMs,
+        productionMode,
+      }) => {
+        if (productionMode) {
+          return { reason: 'synthetic_in_production', status: 'denied' };
+        }
+        const existing = bindingsByPrincipal.get(principalKey);
+        if (existing !== undefined) {
+          return { binding: existing, status: 'resolved' };
+        }
+        const binding = {
+          bindingId: `binding-${principalKey}`,
+          createdAt: nowUtcMs,
+          principalKey,
+        };
+        bindingsByPrincipal.set(principalKey, binding);
+        return { binding, status: 'established' };
+      },
+    },
     invitations: {
       get: async () => null,
       getByClaimDigest: async () => null,
