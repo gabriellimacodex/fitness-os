@@ -10,6 +10,7 @@ import {
   type PrivacyAuditEventReference,
   type PrivacyEvidenceReference,
   type PrivacyExpectedProcessorInventory,
+  type PrivacyGovernanceLifecycleProofReference,
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyProcessorStepReference,
@@ -30,6 +31,7 @@ import type {
   PrivacyAuthorizationEvidenceLedger,
   PrivacyDataUsePorts,
   PrivacyExpectedProcessorInventoryPort,
+  PrivacyGovernanceLifecycleLedger,
   PrivacyIdFactory,
   PrivacyIntegrityVerificationInput,
   PrivacyIntegrityVerificationResult,
@@ -187,6 +189,31 @@ export class SyntheticPrivacyAuthorizationEvidenceLedger implements PrivacyAutho
 
     this.withdrawals.set(record.evidenceId, planned.withdrawal);
     return planned.status;
+  }
+}
+
+export class SyntheticPrivacyGovernanceLifecycleLedger implements PrivacyGovernanceLifecycleLedger {
+  private readonly byOperationId = new Map<
+    string,
+    PrivacyGovernanceLifecycleProofReference
+  >();
+
+  seed(record: PrivacyGovernanceLifecycleProofReference): void {
+    this.byOperationId.set(record.operationId, record);
+  }
+
+  async getByOperationId(
+    operationId: string,
+  ): Promise<PrivacyGovernanceLifecycleProofReference | null> {
+    return this.byOperationId.get(operationId) ?? null;
+  }
+
+  async append(record: PrivacyGovernanceLifecycleProofReference) {
+    if (this.byOperationId.has(record.operationId)) {
+      return 'conflict' as const;
+    }
+    this.byOperationId.set(record.operationId, record);
+    return 'accepted' as const;
   }
 }
 
