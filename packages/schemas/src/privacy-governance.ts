@@ -269,6 +269,60 @@ export type PrivacyEngineeringCategoryId = z.infer<
   typeof privacyEngineeringCategoryIdSchema
 >;
 
+export const privacyRetentionRuleIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyRetentionRuleId'>();
+export type PrivacyRetentionRuleId = z.infer<
+  typeof privacyRetentionRuleIdSchema
+>;
+
+export const privacyRetentionRuleVersionIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyRetentionRuleVersionId'>();
+export type PrivacyRetentionRuleVersionId = z.infer<
+  typeof privacyRetentionRuleVersionIdSchema
+>;
+
+/**
+ * Structural action a retention rule authorizes. Mirrors the closed
+ * processor-step deletion-outcome vocabulary; it declares only the mechanical
+ * disposition, never a legal classification.
+ */
+export const privacyRetentionRuleActionSchema = z.enum([
+  'delete',
+  'irreversibly_transform',
+  'retain_under_exception',
+]);
+export type PrivacyRetentionRuleAction = z.infer<
+  typeof privacyRetentionRuleActionSchema
+>;
+
+/**
+ * Versioned retention-rule reference binding a data category and purpose
+ * version to a mechanical action and policy provenance. The start trigger,
+ * duration/event condition, and exception parameters remain approved policy
+ * content outside this contract and are represented only by an opaque
+ * `parametersDigest` — this schema never encodes an exact period, legal-hold
+ * rule, or other engineering-invented retention value. A rule version is
+ * immutable once accepted by its repository; a change is a new version.
+ */
+export const privacyRetentionRuleReferenceSchema = z
+  .object({
+    ruleId: privacyRetentionRuleIdSchema,
+    ruleVersionId: privacyRetentionRuleVersionIdSchema,
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema,
+    purposeVersionId: privacyPurposeVersionIdSchema,
+    policyVersionId: privacyPolicyVersionIdSchema,
+    action: privacyRetentionRuleActionSchema,
+    parametersDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    canonicalizationVersion: privacyCanonicalizationVersionSchema,
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyRetentionRuleReference = z.infer<
+  typeof privacyRetentionRuleReferenceSchema
+>;
+
 /**
  * One-way withdrawal event against append-only authorization evidence.
  * State is only `withdrawn`; the original evidence row is never edited or
