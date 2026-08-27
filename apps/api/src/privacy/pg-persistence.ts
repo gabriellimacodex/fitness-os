@@ -2,6 +2,7 @@ import type { PostgresConnection } from '@fitness-os/database';
 import {
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
+  createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
   createPostgresPrivacyPurposeRegistry,
@@ -11,6 +12,7 @@ import {
 import type {
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
+  PrivacyGovernanceLifecycleLedger,
   PrivacyPolicyPackageRepository,
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
@@ -30,6 +32,7 @@ export type PrivacyPgPersistence = {
   purposes: PrivacyPurposeRegistry;
   processors: PrivacyRuntimeProcessorRegistry;
   processorSteps: PrivacyProcessorStepRepository;
+  governanceLifecycle: PrivacyGovernanceLifecycleLedger;
 };
 
 export function createPrivacyPgPersistence(
@@ -43,5 +46,7 @@ export function createPrivacyPgPersistence(
     purposes: createPostgresPrivacyPurposeRegistry(connection),
     processors: createPostgresPrivacyRuntimeProcessorRegistry(connection),
     processorSteps: createPostgresPrivacyProcessorStepRepository(connection),
+    governanceLifecycle:
+      createPostgresPrivacyGovernanceLifecycleLedger(connection),
   };
 }

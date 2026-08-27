@@ -11,9 +11,12 @@ import {
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
+  privacyLifecycleProofIdSchema,
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorIdSchema,
   privacyPurposeVersionReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
@@ -861,6 +864,56 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       });
 
       await app.close();
+    });
+
+    it('composes a governance-lifecycle ledger backed by disposable Postgres', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+      const requestId = privacySubjectRequestIdSchema.parse(
+        '11111111-1111-4111-8111-111111111111',
+      );
+      await expect(
+        persistence.subjectRequests.createReceived(
+          privacySubjectRequestReferenceSchema.parse({
+            requestId,
+            requestType: 'deletion',
+            state: 'received',
+            subjectScopeId: '22222222-2222-4222-8222-222222222222',
+            verification: null,
+            policyVersionId: policy.versionId,
+            inventoryVersionDigest: '1'.repeat(64),
+            correlationId: '55555555-5555-4555-8555-555555555555',
+            updatedAt: '2026-08-18T11:00:00.000Z',
+          }),
+          '2026-08-18T11:00:00.000Z',
+        ),
+      ).resolves.toBe('accepted');
+
+      const proof = privacyGovernanceLifecycleProofReferenceSchema.parse({
+        requestId,
+        processorId: privacyProcessorIdSchema.parse(processor.processorId),
+        operationId: privacyOperationIdSchema.parse(
+          'd2d2d2d2-d2d2-4d2d-8d2d-d2d2d2d2d2d2',
+        ),
+        result: {
+          outcome: 'completed',
+          proofId: privacyLifecycleProofIdSchema.parse(
+            'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1',
+          ),
+        },
+        recordedAt: '2026-08-18T12:00:00.000Z',
+        synthetic: true,
+      });
+
+      await expect(persistence.governanceLifecycle.append(proof)).resolves.toBe(
+        'accepted',
+      );
+      await expect(persistence.governanceLifecycle.append(proof)).resolves.toBe(
+        'conflict',
+      );
+      await expect(
+        persistence.governanceLifecycle.getByOperationId(proof.operationId),
+      ).resolves.toEqual(proof);
     });
   },
 );
