@@ -28,4 +28,32 @@ describe('SyntheticOnboardingReadinessProbe', () => {
       diagnosticCode: 'schema_mismatch',
     });
   });
+
+  it('emits the trusted clock, ID factory, and secret factory components required by PRD 07 mechanism readiness', async () => {
+    const probe = new SyntheticOnboardingReadinessProbe({
+      evaluatedAt: '2026-08-19T12:00:00.000Z',
+    });
+    const result = await probe.evaluate();
+    const componentIds = result.components.map((c) => c.componentId);
+
+    expect(componentIds).toEqual([
+      'schema',
+      'clock',
+      'id_factory',
+      'secret_factory',
+      'invitation_repository',
+      'attempt_repository',
+      'operation_repository',
+      'role_mapping_repository',
+      'secret_verifier',
+      'identity_adapter',
+      'policy_gateway',
+    ]);
+    expect(new Set(componentIds).size).toBe(componentIds.length);
+    for (const componentId of ['clock', 'id_factory', 'secret_factory']) {
+      expect(
+        result.components.find((c) => c.componentId === componentId),
+      ).toMatchObject({ state: 'ready', diagnosticCode: null });
+    }
+  });
 });
