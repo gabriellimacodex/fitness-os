@@ -38,6 +38,8 @@ import {
   privacySubjectRequestTransitionReferenceSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
+  privacySyntheticProcessorPlanRequestSchema,
+  privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticProcessorCommandSchema,
@@ -1205,5 +1207,110 @@ describe('processor descriptor and readiness contracts', () => {
         digestsMatch: true,
       }).productionMode,
     ).toBe(true);
+  });
+});
+
+describe('synthetic processor-plan contracts', () => {
+  const expected = privacyExpectedProcessorInventorySchema.parse({
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    inventoryVersionDigest: '3'.repeat(64),
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: 'ebab024',
+    processors: [
+      {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        registrationVersion: 1,
+        inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        descriptorDigest: '4'.repeat(64),
+        codeOwner: 'agent-2',
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: [],
+        allowedCategoryIds: [],
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: ['access'],
+        unsupportedCapabilities: [],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  });
+
+  it('accepts a strict request pairing a request type with an expected inventory', () => {
+    expect(
+      privacySyntheticProcessorPlanRequestSchema.safeParse({
+        requestType: 'access',
+        expected,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects an unknown field on the request', () => {
+    expect(
+      privacySyntheticProcessorPlanRequestSchema.safeParse({
+        requestType: 'access',
+        expected,
+        sql: 'delete from subjects',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a request missing the expected inventory', () => {
+    expect(
+      privacySyntheticProcessorPlanRequestSchema.safeParse({
+        requestType: 'access',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a planned response with steps and exclusions', () => {
+    const parsed = privacySyntheticProcessorPlanResponseSchema.parse({
+      status: 'planned',
+      steps: [
+        {
+          processorId: '99999999-9999-4999-8999-999999999999',
+          capability: 'access',
+        },
+      ],
+      excluded: [],
+    });
+
+    expect(parsed.status).toBe('planned');
+    expect(parsed.steps).toHaveLength(1);
+  });
+
+  it('accepts an incomplete response naming undeclared processors', () => {
+    const parsed = privacySyntheticProcessorPlanResponseSchema.parse({
+      status: 'incomplete',
+      undeclaredProcessorIds: ['99999999-9999-4999-8999-999999999999'],
+    });
+
+    expect(parsed.undeclaredProcessorIds).toEqual([
+      '99999999-9999-4999-8999-999999999999',
+    ]);
+  });
+
+  it('accepts an empty_inventory response with no steps or exclusions', () => {
+    expect(
+      privacySyntheticProcessorPlanResponseSchema.parse({
+        status: 'empty_inventory',
+      }),
+    ).toEqual({ status: 'empty_inventory' });
+  });
+
+  it('rejects an unknown status value', () => {
+    expect(
+      privacySyntheticProcessorPlanResponseSchema.safeParse({
+        status: 'ok',
+      }).success,
+    ).toBe(false);
   });
 });

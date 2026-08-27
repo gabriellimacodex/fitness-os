@@ -1,5 +1,6 @@
 import {
   authorizeRetentionExecution,
+  buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
@@ -36,6 +37,8 @@ import {
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
   privacySyntheticProcessorExecuteResponseSchema,
+  privacySyntheticProcessorPlanRequestSchema,
+  privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   privacySyntheticRetentionPreviewRequestSchema,
@@ -631,6 +634,37 @@ export function registerPrivacySyntheticRoutes(
       });
     },
   );
+
+  app.post('/v1/privacy/synthetic/processor-plan', async (request, reply) => {
+    const body = privacySyntheticProcessorPlanRequestSchema.safeParse(
+      request.body,
+    );
+
+    if (!body.success) {
+      return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+    }
+
+    const result = buildRequestProcessorPlan(body.data);
+
+    if (result.status === 'empty_inventory') {
+      return privacySyntheticProcessorPlanResponseSchema.parse({
+        status: 'empty_inventory',
+      });
+    }
+
+    if (result.status === 'incomplete') {
+      return privacySyntheticProcessorPlanResponseSchema.parse({
+        status: 'incomplete',
+        undeclaredProcessorIds: result.undeclaredProcessorIds,
+      });
+    }
+
+    return privacySyntheticProcessorPlanResponseSchema.parse({
+      status: 'planned',
+      steps: result.steps,
+      excluded: result.excluded,
+    });
+  });
 
   app.post(
     '/v1/privacy/synthetic/processor-execute',
