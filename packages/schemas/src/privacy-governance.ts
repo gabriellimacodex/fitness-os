@@ -1491,6 +1491,57 @@ export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
 >;
 
 /**
+ * Disposable synthetic API pinning the exact processor plan for a subject-
+ * request type against a reviewed expected inventory. Read-only; never
+ * mutates a request, step, or evidence row.
+ */
+export const privacySyntheticProcessorPlanRequestSchema = z
+  .object({
+    requestType: privacySubjectRequestTypeSchema,
+    expected: privacyExpectedProcessorInventorySchema,
+  })
+  .strict();
+export type PrivacySyntheticProcessorPlanRequest = z.infer<
+  typeof privacySyntheticProcessorPlanRequestSchema
+>;
+
+export const privacySyntheticProcessorPlanResponseSchema = z
+  .object({
+    status: z.enum(['planned', 'incomplete', 'empty_inventory']),
+    steps: z
+      .array(
+        z
+          .object({
+            processorId: privacyProcessorIdSchema,
+            capability: privacyProcessorCapabilitySchema,
+          })
+          .strict(),
+      )
+      .max(128)
+      .optional(),
+    excluded: z
+      .array(
+        z
+          .object({
+            processorId: privacyProcessorIdSchema,
+            capability: privacyProcessorCapabilitySchema,
+            rationale: privacyUnsupportedCapabilityRationaleSchema,
+          })
+          .strict(),
+      )
+      .max(128)
+      .optional(),
+    undeclaredProcessorIds: z
+      .array(privacyProcessorIdSchema)
+      .max(128)
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorPlanResponse = z.infer<
+  typeof privacySyntheticProcessorPlanResponseSchema
+>;
+
+/**
  * Synthetic-only expected-vs-runtime processor inventory coverage check.
  * Mechanism evidence only — does not authorize production readiness.
  */
