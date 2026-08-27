@@ -815,6 +815,29 @@ export type PrivacyProcessorStepReference = z.infer<
   typeof privacyProcessorStepReferenceSchema
 >;
 
+/**
+ * Append-only governance-lifecycle proof ledger record. Wraps the frozen
+ * `governanceLifecycleResultSchema` outcome/proofId rule (Option A) with the
+ * minimum association metadata needed to locate a proof — never the
+ * destructive-action detail, subject payload, or policy content that
+ * produced it. Keyed by `operationId`: one lifecycle command produces at
+ * most one ledger row. Recording a row is not authorization to execute a
+ * governance-lifecycle command; that remains a separately gated concern.
+ */
+export const privacyGovernanceLifecycleProofReferenceSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    operationId: privacyOperationIdSchema,
+    result: governanceLifecycleResultSchema,
+    recordedAt: privacyTrustedUtcMsSchema,
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyGovernanceLifecycleProofReference = z.infer<
+  typeof privacyGovernanceLifecycleProofReferenceSchema
+>;
+
 export const privacyProcessorInventorySchemaVersionSchema = z.literal(
   'privacy.processor-inventory.v1',
 );
@@ -1539,6 +1562,68 @@ export const privacySyntheticProcessorPlanResponseSchema = z
   .strict();
 export type PrivacySyntheticProcessorPlanResponse = z.infer<
   typeof privacySyntheticProcessorPlanResponseSchema
+>;
+
+/**
+ * Disposable synthetic API to append one append-only processor-step attempt
+ * and, only when the full expected (processorId, capability) set is now
+ * terminal, advance the subject request through its own state machine. A
+ * replay of the exact same `step.stepId` still evaluates and, if needed,
+ * attempts the dropped transition — this is the mechanism-proof seam for
+ * partial-failure resume, not a new decision surface.
+ */
+export const privacySyntheticProcessorStepRecordRequestSchema = z
+  .object({
+    step: privacyProcessorStepReferenceSchema,
+    expected: z
+      .array(
+        z
+          .object({
+            processorId: privacyProcessorIdSchema,
+            capability: privacyProcessorCapabilitySchema,
+          })
+          .strict(),
+      )
+      .max(128),
+    transitionId: privacySubjectRequestTransitionIdSchema,
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorStepRecordRequest = z.infer<
+  typeof privacySyntheticProcessorStepRecordRequestSchema
+>;
+
+export const privacySyntheticProcessorStepRecordResponseSchema = z
+  .object({
+    status: z.enum([
+      'recorded',
+      'step_conflict',
+      'advanced',
+      'already_terminal',
+      'invalid_transition',
+      'transition_conflict',
+      'request_not_found',
+    ]),
+    completion: z
+      .enum(['incomplete', 'completed', 'partially_failed'])
+      .optional(),
+    request: privacySubjectRequestReferenceSchema.optional(),
+    transition: privacySubjectRequestTransitionReferenceSchema.optional(),
+    reason: z
+      .enum([
+        'illegal_transition',
+        'verification_required',
+        'synthetic_verification_in_production',
+        'terminal_state',
+        'not_found',
+      ])
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorStepRecordResponse = z.infer<
+  typeof privacySyntheticProcessorStepRecordResponseSchema
 >;
 
 /**
