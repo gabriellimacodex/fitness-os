@@ -20,15 +20,19 @@ import {
   privacyDataUseDenyReasonSchema,
   privacyEvidenceReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
   privacyLifecycleProofIdSchema,
+  privacyOperationIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorIdSchema,
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
   privacyRetentionRuleReferenceSchema,
+  privacySubjectRequestIdSchema,
   privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
@@ -143,6 +147,69 @@ describe('governance lifecycle proofId binding', () => {
       governanceLifecycleResultSchema.safeParse({
         outcome: 'denied',
         proofId,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('governance lifecycle proof ledger reference', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  );
+  const processorId = privacyProcessorIdSchema.parse(
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  );
+  const operationId = privacyOperationIdSchema.parse(
+    '11111111-1111-4111-8111-111111111111',
+  );
+
+  it('accepts a completed proof reference bound to its outcome/proofId rule', () => {
+    const parsed = privacyGovernanceLifecycleProofReferenceSchema.parse({
+      requestId,
+      processorId,
+      operationId,
+      result: { outcome: 'completed', proofId },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic: true,
+    });
+    expect(parsed.result).toEqual({ outcome: 'completed', proofId });
+  });
+
+  it('accepts a denied proof reference with no proofId in the result', () => {
+    const parsed = privacyGovernanceLifecycleProofReferenceSchema.parse({
+      requestId,
+      processorId,
+      operationId,
+      result: { outcome: 'denied' },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic: true,
+    });
+    expect(parsed.result).toEqual({ outcome: 'denied' });
+  });
+
+  it('rejects an unknown key such as an inlined destructive-action detail', () => {
+    expect(
+      privacyGovernanceLifecycleProofReferenceSchema.safeParse({
+        requestId,
+        processorId,
+        operationId,
+        result: { outcome: 'denied' },
+        recordedAt: '2026-08-27T00:00:00.000Z',
+        synthetic: true,
+        deletedRecordCount: 42,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a result violating the closed outcome/proofId rule', () => {
+    expect(
+      privacyGovernanceLifecycleProofReferenceSchema.safeParse({
+        requestId,
+        processorId,
+        operationId,
+        result: { outcome: 'completed' },
+        recordedAt: '2026-08-27T00:00:00.000Z',
+        synthetic: true,
       }).success,
     ).toBe(false);
   });
