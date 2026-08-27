@@ -18,12 +18,14 @@ import {
   privacySyntheticExpectedInventoryResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorPlanResponseSchema,
+  privacySyntheticProcessorStepRecordResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -1806,6 +1808,245 @@ describe('POST /v1/privacy/synthetic/processor-plan', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-plan',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/processor-step-record', () => {
+  const stepRequestId = privacySubjectRequestIdSchema.parse(
+    '66666666-6666-4666-8666-666666666666',
+  );
+  const processorA = '99999999-9999-4999-8999-999999999999';
+  const processorB = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  const seedRequest = (
+    state: 'in_progress' | 'partially_failed' | 'completed',
+  ) =>
+    privacySubjectRequestReferenceSchema.parse({
+      requestId: stepRequestId,
+      requestType: 'export',
+      state,
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      verification: null,
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: '1'.repeat(64),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      updatedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+  const step = (overrides: Record<string, unknown> = {}) => ({
+    stepId: 'e1111111-1111-4111-8111-111111111111',
+    requestId: stepRequestId,
+    processorId: processorA,
+    capability: 'export',
+    outcome: 'completed',
+    operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    correlationId: '55555555-5555-4555-8555-555555555555',
+    recordedAt: '2026-08-18T12:02:00.000Z',
+    ...overrides,
+  });
+
+  const basePayload = (overrides: Record<string, unknown> = {}) => ({
+    step: step(),
+    expected: [{ processorId: processorA, capability: 'export' }],
+    transitionId: privacySubjectRequestTransitionIdSchema.parse(
+      'a1111111-1111-4111-8111-111111111111',
+    ),
+    operationId: privacyOperationIdSchema.parse(
+      'b2222222-2222-4222-8222-222222222222',
+    ),
+    correlationId: privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    ),
+    productionMode: false,
+    ...overrides,
+  });
+
+  it('reports request_not_found for an unknown request', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+    const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body).toEqual({ status: 'request_not_found' });
+
+    await app.close();
+  });
+
+  it('records the step but stays incomplete while an expected pair has not reported', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({
+        expected: [
+          { processorId: processorA, capability: 'export' },
+          { processorId: processorB, capability: 'access' },
+        ],
+      }),
+    });
+    const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'recorded',
+      completion: 'incomplete',
+    });
+    await expect(subjectRequests.get(stepRequestId)).resolves.toMatchObject({
+      state: 'in_progress',
+    });
+
+    await app.close();
+  });
+
+  it('advances an in_progress request to completed once the expected step is recorded', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+    const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'advanced',
+      completion: 'completed',
+      request: { state: 'completed' },
+      transition: { nextState: 'completed' },
+    });
+
+    await app.close();
+  });
+
+  it('resumes a transition dropped after a crash between append and transition, on replay of the same step', async () => {
+    // Simulates a process that crashed between the step append committing and
+    // the follow-on transition running: the step is durably recorded via the
+    // shared processorSteps repository, but the request is still sitting
+    // in_progress. Replaying the exact same step over HTTP must recover the
+    // dropped transition rather than reporting step_conflict forever.
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    await processorSteps.append(step() as never);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+          processorSteps: processorSteps as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+    const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'advanced',
+      completion: 'completed',
+      request: { state: 'completed' },
+    });
+    await expect(
+      processorSteps.listForRequest(stepRequestId),
+    ).resolves.toHaveLength(1);
+
+    await app.close();
+  });
+
+  it('reports already_terminal and appends no further transition for a terminal request', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('completed'));
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+    const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'already_terminal',
+      completion: 'completed',
+    });
+
+    await app.close();
+  });
+
+  it('rejects a malformed request body', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
       payload: {},
     });
 
