@@ -1,6 +1,6 @@
 {
-  "id": "d545ed6c-5123-4560-8aae-17045d9391c9",
-  "prevId": "53375437-c5a0-4a91-b35d-756bcb4bcdc4",
+  "id": "a8cbc984-ff0e-4373-b2ad-31df3093ee67",
+  "prevId": "d545ed6c-5123-4560-8aae-17045d9391c9",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1565,6 +1565,111 @@
         "privacy_authorization_evidence_content_digest_check": {
           "name": "privacy_authorization_evidence_content_digest_check",
           "value": "\"privacy_authorization_evidence\".\"content_digest\" ~ '^[a-f0-9]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.privacy_governance_lifecycle_proof": {
+      "name": "privacy_governance_lifecycle_proof",
+      "schema": "",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processor_id": {
+          "name": "processor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_id": {
+          "name": "proof_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synthetic": {
+          "name": "synthetic",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "privacy_governance_lifecycle_proof_request_id_idx": {
+          "name": "privacy_governance_lifecycle_proof_request_id_idx",
+          "columns": [
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "privacy_governance_lifecycle_proof_recorded_at_idx": {
+          "name": "privacy_governance_lifecycle_proof_recorded_at_idx",
+          "columns": [
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "privacy_governance_lifecycle_proof_request_id_fk": {
+          "name": "privacy_governance_lifecycle_proof_request_id_fk",
+          "tableFrom": "privacy_governance_lifecycle_proof",
+          "tableTo": "privacy_subject_request",
+          "columnsFrom": ["request_id"],
+          "columnsTo": ["request_id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "privacy_governance_lifecycle_proof_outcome_check": {
+          "name": "privacy_governance_lifecycle_proof_outcome_check",
+          "value": "\"privacy_governance_lifecycle_proof\".\"outcome\" IN ('completed', 'partially_failed', 'denied')"
+        },
+        "privacy_governance_lifecycle_proof_proof_id_pair_check": {
+          "name": "privacy_governance_lifecycle_proof_proof_id_pair_check",
+          "value": "(\n        (\"privacy_governance_lifecycle_proof\".\"outcome\" IN ('completed', 'partially_failed') AND \"privacy_governance_lifecycle_proof\".\"proof_id\" IS NOT NULL) OR\n        (\"privacy_governance_lifecycle_proof\".\"outcome\" = 'denied' AND \"privacy_governance_lifecycle_proof\".\"proof_id\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": false

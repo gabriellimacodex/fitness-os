@@ -290,6 +290,53 @@ export const privacySubjectRequest = pgTable(
 );
 
 /**
+ * Append-only per-processor execution attempts for a subject request.
+ * `stepId` is the only append conflict key — the same (requestId,
+ * processorId, capability) pair may have multiple steps across retries.
+ * DB guards reject UPDATE/DELETE; ordinary role has SELECT/INSERT only.
+ */
+export const privacyProcessorStep = pgTable(
+  'privacy_processor_step',
+  {
+    stepId: uuid('step_id').primaryKey(),
+    requestId: uuid('request_id').notNull(),
+    processorId: uuid('processor_id').notNull(),
+    capability: text('capability').notNull(),
+    outcome: text('outcome').notNull(),
+    operationId: uuid('operation_id').notNull(),
+    correlationId: uuid('correlation_id').notNull(),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.requestId],
+      foreignColumns: [privacySubjectRequest.requestId],
+      name: 'privacy_processor_step_request_id_fk',
+    }).onDelete('restrict'),
+    check(
+      'privacy_processor_step_capability_check',
+      sql`${table.capability} IN (
+        'inventory',
+        'access',
+        'export',
+        'delete',
+        'retention',
+        'governance_lifecycle'
+      )`,
+    ),
+    check(
+      'privacy_processor_step_outcome_check',
+      sql`${table.outcome} IN ('completed', 'retryable_failure', 'permanent_failure')`,
+    ),
+    index('privacy_processor_step_request_id_idx').on(table.requestId),
+    index('privacy_processor_step_recorded_at_idx').on(table.recordedAt),
+  ],
+);
+
+/**
  * Append-only transition history for data-subject requests.
  * DB guards reject UPDATE/DELETE; ordinary role has SELECT/INSERT only.
  */
