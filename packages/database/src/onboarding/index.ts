@@ -41,3 +41,8 @@ export {
   createPostgresPrincipalBindingRepository,
   type PostgresPrincipalBindingRepository,
 } from './principal-binding.js';
+export {
+  checkOnboardingSchemaReadiness,
+  requiredOnboardingMigrationHashes,
+  type OnboardingSchemaReadinessResult,
+} from './readiness.js';
