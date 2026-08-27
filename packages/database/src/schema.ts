@@ -27,6 +27,7 @@ export {
   privacyAuthorizationEvidence,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
+  privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
   privacySubjectRequest,

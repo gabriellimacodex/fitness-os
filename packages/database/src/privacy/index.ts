@@ -3,6 +3,7 @@ export {
   privacyAuthorizationEvidence,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
+  privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
   privacySubjectRequest,
@@ -21,6 +22,7 @@ export {
 } from './registries.js';
 export { createPostgresPrivacySubjectRequestRepository } from './subject-request.js';
 export { createPostgresPrivacyRetentionPreviewRepository } from './retention.js';
+export { createPostgresPrivacyProcessorStepRepository } from './processor-step.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
   requiredPrivacyCoreMigrationHashes,
