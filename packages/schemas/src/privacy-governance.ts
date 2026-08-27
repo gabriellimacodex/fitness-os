@@ -1565,6 +1565,68 @@ export type PrivacySyntheticProcessorPlanResponse = z.infer<
 >;
 
 /**
+ * Disposable synthetic API to append one append-only processor-step attempt
+ * and, only when the full expected (processorId, capability) set is now
+ * terminal, advance the subject request through its own state machine. A
+ * replay of the exact same `step.stepId` still evaluates and, if needed,
+ * attempts the dropped transition — this is the mechanism-proof seam for
+ * partial-failure resume, not a new decision surface.
+ */
+export const privacySyntheticProcessorStepRecordRequestSchema = z
+  .object({
+    step: privacyProcessorStepReferenceSchema,
+    expected: z
+      .array(
+        z
+          .object({
+            processorId: privacyProcessorIdSchema,
+            capability: privacyProcessorCapabilitySchema,
+          })
+          .strict(),
+      )
+      .max(128),
+    transitionId: privacySubjectRequestTransitionIdSchema,
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorStepRecordRequest = z.infer<
+  typeof privacySyntheticProcessorStepRecordRequestSchema
+>;
+
+export const privacySyntheticProcessorStepRecordResponseSchema = z
+  .object({
+    status: z.enum([
+      'recorded',
+      'step_conflict',
+      'advanced',
+      'already_terminal',
+      'invalid_transition',
+      'transition_conflict',
+      'request_not_found',
+    ]),
+    completion: z
+      .enum(['incomplete', 'completed', 'partially_failed'])
+      .optional(),
+    request: privacySubjectRequestReferenceSchema.optional(),
+    transition: privacySubjectRequestTransitionReferenceSchema.optional(),
+    reason: z
+      .enum([
+        'illegal_transition',
+        'verification_required',
+        'synthetic_verification_in_production',
+        'terminal_state',
+        'not_found',
+      ])
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorStepRecordResponse = z.infer<
+  typeof privacySyntheticProcessorStepRecordResponseSchema
+>;
+
+/**
  * Synthetic-only expected-vs-runtime processor inventory coverage check.
  * Mechanism evidence only — does not authorize production readiness.
  */
