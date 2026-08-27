@@ -3,6 +3,7 @@ import {
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
   createPostgresPrivacyPolicyPackageRepository,
+  createPostgresPrivacyProcessorStepRepository,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
@@ -11,6 +12,7 @@ import type {
   PrivacyAuditSink,
   PrivacyAuthorizationEvidenceLedger,
   PrivacyPolicyPackageRepository,
+  PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
@@ -27,6 +29,7 @@ export type PrivacyPgPersistence = {
   policies: PrivacyPolicyPackageRepository;
   purposes: PrivacyPurposeRegistry;
   processors: PrivacyRuntimeProcessorRegistry;
+  processorSteps: PrivacyProcessorStepRepository;
 };
 
 export function createPrivacyPgPersistence(
@@ -39,5 +42,6 @@ export function createPrivacyPgPersistence(
     policies: createPostgresPrivacyPolicyPackageRepository(connection),
     purposes: createPostgresPrivacyPurposeRegistry(connection),
     processors: createPostgresPrivacyRuntimeProcessorRegistry(connection),
+    processorSteps: createPostgresPrivacyProcessorStepRepository(connection),
   };
 }
