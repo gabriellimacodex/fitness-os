@@ -32,6 +32,7 @@ import {
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyIntegrityVerifier,
+  SyntheticPrivacyRetentionPreviewRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   transitionSubjectRequest,
@@ -2068,5 +2069,39 @@ describe('retention preview and execution gates', () => {
       status: 'hard_disabled',
       reason: 'synthetic_fixtures_required',
     });
+  });
+});
+
+describe('synthetic retention preview repository', () => {
+  it('accepts a planned preview once, keyed by its deterministic selectionDigest', async () => {
+    const plan = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      productionMode: false,
+    });
+    if (plan.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    const record = {
+      ...plan.preview,
+      status: 'planned' as const,
+      createdAt: '2026-08-18T00:00:01.000Z',
+      executedAt: null,
+    };
+
+    await expect(repository.put(record)).resolves.toBe('accepted');
+    await expect(repository.put(record)).resolves.toBe('conflict');
+    await expect(
+      repository.getBySelectionDigest(plan.preview.selectionDigest),
+    ).resolves.toEqual(record);
+    await expect(
+      repository.getBySelectionDigest('0'.repeat(64)),
+    ).resolves.toBeNull();
   });
 });

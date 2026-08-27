@@ -13,6 +13,7 @@ import {
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyPurposeVersionReference,
+  type PrivacyRetentionPreviewRecord,
   type PrivacySubjectRequestReference,
   type PrivacySubjectRequestTransitionReference,
   type PrivacyWithdrawalReference,
@@ -34,6 +35,7 @@ import type {
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
+  PrivacyRetentionPreviewRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
   PrivacySubjectDataProcessor,
@@ -480,6 +482,32 @@ export class SyntheticPrivacyAttributionVerifier implements PrivacyAttributionVe
     }
 
     return { status: 'attributed' };
+  }
+}
+
+/**
+ * In-memory retention preview evidence, keyed by the deterministic
+ * `selectionDigest`. A digest is accepted at most once — a repeat `put` is a
+ * conflict rather than a silent overwrite, matching persisted append-only
+ * evidence elsewhere in this domain.
+ */
+export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetentionPreviewRepository {
+  private readonly previews = new Map<string, PrivacyRetentionPreviewRecord>();
+
+  async getBySelectionDigest(
+    selectionDigest: string,
+  ): Promise<PrivacyRetentionPreviewRecord | null> {
+    return this.previews.get(selectionDigest) ?? null;
+  }
+
+  async put(
+    record: PrivacyRetentionPreviewRecord,
+  ): Promise<'accepted' | 'conflict'> {
+    if (this.previews.has(record.selectionDigest)) {
+      return 'conflict';
+    }
+    this.previews.set(record.selectionDigest, record);
+    return 'accepted';
   }
 }
 

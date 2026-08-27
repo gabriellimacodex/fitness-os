@@ -12,6 +12,7 @@ import type {
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
   PrivacyPurposeVersionReference,
+  PrivacyRetentionPreviewRecord,
   PrivacySubjectRequestReference,
   PrivacySubjectRequestState,
   PrivacySubjectRequestTransitionId,
@@ -226,6 +227,21 @@ export interface PrivacySubjectRequestRepository {
     verification?: PrivacyVerificationReference | null;
     productionMode?: boolean;
   }): Promise<PrivacySubjectRequestApplyResult>;
+}
+
+/**
+ * Persisted retention preview evidence, keyed by the deterministic
+ * `selectionDigest` computed by `planRetentionPreview`. A preview is
+ * accepted at most once per digest; consuming/marking it `executed` is a
+ * separate, later composition step.
+ */
+export interface PrivacyRetentionPreviewRepository {
+  getBySelectionDigest(
+    selectionDigest: string,
+  ): Promise<PrivacyRetentionPreviewRecord | null>;
+  put(
+    record: PrivacyRetentionPreviewRecord,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 export interface PrivacyDataUsePorts {

@@ -28,6 +28,7 @@ export {
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyPurposeVersion,
+  privacyRetentionPreview,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,

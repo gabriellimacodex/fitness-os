@@ -1394,6 +1394,38 @@ export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
 >;
 
 /**
+ * Persisted retention preview evidence. Keyed by the deterministic
+ * `selectionDigest` already computed by `planRetentionPreview` — a preview is
+ * immutable once accepted; `status` moves `planned` → `executed` exactly once.
+ * Disposable/synthetic only until `LEGAL_PRIVACY_DECISION_REQUIRED` clears.
+ */
+export const privacyRetentionPreviewStatusSchema = z.enum([
+  'planned',
+  'executed',
+]);
+export type PrivacyRetentionPreviewStatus = z.infer<
+  typeof privacyRetentionPreviewStatusSchema
+>;
+
+export const privacyRetentionPreviewRecordSchema = z
+  .object({
+    selectionDigest: privacySha256DigestSchema,
+    policyVersionId: privacyPolicyVersionIdSchema,
+    inventoryVersionDigest: privacySha256DigestSchema,
+    processorDescriptorDigests: z.array(privacySha256DigestSchema).max(64),
+    watermark: privacyTrustedUtcMsSchema,
+    approvedExceptionIds: privacyApprovedExceptionIdsSchema,
+    synthetic: z.literal(true),
+    status: privacyRetentionPreviewStatusSchema,
+    createdAt: privacyTrustedUtcMsSchema,
+    executedAt: privacyTrustedUtcMsSchema.nullable(),
+  })
+  .strict();
+export type PrivacyRetentionPreviewRecord = z.infer<
+  typeof privacyRetentionPreviewRecordSchema
+>;
+
+/**
  * Synthetic-only expected-vs-runtime processor inventory coverage check.
  * Mechanism evidence only — does not authorize production readiness.
  */
