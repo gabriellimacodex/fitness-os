@@ -368,3 +368,49 @@ export const privacySubjectRequestTransition = pgTable(
     ),
   ],
 );
+
+/**
+ * Append-only governance-lifecycle proof ledger. Records the outcome/proofId
+ * of a governance-lifecycle command without executing it — execution remains
+ * a separately gated concern under `LEGAL_PRIVACY_DECISION_REQUIRED`. Keyed
+ * by `operationId`: one lifecycle command produces at most one row.
+ */
+export const privacyGovernanceLifecycleProof = pgTable(
+  'privacy_governance_lifecycle_proof',
+  {
+    requestId: uuid('request_id').notNull(),
+    processorId: uuid('processor_id').notNull(),
+    operationId: uuid('operation_id').primaryKey(),
+    outcome: text('outcome').notNull(),
+    proofId: uuid('proof_id'),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+    synthetic: boolean('synthetic').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.requestId],
+      foreignColumns: [privacySubjectRequest.requestId],
+      name: 'privacy_governance_lifecycle_proof_request_id_fk',
+    }).onDelete('restrict'),
+    check(
+      'privacy_governance_lifecycle_proof_outcome_check',
+      sql`${table.outcome} IN ('completed', 'partially_failed', 'denied')`,
+    ),
+    check(
+      'privacy_governance_lifecycle_proof_proof_id_pair_check',
+      sql`(
+        (${table.outcome} IN ('completed', 'partially_failed') AND ${table.proofId} IS NOT NULL) OR
+        (${table.outcome} = 'denied' AND ${table.proofId} IS NULL)
+      )`,
+    ),
+    index('privacy_governance_lifecycle_proof_request_id_idx').on(
+      table.requestId,
+    ),
+    index('privacy_governance_lifecycle_proof_recorded_at_idx').on(
+      table.recordedAt,
+    ),
+  ],
+);

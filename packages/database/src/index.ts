@@ -51,12 +51,14 @@ export {
   checkPrivacyCoreDatabaseReadiness,
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
+  createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
   privacyAuditEvent,
   privacyAuthorizationEvidence,
+  privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyPurposeVersion,
@@ -66,6 +68,7 @@ export {
   requiredPrivacyCoreMigrationHashes,
   type PrivacyCoreReadinessResult,
   type PostgresPrivacyAuthorizationEvidenceLedger,
+  type PostgresPrivacyGovernanceLifecycleLedger,
 } from './privacy/index.js';
 export {
   asOnboardingAttemptRepository,

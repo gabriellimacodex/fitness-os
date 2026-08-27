@@ -75,6 +75,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'onboarding_role_mapping',
         'privacy_audit_event',
         'privacy_authorization_evidence',
+        'privacy_governance_lifecycle_proof',
         'privacy_policy_package_version',
         'privacy_processor_registration',
         'privacy_purpose_version',

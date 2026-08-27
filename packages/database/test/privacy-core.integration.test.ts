@@ -167,7 +167,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_governance_lifecycle_proof, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 

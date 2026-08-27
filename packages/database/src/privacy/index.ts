@@ -1,6 +1,7 @@
 export {
   privacyAuditEvent,
   privacyAuthorizationEvidence,
+  privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyPurposeVersion,
@@ -13,6 +14,10 @@ export {
   createPostgresPrivacyAuditSink,
   type PostgresPrivacyAuthorizationEvidenceLedger,
 } from './ledger.js';
+export {
+  createPostgresPrivacyGovernanceLifecycleLedger,
+  type PostgresPrivacyGovernanceLifecycleLedger,
+} from './governance-lifecycle.js';
 export {
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyPurposeRegistry,
