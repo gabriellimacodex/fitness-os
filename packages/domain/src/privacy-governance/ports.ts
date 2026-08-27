@@ -14,6 +14,7 @@ import type {
   PrivacyProcessorDescriptorReference,
   PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
+  PrivacyRetentionRuleReference,
   PrivacySubjectRequestReference,
   PrivacySubjectRequestState,
   PrivacySubjectRequestTransitionId,
@@ -98,6 +99,28 @@ export interface PrivacyGovernanceLifecycleLedger {
   append(
     record: PrivacyGovernanceLifecycleProofReference,
   ): Promise<PrivacyGovernanceLifecycleAppendResult>;
+}
+
+/**
+ * Versioned retention-rule registry. A rule version is immutable once
+ * accepted; a later change is a new `ruleVersionId`, never an overwrite.
+ */
+export interface PrivacyRetentionRuleRepository {
+  getActiveVersion(
+    ruleVersionId: string,
+  ): Promise<PrivacyRetentionRuleReference | null>;
+  /**
+   * Every accepted version bound to the exact category/purpose pair, in no
+   * guaranteed order. Callers select the applicable version explicitly;
+   * this port never infers "latest" or "default" on their behalf.
+   */
+  listActiveForCategoryAndPurpose(
+    engineeringCategoryId: string,
+    purposeVersionId: string,
+  ): Promise<readonly PrivacyRetentionRuleReference[]>;
+  put(
+    record: PrivacyRetentionRuleReference,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 export interface PrivacyRuntimeProcessorRegistry {
