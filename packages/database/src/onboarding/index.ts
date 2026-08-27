@@ -43,6 +43,7 @@ export {
 } from './principal-binding.js';
 export {
   checkOnboardingSchemaReadiness,
+  createPostgresOnboardingReadinessProbe,
   requiredOnboardingMigrationHashes,
   type OnboardingSchemaReadinessResult,
 } from './readiness.js';
