@@ -27,6 +27,7 @@ import { describe, expect, it } from 'vitest';
 import {
   authoritativeEvidenceState,
   authorizeRetentionExecution,
+  buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
   composeSyntheticProcessorSimulation,
   createSyntheticPrivacyDataUsePorts,
@@ -1780,6 +1781,166 @@ describe('synthetic expected processor inventory', () => {
         },
       ],
     });
+  });
+});
+
+describe('buildRequestProcessorPlan', () => {
+  const baseProcessor = {
+    adapterPackage: '@fitness-os/domain',
+    allowedCategoryIds: purpose.allowedCategoryIds,
+    allowedPurposeIds: [purpose.purposeId],
+    codeOwner: 'packages.domain.privacy',
+    descriptorDigest: 'c'.repeat(64),
+    environmentApplicability: 'synthetic_only' as const,
+    inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    recordFamilies: [
+      {
+        family: 'privacy_audit_event' as const,
+        lifecycleAction: 'retain_until_reviewed' as const,
+      },
+    ],
+    registrationVersion: 1,
+    requiredReadiness: 'mechanism_only' as const,
+    storageKind: 'in_memory_synthetic' as const,
+    subjectLookupStrategy: 'synthetic_scope_id' as const,
+    synthetic: true,
+  };
+
+  function buildInventory(
+    processors: readonly Record<string, unknown>[],
+  ): ReturnType<typeof privacyExpectedProcessorInventorySchema.parse> {
+    return privacyExpectedProcessorInventorySchema.parse({
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      inventoryVersionDigest: 'd'.repeat(64),
+      processors,
+      schemaVersion: 'privacy.processor-inventory.v1',
+      sourceCommit: 'ad3f3e2',
+    });
+  }
+
+  it('plans one step per supporting processor, in stable processorId order', () => {
+    const inventory = buildInventory([
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [],
+      },
+      {
+        ...baseProcessor,
+        processorId: '11111111-1111-4111-8111-111111111111',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [],
+      },
+    ]);
+
+    const result = buildRequestProcessorPlan({
+      expected: inventory,
+      requestType: 'access',
+    });
+
+    expect(result).toEqual({
+      excluded: [],
+      status: 'planned',
+      steps: [
+        {
+          capability: 'access',
+          processorId: '11111111-1111-4111-8111-111111111111',
+        },
+        {
+          capability: 'access',
+          processorId: '99999999-9999-4999-8999-999999999999',
+        },
+      ],
+    });
+  });
+
+  it('maps a deletion request to the delete capability', () => {
+    const inventory = buildInventory([
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access', 'delete'],
+        unsupportedCapabilities: [],
+      },
+    ]);
+
+    const result = buildRequestProcessorPlan({
+      expected: inventory,
+      requestType: 'deletion',
+    });
+
+    expect(result).toEqual({
+      excluded: [],
+      status: 'planned',
+      steps: [
+        {
+          capability: 'delete',
+          processorId: '99999999-9999-4999-8999-999999999999',
+        },
+      ],
+    });
+  });
+
+  it('excludes a processor with a reviewed unsupported-capability rationale instead of marking it incomplete', () => {
+    const inventory = buildInventory([
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [
+          { capability: 'delete', rationale: 'deferred_to_later_prd21_slice' },
+        ],
+      },
+    ]);
+
+    const result = buildRequestProcessorPlan({
+      expected: inventory,
+      requestType: 'deletion',
+    });
+
+    expect(result).toEqual({
+      excluded: [
+        {
+          capability: 'delete',
+          processorId: '99999999-9999-4999-8999-999999999999',
+          rationale: 'deferred_to_later_prd21_slice',
+        },
+      ],
+      status: 'planned',
+      steps: [],
+    });
+  });
+
+  it('leaves the plan incomplete when a processor neither supports nor exempts the mapped capability', () => {
+    const inventory = buildInventory([
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [],
+      },
+    ]);
+
+    const result = buildRequestProcessorPlan({
+      expected: inventory,
+      requestType: 'export',
+    });
+
+    expect(result).toEqual({
+      status: 'incomplete',
+      undeclaredProcessorIds: ['99999999-9999-4999-8999-999999999999'],
+    });
+  });
+
+  it('never treats an empty inventory as a vacuously complete plan', () => {
+    const result = buildRequestProcessorPlan({
+      expected: buildInventory([]),
+      requestType: 'access',
+    });
+
+    expect(result).toEqual({ status: 'empty_inventory' });
   });
 });
 

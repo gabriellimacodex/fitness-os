@@ -41,6 +41,11 @@ export {
   SyntheticPrivacySubjectDataProcessor,
 } from './processor.js';
 export {
+  buildRequestProcessorPlan,
+  type BuildRequestProcessorPlanResult,
+  type ProcessorPlanExclusion,
+} from './processor-plan.js';
+export {
   deriveRequestCompletionFromSteps,
   type ExpectedProcessorStep,
   type RequestCompletionStatus,
