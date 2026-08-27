@@ -42,6 +42,28 @@ interface CoachBootstrapStoredOperation {
 }
 
 /**
+ * A binding key is reserved synchronously (before any `await`) the moment a
+ * new operation starts, so a concurrent identical call observes the
+ * in-flight reservation instead of racing past the same `undefined` check.
+ * The reserving call resolves the pending promise to the committed record on
+ * success, or removes the entry and rejects it on failure so a genuinely
+ * failed attempt does not permanently wedge the binding key.
+ */
+interface PendingCoachBootstrapOperation {
+  kind: 'pending';
+  digest: string;
+  promise: Promise<CoachBootstrapStoredOperation>;
+}
+
+interface SettledCoachBootstrapOperation {
+  kind: 'settled';
+  operation: CoachBootstrapStoredOperation;
+}
+
+type CoachBootstrapLedgerEntry =
+  PendingCoachBootstrapOperation | SettledCoachBootstrapOperation;
+
+/**
  * Dedicated idempotency ledger for the non-public coach-bootstrap command.
  * Deliberately not the shared onboarding `store.operations` ledger/table:
  * `issue_coach_bootstrap_invitation` is not yet an allowed
@@ -53,14 +75,14 @@ interface CoachBootstrapStoredOperation {
  */
 export function createCoachBootstrapLedger(): Map<
   string,
-  CoachBootstrapStoredOperation
+  CoachBootstrapLedgerEntry
 > {
   return new Map();
 }
 
 export interface IssueCoachBootstrapInvitationOptions {
   store: OnboardingStore;
-  ledger: Map<string, CoachBootstrapStoredOperation>;
+  ledger: Map<string, CoachBootstrapLedgerEntry>;
   /**
    * Optional PG write-through for the issued invitation only (the invitation
    * table's `purpose` check already allows `coach_bootstrap`). The operation
@@ -147,71 +169,113 @@ export async function issueCoachBootstrapInvitation(
   const retryDigest = digestRetryToken(retryToken.data, options.store.pepper);
   const bindingKey = `${authorityScope}:issue_coach_bootstrap_invitation:${retryDigest}`;
 
-  const existingOperation = options.ledger.get(bindingKey);
+  const existingEntry = options.ledger.get(bindingKey);
 
-  if (existingOperation !== undefined) {
-    if (existingOperation.digest !== digest) {
+  if (existingEntry !== undefined) {
+    const operation =
+      existingEntry.kind === 'pending'
+        ? await existingEntry.promise
+        : existingEntry.operation;
+
+    if (operation.digest !== digest) {
       return {
-        digest: existingOperation.digest,
-        operationId: existingOperation.operationId,
+        digest: operation.digest,
+        operationId: operation.operationId,
         state: 'operation_input_mismatch',
       };
     }
 
     return {
-      digest: existingOperation.digest,
-      operationId: existingOperation.operationId,
-      result: existingOperation.result,
+      digest: operation.digest,
+      operationId: operation.operationId,
+      result: operation.result,
       state: 'operation_replayed',
     };
   }
 
-  const claimSecret = invitationClaimSecretSchema.parse(
-    options.secretFactory.claimSecret(),
-  );
-  const invitationId = options.idFactory.invitationId();
-  const invitation: StoredInvitation = {
-    claimDigest: digestClaimSecret(claimSecret, options.store.pepper),
-    invitationId,
-    proposedRole: 'coach',
-    purpose: 'coach_bootstrap',
-    state: 'issued',
-    targetCoachPrincipalKey: null,
-  };
-
-  options.store.invitations.set(invitation.invitationId, invitation);
-  if (options.persistence !== undefined) {
-    await persistInvitation(options.persistence, invitation);
-  }
-
-  const result: CoachBootstrapCommandResult = {
-    command: 'issue_coach_bootstrap_invitation',
-    issued: {
-      claimSecret,
-      invitationId,
-      purpose: 'coach_bootstrap',
-      state: 'issued',
+  // Reserve the binding key synchronously, before any `await`, so a
+  // concurrent identical call always observes this pending reservation
+  // instead of racing past the `undefined` check above and independently
+  // committing a second operation for the same retry token.
+  let settlePending!: (operation: CoachBootstrapStoredOperation) => void;
+  let failPending!: (error: unknown) => void;
+  const pendingPromise = new Promise<CoachBootstrapStoredOperation>(
+    (resolve, reject) => {
+      settlePending = resolve;
+      failPending = reject;
     },
-    outcome: 'command_succeeded',
-  };
-
-  const operationId = options.idFactory.operationId();
-  await options.transitionSink.append({
-    aggregate: 'invitation',
-    aggregateId: invitationId,
-    nextState: 'issued',
-    operationId,
-    previousState: 'unissued',
-    reason: 'issue_coach_bootstrap_invitation',
-    recordedAt: options.clock.nowUtcMs(),
+  );
+  // Prevent Node's unhandled-rejection warning/termination when this
+  // operation fails and no concurrent caller ever awaits `pendingPromise` —
+  // a real awaiter (via `existingEntry.promise` above) still observes the
+  // rejection normally; this extra handler only silences the case where
+  // nobody is listening.
+  pendingPromise.catch(() => {});
+  options.ledger.set(bindingKey, {
+    digest,
+    kind: 'pending',
+    promise: pendingPromise,
   });
 
-  options.ledger.set(bindingKey, { digest, operationId, result, retryDigest });
+  try {
+    const claimSecret = invitationClaimSecretSchema.parse(
+      options.secretFactory.claimSecret(),
+    );
+    const invitationId = options.idFactory.invitationId();
+    const invitation: StoredInvitation = {
+      claimDigest: digestClaimSecret(claimSecret, options.store.pepper),
+      invitationId,
+      proposedRole: 'coach',
+      purpose: 'coach_bootstrap',
+      state: 'issued',
+      targetCoachPrincipalKey: null,
+    };
 
-  return {
-    digest,
-    operationId,
-    result,
-    state: 'operation_committed',
-  };
+    options.store.invitations.set(invitation.invitationId, invitation);
+    if (options.persistence !== undefined) {
+      await persistInvitation(options.persistence, invitation);
+    }
+
+    const result: CoachBootstrapCommandResult = {
+      command: 'issue_coach_bootstrap_invitation',
+      issued: {
+        claimSecret,
+        invitationId,
+        purpose: 'coach_bootstrap',
+        state: 'issued',
+      },
+      outcome: 'command_succeeded',
+    };
+
+    const operationId = options.idFactory.operationId();
+    await options.transitionSink.append({
+      aggregate: 'invitation',
+      aggregateId: invitationId,
+      nextState: 'issued',
+      operationId,
+      previousState: 'unissued',
+      reason: 'issue_coach_bootstrap_invitation',
+      recordedAt: options.clock.nowUtcMs(),
+    });
+
+    const operation: CoachBootstrapStoredOperation = {
+      digest,
+      operationId,
+      result,
+      retryDigest,
+    };
+    options.ledger.set(bindingKey, { kind: 'settled', operation });
+    settlePending(operation);
+
+    return {
+      digest,
+      operationId,
+      result,
+      state: 'operation_committed',
+    };
+  } catch (error) {
+    options.ledger.delete(bindingKey);
+    failPending(error);
+    throw error;
+  }
 }

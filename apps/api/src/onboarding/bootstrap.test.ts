@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import {
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
@@ -165,6 +168,35 @@ describe('issueCoachBootstrapInvitation', () => {
     expect(options.store.invitations.size).toBe(0);
   });
 
+  it('commits exactly once under concurrent identical retries (Agent 90 R1 HIGH)', async () => {
+    const options = buildOptions();
+
+    const [first, second] = await Promise.all([
+      issueCoachBootstrapInvitation(options, {
+        operatorId: 'operator-a',
+        retryToken: RETRY_TOKEN,
+      }),
+      issueCoachBootstrapInvitation(options, {
+        operatorId: 'operator-a',
+        retryToken: RETRY_TOKEN,
+      }),
+    ]);
+
+    const states = [first.state, second.state].sort();
+    expect(states).toEqual(['operation_committed', 'operation_replayed']);
+
+    const committed = first.state === 'operation_committed' ? first : second;
+    const replayed = first.state === 'operation_replayed' ? first : second;
+    if (
+      committed.state !== 'operation_committed' ||
+      replayed.state !== 'operation_replayed'
+    ) {
+      throw new Error('expected one committed and one replayed');
+    }
+    expect(replayed.result).toEqual(committed.result);
+    expect(options.store.invitations.size).toBe(1);
+  });
+
   it('records append-only transition evidence for the issuance', async () => {
     const transitionSink = new SyntheticOnboardingTransitionSink();
     const options = buildOptions({ transitionSink });
@@ -186,5 +218,24 @@ describe('issueCoachBootstrapInvitation', () => {
       previousState: 'unissued',
       reason: 'issue_coach_bootstrap_invitation',
     });
+  });
+});
+
+describe('coach-bootstrap non-public reachability (Agent 90 R1 MEDIUM)', () => {
+  it('is never referenced by the Fastify route registration or app composition source', () => {
+    const routesSource = readFileSync(
+      fileURLToPath(new URL('./routes.ts', import.meta.url)),
+      'utf8',
+    );
+    const appSource = readFileSync(
+      fileURLToPath(new URL('../app.ts', import.meta.url)),
+      'utf8',
+    );
+
+    for (const source of [routesSource, appSource]) {
+      expect(source).not.toContain('issueCoachBootstrapInvitation');
+      expect(source).not.toContain('createCoachBootstrapLedger');
+      expect(source).not.toContain('onboarding/bootstrap');
+    }
   });
 });
