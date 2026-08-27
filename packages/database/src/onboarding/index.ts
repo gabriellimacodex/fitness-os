@@ -35,3 +35,8 @@ export {
   type PostgresOnboardingRoleMappingRepository,
   type StoredOnboardingRoleMapping,
 } from './mappings.js';
+export {
+  checkOnboardingSchemaReadiness,
+  requiredOnboardingMigrationHashes,
+  type OnboardingSchemaReadinessResult,
+} from './readiness.js';
