@@ -13,6 +13,7 @@ import {
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyPurposeVersionReference,
+  type PrivacyRetentionRuleReference,
   type PrivacySubjectRequestReference,
   type PrivacySubjectRequestTransitionReference,
   type PrivacyWithdrawalReference,
@@ -34,6 +35,7 @@ import type {
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
   PrivacyPurposeRegistry,
+  PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
   PrivacySubjectDataProcessor,
@@ -183,6 +185,39 @@ export class SyntheticPrivacyAuthorizationEvidenceLedger implements PrivacyAutho
 
     this.withdrawals.set(record.evidenceId, planned.withdrawal);
     return planned.status;
+  }
+}
+
+export class SyntheticPrivacyRetentionRuleRepository implements PrivacyRetentionRuleRepository {
+  private readonly byVersion = new Map<string, PrivacyRetentionRuleReference>();
+
+  seed(rule: PrivacyRetentionRuleReference): void {
+    this.byVersion.set(rule.ruleVersionId, rule);
+  }
+
+  async getActiveVersion(
+    ruleVersionId: string,
+  ): Promise<PrivacyRetentionRuleReference | null> {
+    return this.byVersion.get(ruleVersionId) ?? null;
+  }
+
+  async listActiveForCategoryAndPurpose(
+    engineeringCategoryId: string,
+    purposeVersionId: string,
+  ): Promise<readonly PrivacyRetentionRuleReference[]> {
+    return [...this.byVersion.values()].filter(
+      (rule) =>
+        rule.engineeringCategoryId === engineeringCategoryId &&
+        rule.purposeVersionId === purposeVersionId,
+    );
+  }
+
+  async put(record: PrivacyRetentionRuleReference) {
+    if (this.byVersion.has(record.ruleVersionId)) {
+      return 'conflict' as const;
+    }
+    this.byVersion.set(record.ruleVersionId, record);
+    return 'accepted' as const;
   }
 }
 
