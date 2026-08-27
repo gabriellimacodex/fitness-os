@@ -69,6 +69,21 @@ export class SyntheticOnboardingReadinessProbe implements OnboardingReadinessPro
         state: mechanismReady ? 'ready' : 'not_ready',
       },
       {
+        componentId: 'clock',
+        diagnosticCode: null,
+        state: 'ready',
+      },
+      {
+        componentId: 'id_factory',
+        diagnosticCode: null,
+        state: 'ready',
+      },
+      {
+        componentId: 'secret_factory',
+        diagnosticCode: null,
+        state: 'ready',
+      },
+      {
         componentId: 'invitation_repository',
         diagnosticCode: null,
         state: 'ready',
