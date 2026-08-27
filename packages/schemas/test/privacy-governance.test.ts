@@ -20,15 +20,19 @@ import {
   privacyDataUseDenyReasonSchema,
   privacyEvidenceReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
   privacyLifecycleProofIdSchema,
+  privacyOperationIdSchema,
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorIdSchema,
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyReadinessResultSchema,
   privacyRetentionExceptionIdSchema,
   privacyRetentionRuleReferenceSchema,
+  privacySubjectRequestIdSchema,
   privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
@@ -36,6 +40,8 @@ import {
   privacySyntheticDataUseEvaluateResponseSchema,
   privacySyntheticProcessorPlanRequestSchema,
   privacySyntheticProcessorPlanResponseSchema,
+  privacySyntheticProcessorStepRecordRequestSchema,
+  privacySyntheticProcessorStepRecordResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticProcessorCommandSchema,
@@ -143,6 +149,69 @@ describe('governance lifecycle proofId binding', () => {
       governanceLifecycleResultSchema.safeParse({
         outcome: 'denied',
         proofId,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('governance lifecycle proof ledger reference', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  );
+  const processorId = privacyProcessorIdSchema.parse(
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  );
+  const operationId = privacyOperationIdSchema.parse(
+    '11111111-1111-4111-8111-111111111111',
+  );
+
+  it('accepts a completed proof reference bound to its outcome/proofId rule', () => {
+    const parsed = privacyGovernanceLifecycleProofReferenceSchema.parse({
+      requestId,
+      processorId,
+      operationId,
+      result: { outcome: 'completed', proofId },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic: true,
+    });
+    expect(parsed.result).toEqual({ outcome: 'completed', proofId });
+  });
+
+  it('accepts a denied proof reference with no proofId in the result', () => {
+    const parsed = privacyGovernanceLifecycleProofReferenceSchema.parse({
+      requestId,
+      processorId,
+      operationId,
+      result: { outcome: 'denied' },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic: true,
+    });
+    expect(parsed.result).toEqual({ outcome: 'denied' });
+  });
+
+  it('rejects an unknown key such as an inlined destructive-action detail', () => {
+    expect(
+      privacyGovernanceLifecycleProofReferenceSchema.safeParse({
+        requestId,
+        processorId,
+        operationId,
+        result: { outcome: 'denied' },
+        recordedAt: '2026-08-27T00:00:00.000Z',
+        synthetic: true,
+        deletedRecordCount: 42,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a result violating the closed outcome/proofId rule', () => {
+    expect(
+      privacyGovernanceLifecycleProofReferenceSchema.safeParse({
+        requestId,
+        processorId,
+        operationId,
+        result: { outcome: 'completed' },
+        recordedAt: '2026-08-27T00:00:00.000Z',
+        synthetic: true,
       }).success,
     ).toBe(false);
   });
@@ -1243,6 +1312,153 @@ describe('synthetic processor-plan contracts', () => {
     expect(
       privacySyntheticProcessorPlanResponseSchema.safeParse({
         status: 'ok',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('synthetic processor-step record contracts', () => {
+  const step = {
+    stepId: 'e1111111-1111-4111-8111-111111111111',
+    requestId: '66666666-6666-4666-8666-666666666666',
+    processorId: '99999999-9999-4999-8999-999999999999',
+    capability: 'export',
+    outcome: 'completed',
+    operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    correlationId: '55555555-5555-4555-8555-555555555555',
+    recordedAt: '2026-08-18T12:02:00.000Z',
+  };
+  const validRequest = {
+    step,
+    expected: [
+      {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        capability: 'export',
+      },
+    ],
+    transitionId: 'a1111111-1111-4111-8111-111111111111',
+    operationId: 'b2222222-2222-4222-8222-222222222222',
+    correlationId: '55555555-5555-4555-8555-555555555555',
+    productionMode: false,
+  };
+
+  it('accepts a strict request pairing a step with its expected pairs and transition envelope', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse(validRequest)
+        .success,
+    ).toBe(true);
+  });
+
+  it('rejects an unknown field on the request', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        sql: 'delete from subjects',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a request missing the expected set or transition envelope', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        step,
+        transitionId: validRequest.transitionId,
+        operationId: validRequest.operationId,
+        correlationId: validRequest.correlationId,
+        productionMode: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        step,
+        expected: validRequest.expected,
+        operationId: validRequest.operationId,
+        correlationId: validRequest.correlationId,
+        productionMode: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a recorded response carrying completion and the request pointer', () => {
+    const parsed = privacySyntheticProcessorStepRecordResponseSchema.parse({
+      status: 'recorded',
+      completion: 'incomplete',
+      request: privacySubjectRequestReferenceSchema.parse({
+        requestId: '66666666-6666-4666-8666-666666666666',
+        requestType: 'export',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        inventoryVersionDigest: '2'.repeat(64),
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    });
+    expect(parsed.status).toBe('recorded');
+    expect(parsed.completion).toBe('incomplete');
+  });
+
+  it('accepts an advanced response carrying the terminal transition', () => {
+    const parsed = privacySyntheticProcessorStepRecordResponseSchema.parse({
+      status: 'advanced',
+      completion: 'completed',
+      request: privacySubjectRequestReferenceSchema.parse({
+        requestId: '66666666-6666-4666-8666-666666666666',
+        requestType: 'export',
+        state: 'completed',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        inventoryVersionDigest: '2'.repeat(64),
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:03:00.000Z',
+      }),
+      transition: privacySubjectRequestTransitionReferenceSchema.parse({
+        transitionId: 'a1111111-1111-4111-8111-111111111111',
+        requestId: '66666666-6666-4666-8666-666666666666',
+        previousState: 'in_progress',
+        nextState: 'completed',
+        operationId: 'b2222222-2222-4222-8222-222222222222',
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        reasonCode: 'forward',
+        verificationRefDigest: null,
+        recordedAt: '2026-08-18T12:03:00.000Z',
+      }),
+    });
+    expect(parsed.status).toBe('advanced');
+    expect(parsed.transition?.nextState).toBe('completed');
+  });
+
+  it('accepts a request_not_found response with no other fields', () => {
+    expect(
+      privacySyntheticProcessorStepRecordResponseSchema.parse({
+        status: 'request_not_found',
+      }),
+    ).toEqual({ status: 'request_not_found' });
+  });
+
+  it('accepts an invalid_transition response carrying a closed reason', () => {
+    const parsed = privacySyntheticProcessorStepRecordResponseSchema.parse({
+      status: 'invalid_transition',
+      reason: 'terminal_state',
+    });
+    expect(parsed.reason).toBe('terminal_state');
+  });
+
+  it('rejects an unknown status value', () => {
+    expect(
+      privacySyntheticProcessorStepRecordResponseSchema.safeParse({
+        status: 'ok',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an unknown field on the response', () => {
+    expect(
+      privacySyntheticProcessorStepRecordResponseSchema.safeParse({
+        status: 'request_not_found',
+        note: 'operator comment',
       }).success,
     ).toBe(false);
   });

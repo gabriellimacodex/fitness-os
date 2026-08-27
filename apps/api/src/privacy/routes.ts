@@ -6,10 +6,12 @@ import {
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
+  recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
+  SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
@@ -20,6 +22,7 @@ import {
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
+  type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRetentionPreviewRepository,
   type PrivacyRuntimeProcessorRegistry,
@@ -40,6 +43,8 @@ import {
   privacySyntheticProcessorExecuteResponseSchema,
   privacySyntheticProcessorPlanRequestSchema,
   privacySyntheticProcessorPlanResponseSchema,
+  privacySyntheticProcessorStepRecordRequestSchema,
+  privacySyntheticProcessorStepRecordResponseSchema,
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   privacySyntheticRetentionPreviewRequestSchema,
@@ -76,6 +81,12 @@ export interface PrivacySyntheticOptions {
    * repository shared for the lifetime of this route registration.
    */
   subjectRequests?: PrivacySubjectRequestRepository;
+  /**
+   * Optional append-only processor-step repository. Defaults to an
+   * in-memory synthetic repository shared for the lifetime of this route
+   * registration.
+   */
+  processorSteps?: PrivacyProcessorStepRepository;
   /**
    * Optional disposable evidence ledger (e.g. Postgres). When omitted, the
    * in-memory synthetic ledger is used and may be seeded from the request body.
@@ -238,6 +249,8 @@ export function registerPrivacySyntheticRoutes(
   const ids = options.ids ?? new SyntheticPrivacyIdFactory();
   const subjectRequests =
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
+  const processorSteps =
+    options.processorSteps ?? new SyntheticPrivacyProcessorStepRepository();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;
@@ -687,6 +700,62 @@ export function registerPrivacySyntheticRoutes(
       excluded: result.excluded,
     });
   });
+
+  app.post(
+    '/v1/privacy/synthetic/processor-step-record',
+    async (request, reply) => {
+      const body = privacySyntheticProcessorStepRecordRequestSchema.safeParse(
+        request.body,
+      );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const result = await recordProcessorStepAndAdvanceRequest({
+        requests: subjectRequests,
+        steps: processorSteps,
+        step: body.data.step,
+        expected: body.data.expected,
+        updatedAt: clock.nowUtcMs(),
+        transitionId: body.data.transitionId,
+        operationId: body.data.operationId,
+        correlationId: body.data.correlationId,
+        productionMode: body.data.productionMode,
+      });
+
+      if (result.status === 'invalid_transition') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'invalid_transition',
+          reason: result.reason,
+        });
+      }
+
+      if (
+        result.status === 'transition_conflict' ||
+        result.status === 'request_not_found'
+      ) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: result.status,
+        });
+      }
+
+      if (result.status === 'advanced') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'advanced',
+          completion: result.completion,
+          request: result.request,
+          transition: result.transition,
+        });
+      }
+
+      return privacySyntheticProcessorStepRecordResponseSchema.parse({
+        status: result.status,
+        completion: result.completion,
+        request: result.request,
+      });
+    },
+  );
 
   app.post(
     '/v1/privacy/synthetic/processor-execute',

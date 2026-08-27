@@ -4,10 +4,12 @@ import {
   privacyEngineeringCategoryIdSchema,
   privacyEvidenceReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyLifecycleProofIdSchema,
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyPolicyVersionIdSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorIdSchema,
   privacyProcessorStepIdSchema,
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
@@ -38,6 +40,7 @@ import {
   recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRetentionPreviewRepository,
@@ -2729,6 +2732,67 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.getBySelectionDigest('0'.repeat(64)),
     ).resolves.toBeNull();
+  });
+});
+
+describe('governance lifecycle proof ledger', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  );
+  const processorId = privacyProcessorIdSchema.parse(
+    'ffffffff-ffff-4fff-8fff-ffffffffffff',
+  );
+  const proofId = privacyLifecycleProofIdSchema.parse(
+    '22222222-2222-4222-8222-222222222222',
+  );
+
+  function record(operationId: string, synthetic = true) {
+    return {
+      requestId,
+      processorId,
+      operationId: privacyOperationIdSchema.parse(operationId),
+      result: { outcome: 'completed' as const, proofId },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic,
+    };
+  }
+
+  it('accepts a new proof and rejects a repeat of the same operationId', async () => {
+    const ledger = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const proof = record('33333333-3333-4333-8333-333333333333');
+
+    await expect(ledger.append(proof)).resolves.toBe('accepted');
+    await expect(ledger.append(proof)).resolves.toBe('conflict');
+    await expect(ledger.getByOperationId(proof.operationId)).resolves.toEqual(
+      proof,
+    );
+  });
+
+  it('returns null for an unknown operationId', async () => {
+    const ledger = new SyntheticPrivacyGovernanceLifecycleLedger();
+
+    await expect(
+      ledger.getByOperationId('99999999-9999-4999-8999-999999999999'),
+    ).resolves.toBeNull();
+  });
+
+  it('records a denied outcome without a proofId', async () => {
+    const ledger = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const proof = {
+      requestId,
+      processorId,
+      operationId: privacyOperationIdSchema.parse(
+        '44444444-4444-4444-8444-444444444444',
+      ),
+      result: { outcome: 'denied' as const },
+      recordedAt: '2026-08-27T00:00:00.000Z',
+      synthetic: true,
+    };
+
+    await expect(ledger.append(proof)).resolves.toBe('accepted');
+    await expect(ledger.getByOperationId(proof.operationId)).resolves.toEqual(
+      proof,
+    );
   });
 });
 
