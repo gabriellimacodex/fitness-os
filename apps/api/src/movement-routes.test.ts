@@ -17,14 +17,16 @@ describe('GET /movements', () => {
     await app.close();
   });
 
-  it('returns an empty published list through the frozen schema', async () => {
+  it('returns the preview catalog through the frozen schema', async () => {
     const response = await app.inject({ method: 'GET', url: '/movements' });
+    const body = movementListResponseSchema.parse(response.json());
 
     expect(response.statusCode).toBe(200);
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(movementListResponseSchema.parse(response.json())).toEqual({
-      items: [],
-    });
+    expect(body.items.map((item) => item.movementId)).toEqual([
+      'bodyweight-squat',
+      'hip-hinge',
+    ]);
   });
 
   it('rejects any query key with the shared bad-request envelope', async () => {
@@ -78,7 +80,7 @@ describe('GET /movements/:movementId', () => {
     const app = buildApp();
     const response = await app.inject({
       method: 'GET',
-      url: '/movements/bodyweight-squat?preview=1',
+      url: '/movements/missing-movement?preview=1',
     });
     const body = apiErrorResponseSchema.parse(response.json());
 
@@ -92,7 +94,7 @@ describe('GET /movements/:movementId', () => {
     const app = buildApp();
     const response = await app.inject({
       method: 'GET',
-      url: '/movements/bodyweight-squat',
+      url: '/movements/missing-movement',
     });
     const body = apiErrorResponseSchema.parse(response.json());
 
@@ -108,7 +110,7 @@ describe('GET /movements/:movementId', () => {
     const app = buildApp();
     const response = await app.inject({
       method: 'GET',
-      url: '/movements/bodyweight-squat',
+      url: '/movements/missing-movement',
       headers: { 'x-request-id': 'client-controlled' },
     });
     const body = apiErrorResponseSchema.parse(response.json());

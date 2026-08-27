@@ -1,7 +1,18 @@
+import { digestMovementDetail } from './canonical.js';
 import type { MovementManifestRecord } from './manifest.js';
+import { COMMITTED_PUBLISHED_MOVEMENTS } from './published.js';
 
 export const COMMITTED_MOVEMENT_MANIFEST: readonly MovementManifestRecord[] =
-  Object.freeze([]);
+  Object.freeze(
+    COMMITTED_PUBLISHED_MOVEMENTS.map((detail) => ({
+      action: 'publish' as const,
+      contentVersion: detail.contentVersion,
+      digest: digestMovementDetail(detail),
+      movementId: detail.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${detail.movementId}-v${detail.contentVersion}.md`,
+      sequence: 1,
+    })),
+  );
 
 export function assertManifestHistory(
   previous: readonly MovementManifestRecord[],

@@ -1,17 +1,23 @@
+import { movementSummarySchema } from '@fitness-os/schemas';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import HomePage from './page';
+import { HomeView } from './home-view';
 
-describe('foundation page', () => {
-  it('renders only the foundation message', () => {
-    const markup = renderToStaticMarkup(<HomePage />);
-    const visibleText = markup
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+const today = movementSummarySchema.parse({
+  movementId: 'bodyweight-squat',
+  contentVersion: 1,
+  name: 'Bodyweight squat',
+  summary: 'A slow sit-and-stand using only body weight and a stable stance.',
+});
 
-    expect(visibleText).toContain('Fitness OS Engineering foundation ready.');
+describe('home page', () => {
+  it('puts today on the plate and keeps the library and join doors', () => {
+    const markup = renderToStaticMarkup(<HomeView today={today} />);
+
+    expect(markup).toContain('Open the plate');
+    expect(markup).toContain('href="/movements/bodyweight-squat"');
     expect(markup).toContain('href="/movements"');
+    expect(markup).toContain('href="/onboarding"');
   });
 });

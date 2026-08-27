@@ -31,6 +31,7 @@ describe('MovementsListView', () => {
 
     expect(markup).toContain('href="/movements/bodyweight-squat"');
     expect(markup).toContain('Bodyweight Squat');
+    expect(markup).toContain('Preview guidance');
     expect(markup).toContain('<ul');
   });
 
