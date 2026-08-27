@@ -43,3 +43,8 @@ export {
   type PostgresOnboardingTransitionSink,
   type StoredOnboardingTransition,
 } from './transitions.js';
+export {
+  checkOnboardingSchemaReadiness,
+  requiredOnboardingMigrationHashes,
+  type OnboardingSchemaReadinessResult,
+} from './readiness.js';
