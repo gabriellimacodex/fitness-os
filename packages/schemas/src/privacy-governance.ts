@@ -718,6 +718,29 @@ export const canonicalizePrivacyProcessorDescriptorReference = (
   capabilities: sortPrivacySetIdentifiers(input.capabilities),
 });
 
+/**
+ * Append-only governance-lifecycle proof ledger record. Wraps the frozen
+ * `governanceLifecycleResultSchema` outcome/proofId rule (Option A) with the
+ * minimum association metadata needed to locate a proof — never the
+ * destructive-action detail, subject payload, or policy content that
+ * produced it. Keyed by `operationId`: one lifecycle command produces at
+ * most one ledger row. Recording a row is not authorization to execute a
+ * governance-lifecycle command; that remains a separately gated concern.
+ */
+export const privacyGovernanceLifecycleProofReferenceSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    operationId: privacyOperationIdSchema,
+    result: governanceLifecycleResultSchema,
+    recordedAt: privacyTrustedUtcMsSchema,
+    synthetic: z.boolean(),
+  })
+  .strict();
+export type PrivacyGovernanceLifecycleProofReference = z.infer<
+  typeof privacyGovernanceLifecycleProofReferenceSchema
+>;
+
 export const privacyProcessorInventorySchemaVersionSchema = z.literal(
   'privacy.processor-inventory.v1',
 );

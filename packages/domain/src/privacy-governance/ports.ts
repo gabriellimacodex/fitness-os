@@ -7,6 +7,7 @@ import type {
   PrivacyEngineeringCategoryId,
   PrivacyEvidenceReference,
   PrivacyExpectedProcessorInventory,
+  PrivacyGovernanceLifecycleProofReference,
   PrivacyOperationId,
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
@@ -80,6 +81,22 @@ export interface PrivacyAuthorizationEvidenceLedger {
   appendWithdrawal(
     record: PrivacyWithdrawalReference,
   ): Promise<PrivacyWithdrawalAppendResult>;
+}
+
+export type PrivacyGovernanceLifecycleAppendResult = 'accepted' | 'conflict';
+
+/**
+ * Append-only governance-lifecycle proof ledger. Records the outcome/proofId
+ * of a governance-lifecycle command without executing it — execution remains
+ * a separately gated concern under `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ */
+export interface PrivacyGovernanceLifecycleLedger {
+  getByOperationId(
+    operationId: string,
+  ): Promise<PrivacyGovernanceLifecycleProofReference | null>;
+  append(
+    record: PrivacyGovernanceLifecycleProofReference,
+  ): Promise<PrivacyGovernanceLifecycleAppendResult>;
 }
 
 export interface PrivacyRuntimeProcessorRegistry {
