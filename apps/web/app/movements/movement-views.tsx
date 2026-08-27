@@ -10,6 +10,13 @@ export type MovementLoadState =
   | { status: 'not_found' }
   | { status: 'unavailable' };
 
+// The detail page calls Next.js `notFound()` for the `not_found` status
+// before rendering, so the view itself only ever receives these two states.
+type MovementDetailViewState = Exclude<
+  MovementLoadState,
+  { status: 'not_found' }
+>;
+
 export function CatalogUnavailable() {
   return (
     <main className="catalog">
@@ -48,22 +55,16 @@ export function MovementsListView({ state }: { state: CatalogLoadState }) {
   );
 }
 
-export function MovementDetailView({ state }: { state: MovementLoadState }) {
+export function MovementDetailView({
+  state,
+}: {
+  state: MovementDetailViewState;
+}) {
   if (state.status === 'unavailable') {
     return (
       <main className="catalog">
         <h1>Movement</h1>
         <p>Movement guidance is temporarily unavailable. Try again.</p>
-        <a href="/movements">Back to movements</a>
-      </main>
-    );
-  }
-
-  if (state.status === 'not_found') {
-    return (
-      <main className="catalog">
-        <h1>Movement not found</h1>
-        <p>That movement is not available.</p>
         <a href="/movements">Back to movements</a>
       </main>
     );
