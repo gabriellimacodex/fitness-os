@@ -772,6 +772,49 @@ export const canonicalizePrivacyProcessorDescriptorReference = (
   capabilities: sortPrivacySetIdentifiers(input.capabilities),
 });
 
+export const privacyProcessorStepIdSchema = z
+  .uuidv4()
+  .brand<'PrivacyProcessorStepId'>();
+export type PrivacyProcessorStepId = z.infer<
+  typeof privacyProcessorStepIdSchema
+>;
+
+/**
+ * Closed outcome for one processor execution attempt. `retryable_failure`
+ * leaves the (requestId, processorId, capability) pair pending; only
+ * `completed` and `permanent_failure` are terminal for that pair.
+ */
+export const privacyProcessorStepOutcomeSchema = z.enum([
+  'completed',
+  'retryable_failure',
+  'permanent_failure',
+]);
+export type PrivacyProcessorStepOutcome = z.infer<
+  typeof privacyProcessorStepOutcomeSchema
+>;
+
+/**
+ * Append-only record of one processor's execution attempt for one
+ * subject-request capability. Multiple steps may exist for the same
+ * (requestId, processorId, capability) across retries; request completion is
+ * derived from the full step history, never a single row.
+ */
+export const privacyProcessorStepReferenceSchema = z
+  .object({
+    stepId: privacyProcessorStepIdSchema,
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    capability: privacyProcessorCapabilitySchema,
+    outcome: privacyProcessorStepOutcomeSchema,
+    operationId: privacyOperationIdSchema,
+    correlationId: privacyCorrelationIdSchema,
+    recordedAt: privacyTrustedUtcMsSchema,
+  })
+  .strict();
+export type PrivacyProcessorStepReference = z.infer<
+  typeof privacyProcessorStepReferenceSchema
+>;
+
 export const privacyProcessorInventorySchemaVersionSchema = z.literal(
   'privacy.processor-inventory.v1',
 );

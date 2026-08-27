@@ -8,6 +8,8 @@ import {
   privacyPolicyPackageReferenceSchema,
   privacyPolicyVersionIdSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorStepIdSchema,
+  privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyRetentionExceptionIdSchema,
   privacyRetentionRuleReferenceSchema,
@@ -18,6 +20,7 @@ import {
   privacySyntheticProcessorResultSchema,
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
+  type PrivacyProcessorStepReference,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -27,12 +30,14 @@ import {
   compareExpectedInventoryToRuntime,
   composeSyntheticProcessorSimulation,
   createSyntheticPrivacyDataUsePorts,
+  deriveRequestCompletionFromSteps,
   evaluateDataUse,
   planRetentionPreview,
   planWithdrawal,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyIntegrityVerifier,
+  SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -1981,6 +1986,126 @@ describe('subject request transitions', () => {
       updatedAt: '2026-08-18T12:04:00.000Z',
     });
     expect(denied.status).toBe('already_terminal');
+  });
+});
+
+describe('synthetic processor step repository', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    '66666666-6666-4666-8666-666666666666',
+  );
+  const step = (overrides: Partial<PrivacyProcessorStepReference> = {}) =>
+    privacyProcessorStepReferenceSchema.parse({
+      stepId: 'e1111111-1111-4111-8111-111111111111',
+      requestId,
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      outcome: 'completed',
+      operationId: privacyOperationIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      recordedAt: '2026-08-18T12:02:00.000Z',
+      ...overrides,
+    });
+
+  it('appends steps and lists them per request in recorded order', async () => {
+    const repo = new SyntheticPrivacyProcessorStepRepository();
+    const first = step();
+    const second = step({
+      stepId: privacyProcessorStepIdSchema.parse(
+        'e2222222-2222-4222-8222-222222222222',
+      ),
+      recordedAt: '2026-08-18T12:03:00.000Z',
+    });
+
+    await expect(repo.append(first)).resolves.toBe('accepted');
+    await expect(repo.append(second)).resolves.toBe('accepted');
+    await expect(repo.append(first)).resolves.toBe('conflict');
+    await expect(repo.listForRequest(requestId)).resolves.toEqual([
+      first,
+      second,
+    ]);
+    await expect(repo.listForRequest('unknown-request')).resolves.toEqual([]);
+  });
+});
+
+describe('deriveRequestCompletionFromSteps', () => {
+  const requestId = privacySubjectRequestIdSchema.parse(
+    '66666666-6666-4666-8666-666666666666',
+  );
+  const step = (overrides: Partial<PrivacyProcessorStepReference> = {}) =>
+    privacyProcessorStepReferenceSchema.parse({
+      stepId: 'e1111111-1111-4111-8111-111111111111',
+      requestId,
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      outcome: 'completed',
+      operationId: privacyOperationIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      recordedAt: '2026-08-18T12:02:00.000Z',
+      ...overrides,
+    });
+  const expected = [
+    {
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export' as const,
+    },
+  ];
+
+  it('stays incomplete while an expected processor has not reported yet', () => {
+    expect(deriveRequestCompletionFromSteps({ expected, steps: [] })).toBe(
+      'incomplete',
+    );
+  });
+
+  it('stays incomplete while the latest attempt is a retryable failure', () => {
+    expect(
+      deriveRequestCompletionFromSteps({
+        expected,
+        steps: [step({ outcome: 'retryable_failure' })],
+      }),
+    ).toBe('incomplete');
+  });
+
+  it('completes once every expected pair reports completed', () => {
+    expect(
+      deriveRequestCompletionFromSteps({
+        expected,
+        steps: [step({ outcome: 'completed' })],
+      }),
+    ).toBe('completed');
+  });
+
+  it('is partially_failed once a pair terminally fails, even if a later retry is not yet reflected', () => {
+    expect(
+      deriveRequestCompletionFromSteps({
+        expected,
+        steps: [step({ outcome: 'permanent_failure' })],
+      }),
+    ).toBe('partially_failed');
+  });
+
+  it('uses only the latest step per (processorId, capability) pair', () => {
+    const firstAttempt = step({ outcome: 'retryable_failure' });
+    const retrySucceeded = step({
+      stepId: privacyProcessorStepIdSchema.parse(
+        'e2222222-2222-4222-8222-222222222222',
+      ),
+      outcome: 'completed',
+      recordedAt: '2026-08-18T12:05:00.000Z',
+    });
+    expect(
+      deriveRequestCompletionFromSteps({
+        expected,
+        steps: [firstAttempt, retrySucceeded],
+      }),
+    ).toBe('completed');
   });
 });
 
