@@ -142,6 +142,11 @@ const processors = {
   put: async () => 'accepted' as const,
 };
 
+const processorSteps = {
+  append: async () => 'accepted' as const,
+  listForRequest: async () => [],
+};
+
 vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyAuditSink: vi.fn(() => ({ append })),
   createPostgresPrivacyAuthorizationEvidenceLedger: vi.fn(() => ({
@@ -154,12 +159,14 @@ vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyPolicyPackageRepository: vi.fn(() => policies),
   createPostgresPrivacyPurposeRegistry: vi.fn(() => purposes),
   createPostgresPrivacyRuntimeProcessorRegistry: vi.fn(() => processors),
+  createPostgresPrivacyProcessorStepRepository: vi.fn(() => processorSteps),
 }));
 
 import {
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
   createPostgresPrivacyPolicyPackageRepository,
+  createPostgresPrivacyProcessorStepRepository,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
@@ -188,12 +195,16 @@ describe('privacy PG persistence bundle', () => {
     expect(createPostgresPrivacyRuntimeProcessorRegistry).toHaveBeenCalledWith(
       connection,
     );
+    expect(createPostgresPrivacyProcessorStepRepository).toHaveBeenCalledWith(
+      connection,
+    );
     expect(persistence.evidence.getEvidence).toBe(getEvidence);
     expect(persistence.audit.append).toBe(append);
     expect(persistence.subjectRequests).toBe(subjectRequests);
     expect(persistence.policies).toBe(policies);
     expect(persistence.purposes).toBe(purposes);
     expect(persistence.processors).toBe(processors);
+    expect(persistence.processorSteps).toBe(processorSteps);
   });
 
   it('drives synthetic data-use-evaluate over the composed bundle ports', async () => {

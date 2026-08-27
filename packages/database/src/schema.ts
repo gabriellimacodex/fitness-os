@@ -25,6 +25,7 @@ export {
 export {
   privacyAuditEvent,
   privacyAuthorizationEvidence,
+  privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
   privacyProcessorStep,
