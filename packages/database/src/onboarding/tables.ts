@@ -207,3 +207,25 @@ export const onboardingOperation = pgTable(
     index('onboarding_operation_namespace_idx').on(table.namespace),
   ],
 );
+
+/**
+ * Disposable synthetic external-principal binding. One binding per
+ * `principal_key`; `resolveOrEstablish` inserts once and resolves on a
+ * unique-key race rather than creating a second binding.
+ */
+export const onboardingPrincipalBinding = pgTable(
+  'onboarding_principal_binding',
+  {
+    bindingId: uuid('binding_id').primaryKey().defaultRandom(),
+    principalKey: text('principal_key').notNull(),
+    createdAt: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('onboarding_principal_binding_principal_key_unique').on(
+      table.principalKey,
+    ),
+  ],
+);

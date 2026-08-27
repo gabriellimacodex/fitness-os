@@ -96,8 +96,15 @@
     {
       "idx": 13,
       "version": "7",
-      "when": 1787829721700,
-      "tag": "0013_prd21_privacy_processor_step",
+      "when": 1787808985360,
+      "tag": "0013_prd07_onboarding_principal_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787842984980,
+      "tag": "0014_prd21_privacy_processor_step",
       "breakpoints": true
     }
   ]

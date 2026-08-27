@@ -38,6 +38,7 @@ export {
   onboardingAttempt,
   onboardingInvitation,
   onboardingOperation,
+  onboardingPrincipalBinding,
   onboardingRoleMapping,
 } from './onboarding/tables.js';
 

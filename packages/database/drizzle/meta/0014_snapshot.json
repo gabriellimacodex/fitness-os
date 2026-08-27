@@ -1,6 +1,6 @@
 {
-  "id": "53375437-c5a0-4a91-b35d-756bcb4bcdc4",
-  "prevId": "9047fffe-0196-44e5-869e-b78633f5c912",
+  "id": "d545ed6c-5123-4560-8aae-17045d9391c9",
+  "prevId": "53375437-c5a0-4a91-b35d-756bcb4bcdc4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1735,6 +1735,117 @@
         "privacy_processor_registration_code_owner_check": {
           "name": "privacy_processor_registration_code_owner_check",
           "value": "\"privacy_processor_registration\".\"code_owner\" ~ '^[A-Za-z0-9._:-]+$' AND char_length(\"privacy_processor_registration\".\"code_owner\") BETWEEN 1 AND 128"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.privacy_processor_step": {
+      "name": "privacy_processor_step",
+      "schema": "",
+      "columns": {
+        "step_id": {
+          "name": "step_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processor_id": {
+          "name": "processor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capability": {
+          "name": "capability",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "privacy_processor_step_request_id_idx": {
+          "name": "privacy_processor_step_request_id_idx",
+          "columns": [
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "privacy_processor_step_recorded_at_idx": {
+          "name": "privacy_processor_step_recorded_at_idx",
+          "columns": [
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "privacy_processor_step_request_id_fk": {
+          "name": "privacy_processor_step_request_id_fk",
+          "tableFrom": "privacy_processor_step",
+          "tableTo": "privacy_subject_request",
+          "columnsFrom": ["request_id"],
+          "columnsTo": ["request_id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "privacy_processor_step_capability_check": {
+          "name": "privacy_processor_step_capability_check",
+          "value": "\"privacy_processor_step\".\"capability\" IN (\n        'inventory',\n        'access',\n        'export',\n        'delete',\n        'retention',\n        'governance_lifecycle'\n      )"
+        },
+        "privacy_processor_step_outcome_check": {
+          "name": "privacy_processor_step_outcome_check",
+          "value": "\"privacy_processor_step\".\"outcome\" IN ('completed', 'retryable_failure', 'permanent_failure')"
         }
       },
       "isRLSEnabled": false
