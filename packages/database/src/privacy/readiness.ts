@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import { sql } from 'drizzle-orm';
 
+import type {
+  PrivacyReadinessComponent,
+  PrivacyReadinessResult,
+} from '@fitness-os/schemas';
+import type { PrivacyReadinessProbe } from '@fitness-os/domain';
+import { SyntheticPrivacyReadinessProbe } from '@fitness-os/domain';
+
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
@@ -109,4 +116,103 @@ export async function checkPrivacyCoreDatabaseReadiness(
       detail: error instanceof Error ? error.message : 'unknown',
     };
   }
+}
+
+/**
+ * Wraps a base `PrivacyReadinessProbe` (defaults to
+ * `SyntheticPrivacyReadinessProbe`) and replaces only its `migrations` and
+ * `repositories` components with a real evaluation of
+ * `checkPrivacyCoreDatabaseReadiness` against `connection`. Every other
+ * component (audit_sink, expected_inventory, runtime_processors,
+ * governance_lifecycle, identity_boundary, policy_package, recovery) is left
+ * exactly as the base probe reports it — this does not verify those, only
+ * migration/table presence. `mechanismReady` is recomputed as the
+ * conjunction of all components so a real schema gap flips it `false`;
+ * `productionReady` stays `false`, unaffected by
+ * `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ */
+export function createPostgresPrivacyReadinessProbe(
+  connection: PostgresConnection,
+  options: {
+    baseProbe?: PrivacyReadinessProbe;
+    evaluatedAt?: string;
+    requiredHashes?: readonly string[];
+  } = {},
+): PrivacyReadinessProbe {
+  const baseProbe =
+    options.baseProbe ??
+    new SyntheticPrivacyReadinessProbe({
+      evaluatedAt: options.evaluatedAt ?? new Date().toISOString(),
+    });
+
+  return {
+    async evaluate(): Promise<PrivacyReadinessResult> {
+      const base = await baseProbe.evaluate();
+      const schemaResult = await checkPrivacyCoreDatabaseReadiness(connection, {
+        requiredHashes: options.requiredHashes,
+      });
+
+      const migrationsComponent: PrivacyReadinessComponent = schemaResult.ready
+        ? { componentId: 'migrations', state: 'ready', diagnosticCode: null }
+        : {
+            componentId: 'migrations',
+            state: 'not_ready',
+            diagnosticCode:
+              schemaResult.reason === 'missing_required_migration'
+                ? 'migration_missing'
+                : 'repository_unavailable',
+          };
+      const repositoriesComponent: PrivacyReadinessComponent =
+        schemaResult.ready
+          ? {
+              componentId: 'repositories',
+              state: 'ready',
+              diagnosticCode: null,
+            }
+          : {
+              componentId: 'repositories',
+              state: 'not_ready',
+              diagnosticCode: 'repository_unavailable',
+            };
+
+      const components = base.components.map((component) => {
+        if (component.componentId === 'migrations') return migrationsComponent;
+        if (component.componentId === 'repositories')
+          return repositoriesComponent;
+        return component;
+      });
+      const mechanismReady = components.every(
+        (component) => component.state === 'ready',
+      );
+      // The base probe's own `migration_missing` / `repository_unavailable`
+      // codes describe its default (unavailable) migrations/repositories
+      // components; drop them before re-adding only what the real check
+      // still reports, so a resolved component doesn't leave a stale code.
+      const staleOverriddenCodes = new Set([
+        'migration_missing',
+        'repository_unavailable',
+      ]);
+      const diagnosticCodes = [
+        ...new Set([
+          ...base.diagnosticCodes.filter(
+            (code) => !staleOverriddenCodes.has(code),
+          ),
+          ...(migrationsComponent.diagnosticCode !== null
+            ? [migrationsComponent.diagnosticCode]
+            : []),
+          ...(repositoriesComponent.diagnosticCode !== null
+            ? [repositoriesComponent.diagnosticCode]
+            : []),
+        ]),
+      ];
+
+      return {
+        ...base,
+        components,
+        diagnosticCodes,
+        mechanismReady,
+        productionReady: false,
+      };
+    },
+  };
 }

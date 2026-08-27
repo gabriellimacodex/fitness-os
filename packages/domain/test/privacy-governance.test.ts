@@ -43,6 +43,7 @@ import {
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  SyntheticPrivacyReadinessProbe,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -2812,5 +2813,31 @@ describe('retention rule repository', () => {
       ruleA.purposeVersionId,
     );
     expect(matched).toEqual([ruleA]);
+  });
+});
+
+describe('synthetic privacy readiness probe', () => {
+  it('reports every component not ready with the standing legal-privacy stop and mechanism/production both false', async () => {
+    const probe = new SyntheticPrivacyReadinessProbe({
+      evaluatedAt: '2026-08-27T00:00:00.000Z',
+    });
+
+    const result = await probe.evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.productionReady).toBe(false);
+    expect(result.evaluatedAt).toBe('2026-08-27T00:00:00.000Z');
+    expect(result.diagnosticCodes).toContain('legal_privacy_decision_required');
+    expect(result.components).toContainEqual({
+      componentId: 'contracts',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'migrations',
+      state: 'not_ready',
+      diagnosticCode: 'migration_missing',
+    });
+    expect(result.components).toHaveLength(10);
   });
 });

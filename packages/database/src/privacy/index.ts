@@ -28,6 +28,7 @@ export { createPostgresPrivacySubjectRequestRepository } from './subject-request
 export { createPostgresPrivacyProcessorStepRepository } from './processor-step.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
+  createPostgresPrivacyReadinessProbe,
   requiredPrivacyCoreMigrationHashes,
   type PrivacyCoreReadinessResult,
 } from './readiness.js';
