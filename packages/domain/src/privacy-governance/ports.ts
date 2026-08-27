@@ -11,6 +11,7 @@ import type {
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
+  PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
   PrivacySubjectRequestReference,
   PrivacySubjectRequestState,
@@ -226,6 +227,20 @@ export interface PrivacySubjectRequestRepository {
     verification?: PrivacyVerificationReference | null;
     productionMode?: boolean;
   }): Promise<PrivacySubjectRequestApplyResult>;
+}
+
+/**
+ * Append-only per-processor execution attempts for a subject request.
+ * `append` conflicts only on `stepId` reuse; the same (requestId,
+ * processorId, capability) pair may have multiple steps across retries.
+ */
+export interface PrivacyProcessorStepRepository {
+  append(
+    step: PrivacyProcessorStepReference,
+  ): Promise<PrivacyReferencePutResult>;
+  listForRequest(
+    requestId: string,
+  ): Promise<readonly PrivacyProcessorStepReference[]>;
 }
 
 export interface PrivacyDataUsePorts {
