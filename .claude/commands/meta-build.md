@@ -30,7 +30,21 @@ Do not proceed on instinct or memory of a prior run — read these fresh every t
 - `gh issue list --state open --label meta-stop 2>/dev/null || gh issue list --state open --search "[STOP:" ` — check which STOP conditions are already recorded and unresolved, so you don't re-attempt work you already correctly stopped on, and don't file a duplicate issue for the same condition.
 - Re-read `docs/prds/PRD_REGISTRY.md` state column as ground truth for what's `IN_PROGRESS`/`APPROVED`/`COMPLETED`/`PROPOSED`.
 
-## 3. Pick exactly ONE atomic task
+## 3. Fix rejected PRs before picking new work
+
+For every open PR on an `agent/` branch (from `gh pr list` in step 2), check its reviews:
+
+```
+gh pr view <n> --json reviews,commits --jq '.reviews[] | select(.body | startswith("AGENT-90-REVIEW:")) | {body, submittedAt}'
+```
+
+If the most recent `AGENT-90-REVIEW:` comment requests changes or contains a finding marked `CORRECTION_REQUIRED`/BLOCKER/HIGH, and no commit has been pushed to that branch after that review's timestamp, **this PR's fix is your task for this cycle** — skip step 4 entirely. Read the review findings, make the smallest correction that addresses them (do not scope-creep into unrelated changes on the same branch), push a new commit to the same branch (do not open a second PR for the same task), and let CI and `/meta-review` re-check it.
+
+If a PR already has a fixing commit newer than its last review, it's just waiting on the next `/meta-review` cycle — leave it alone and proceed to step 4 for a genuinely new task instead of piling up parallel work against it.
+
+Only proceed to step 4 if no open `agent/` PR is in a "reviewed, needs correction, not yet fixed" state.
+
+## 4. Pick exactly ONE atomic task
 
 Priority order:
 
@@ -46,20 +60,21 @@ Within the chosen PRD, pick the smallest next unit of work that is:
 
 If the picked PRD requires a Technical Design or contract freeze step before implementation may proceed (check the PRD's own "Contracts" section and `docs/technical-design/`) and that step hasn't happened yet, your task for this cycle is to produce/update that design doc — not to write product code ahead of it.
 
-## 4. Never touch these paths, regardless of task
+## 5. Never touch these paths, regardless of task
 
-`.github/workflows/**`, `.claude/commands/meta-build.md`, `.claude/commands/meta-review.md`, `docs/execution/**`, `docs/adr/**`. These are the gate-checking and governance infrastructure itself — an autonomous agent must never modify the rules it is graded against. If a task seems to genuinely require changing one of these, stop and report it as needing Gabriel's direct, explicit approval (treat it like a `FOUNDER_DECISION_REQUIRED` stop even if it doesn't fit neatly into the list in step 6).
+`.github/workflows/**`, `.claude/commands/meta-build.md`, `.claude/commands/meta-review.md`, `docs/execution/**`, `docs/adr/**`. These are the gate-checking and governance infrastructure itself — an autonomous agent must never modify the rules it is graded against. If a task seems to genuinely require changing one of these, stop and report it as needing Gabriel's direct, explicit approval (treat it like a `FOUNDER_DECISION_REQUIRED` stop even if it doesn't fit neatly into the list in step 7).
 
 Also never edit `docs/prds/PRD_REGISTRY.md`'s state column (e.g. flipping a PRD to `COMPLETED`) or any PRD's `Status:` header — that is a founder/orchestrator-level call about the roadmap, not a builder task. If you believe a PRD or gate milestone has been reached, say so clearly in your handoff and PR description, and let Gabriel or the reviewer confirm it explicitly.
 
-## 5. Implement
+## 6. Implement
 
-- Branch name: `agent/<short-task-slug>` off current `main`.
+- Branch name: `agent/<short-task-slug>` off current `main` (or, if you're in step 3, the existing PR's branch — do not create a new one).
 - Follow `AGENTS.md`'s architecture guardrails and the picked PRD's Scope/Non-scope/Business rules sections exactly. Do not invent behavior the PRD doesn't specify; where the PRD is ambiguous, prefer the narrower, more conservative reading and note the ambiguity in your handoff rather than guessing.
 - Match existing conventions (see `.specs/codebase/CONVENTIONS.md` if present, otherwise infer from neighboring files in the same package).
 - Write tests alongside the code, in the same style/location as existing tests for that package (see `.specs/codebase/TESTING.md` if present).
+- Before committing any new or edited file, check it for stray non-printable/control characters (e.g. `grep -IUlr . <path>` flags binary-looking text files, or `LC_ALL=C grep -n '[^ -~[:space:]]' <file>` for a specific one) — a corrupted delimiter character silently survives lint/typecheck/tests and only shows up as a broken diff later.
 
-## 6. STOP conditions — check continuously, not just at the end
+## 7. STOP conditions — check continuously, not just at the end
 
 If continuing this task would require crossing any of the following (verbatim codes from `docs/execution/STOP_CONDITIONS.md`), stop **before** the consequential action:
 
@@ -70,9 +85,9 @@ When you hit one:
 1. Discard or safely stash any not-yet-committed work that depends on the missing decision (never guess an answer to make progress).
 2. Check open issues first (step 2) — if an issue for this exact condition + PRD already exists and is open, do not duplicate it; just note it in your final summary and move to the next candidate task instead.
 3. Otherwise, `gh issue create` titled `[STOP: <CODE>] <one-line summary>`, label `meta-stop` (create the label first with `gh label create meta-stop --color B60205 --description "Autonomous work stopped, needs a human decision" 2>/dev/null || true`), with a body following the five-point structure from `STOP_CONDITIONS.md`: the condition, exactly what decision/credential/commitment/evidence/validation is missing, safe alternatives and the consequence of waiting, what work/evidence you preserved and where, and that this resumes only after Gabriel records an explicit decision.
-4. Move on and attempt the next unblocked candidate task from step 3's priority order in the same cycle, rather than ending the session idle. If literally everything actionable is blocked, end cleanly and say so plainly in your final summary — do not fabricate busywork.
+4. Move on and attempt the next unblocked candidate task from step 4's priority order in the same cycle, rather than ending the session idle. If literally everything actionable is blocked, end cleanly and say so plainly in your final summary — do not fabricate busywork.
 
-## 7. Quality gates — all must be green before opening a PR
+## 8. Quality gates — all must be green before opening a PR
 
 Run in this order and stop (do not open a PR) if any fails:
 
@@ -87,9 +102,10 @@ pnpm build
 
 If a gate fails and you can fix it within the scope of your own change, fix it. If the failure is pre-existing on `main` and unrelated to your change, note that explicitly in the handoff rather than silently working around it.
 
-## 8. Open the PR — do not merge
+## 9. Open the PR — do not merge
 
-- Push the branch, then `gh pr create` against `main`.
+- If this cycle's task was a step-3 fix on an existing PR, just push the commit — the PR updates automatically. Do not run `gh pr create` again.
+- Otherwise (a new task from step 4), push the branch, then `gh pr create` against `main`.
 - PR title: short, imperative, scoped to the actual change (e.g. `feat(api): add onboarding invitation revoke endpoint`).
 - PR body is the **AGENT HANDOFF** block, exact format from `MULTI_AGENT_PROTOCOL.md`:
 
@@ -120,6 +136,6 @@ Recommended next action:
 
 - Do **not** run `gh pr merge`. Per `AUTONOMOUS_DELIVERY_CHARTER.md`'s "no self-approval" rule, the builder may not be the only reviewer — merging is `/meta-review`'s job, run independently.
 
-## 9. End of turn
+## 10. End of turn
 
 Output a short plain-text summary: what task you picked, what you shipped (or which STOP condition you hit and where), and the PR number if one was opened. This is what Gabriel sees in the routine's run log.
