@@ -163,6 +163,47 @@ export const onboardingRoleMapping = pgTable(
 );
 
 /**
+ * Disposable synthetic append-only onboarding transition evidence.
+ * Mirrors packages/domain/src/onboarding/transition-sink.ts's
+ * OnboardingTransitionRecord and SyntheticOnboardingTransitionSink dedupe
+ * semantics (same aggregate + aggregateId + operationId + previousState +
+ * nextState is a replay, not a second row).
+ */
+export const onboardingTransition = pgTable(
+  'onboarding_transition',
+  {
+    id: uuid('id').primaryKey(),
+    aggregate: text('aggregate').notNull(),
+    aggregateId: text('aggregate_id').notNull(),
+    previousState: text('previous_state').notNull(),
+    nextState: text('next_state').notNull(),
+    operationId: text('operation_id').notNull(),
+    reason: text('reason').notNull(),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    check(
+      'onboarding_transition_aggregate_check',
+      sql`${table.aggregate} IN ('invitation', 'attempt', 'role_mapping', 'operation')`,
+    ),
+    uniqueIndex('onboarding_transition_dedupe_unique').on(
+      table.aggregate,
+      table.aggregateId,
+      table.operationId,
+      table.previousState,
+      table.nextState,
+    ),
+    index('onboarding_transition_aggregate_id_idx').on(
+      table.aggregate,
+      table.aggregateId,
+    ),
+  ],
+);
+
+/**
  * Disposable synthetic onboarding operation ledger for idempotent replay.
  * Retry tokens are never stored — only HMAC digests and opaque results.
  */
