@@ -95,3 +95,39 @@ export function selectAttempt(
 export function canAllocateAttempt(activeCountForRole: number): boolean {
   return activeCountForRole < ATTEMPT_ACTIVE_CAP;
 }
+
+export interface AttemptTimeoutBounds {
+  absoluteTtlMs: number;
+  inactivityTtlMs: number;
+}
+
+export type AttemptTimeoutStatus = 'active' | 'expired' | 'inactive';
+
+/**
+ * Deterministic evaluation of an attempt's server-configured absolute expiry
+ * and inactivity bound, per PRD 07's attempt-cardinality business rule.
+ * Every timestamp is supplied by the caller's own trusted clock — this
+ * function reads no system clock and accepts no caller-chosen TTL override,
+ * so the result is reproducible. Absolute expiry takes priority over
+ * inactivity when both bounds are exceeded. The caller applies the result
+ * through `transitionAttempt(attempt, 'terminal', reason)`, using
+ * `'expired'` for `expired` and `'abandoned'` for `inactive` — PRD 07 has no
+ * distinct terminal reason for server-triggered inactivity, only for the
+ * abandonment outcome it produces.
+ */
+export function evaluateAttemptTimeout(input: {
+  createdAtMs: number;
+  lastActivityAtMs: number;
+  nowUtcMs: number;
+  bounds: AttemptTimeoutBounds;
+}): AttemptTimeoutStatus {
+  if (input.nowUtcMs - input.createdAtMs >= input.bounds.absoluteTtlMs) {
+    return 'expired';
+  }
+
+  if (input.nowUtcMs - input.lastActivityAtMs >= input.bounds.inactivityTtlMs) {
+    return 'inactive';
+  }
+
+  return 'active';
+}
