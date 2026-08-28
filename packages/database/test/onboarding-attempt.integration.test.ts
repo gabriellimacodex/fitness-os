@@ -126,6 +126,100 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ).resolves.toMatchObject({ status: 'already_terminal' });
     });
 
+    it('lists only the nonterminal and terminal attempts scoped to one principal', async () => {
+      const otherInvitationId = onboardingInvitationIdSchema.parse(
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      );
+      await invitations.put({
+        invitationId: otherInvitationId,
+        claimDigest: `hmac-sha256.v1:${'f'.repeat(64)}`,
+        proposedRole: 'student',
+        purpose: 'student_onboarding',
+        state: 'issued',
+        targetCoachPrincipalKey: 'coach-2',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+      });
+
+      const ownAttemptId = onboardingAttemptIdSchema.parse(
+        'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      );
+      const ownRecord = {
+        createdAt: '2026-08-19T12:00:00.000Z',
+        principalKey: 'principal-scoped-1',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+        detail: {
+          attemptId: ownAttemptId,
+          invitationId,
+          proposedRole: 'student' as const,
+          purpose: 'student_onboarding' as const,
+          lifecycle: 'policy_pending' as const,
+          ordinal: 1,
+          predecessorAttemptId: null,
+          terminalReason: null,
+          policy: null,
+        },
+      };
+      await expect(attempts.put(ownRecord)).resolves.toBe('accepted');
+
+      const ownTerminalAttemptId = onboardingAttemptIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      );
+      await attempts.put({
+        createdAt: '2026-08-19T12:00:00.000Z',
+        principalKey: 'principal-scoped-1',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+        detail: {
+          attemptId: ownTerminalAttemptId,
+          invitationId: otherInvitationId,
+          proposedRole: 'student',
+          purpose: 'student_onboarding',
+          lifecycle: 'policy_pending',
+          ordinal: 2,
+          predecessorAttemptId: null,
+          terminalReason: null,
+          policy: null,
+        },
+      });
+      const terminalized = await attempts.applyTransition({
+        attemptId: ownTerminalAttemptId,
+        next: 'terminal',
+        terminalReason: 'abandoned',
+        updatedAt: '2026-08-19T12:01:00.000Z',
+      });
+      expect(terminalized.status).toBe('advanced');
+
+      const otherPrincipalAttemptId = onboardingAttemptIdSchema.parse(
+        '99999999-9999-4999-8999-999999999999',
+      );
+      await attempts.put({
+        createdAt: '2026-08-19T12:00:00.000Z',
+        principalKey: 'principal-scoped-2',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+        detail: {
+          attemptId: otherPrincipalAttemptId,
+          invitationId: otherInvitationId,
+          proposedRole: 'student',
+          purpose: 'student_onboarding',
+          lifecycle: 'policy_pending',
+          ordinal: 1,
+          predecessorAttemptId: null,
+          terminalReason: null,
+          policy: null,
+        },
+      });
+
+      const listed = await attempts.listByPrincipal('principal-scoped-1');
+      const listedIds = listed.map((row) => row.detail.attemptId).sort();
+      expect(listedIds).toEqual([ownAttemptId, ownTerminalAttemptId].sort());
+      expect(
+        listed.every((row) => row.principalKey === 'principal-scoped-1'),
+      ).toBe(true);
+
+      await expect(
+        attempts.listByPrincipal('principal-with-no-attempts'),
+      ).resolves.toEqual([]);
+    });
+
     it('serializes concurrent transitions on one attempt', async () => {
       const attemptId = onboardingAttemptIdSchema.parse(
         'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
