@@ -1,6 +1,9 @@
 import {
   FixedTrustedClock,
+  SyntheticClaimFailureTracker,
   SyntheticOnboardingTransitionSink,
+  type ClaimFailureTracker,
+  type ClaimThrottleWindow,
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
@@ -34,6 +37,8 @@ const OTHER_SECRET = invitationClaimSecretSchema.parse(
 const RETRY_TOKEN = retryTokenSchema.parse('synthetic-retry-01');
 
 function buildSyntheticApp(input?: {
+  claimFailureTracker?: ClaimFailureTracker;
+  claimThrottleWindow?: ClaimThrottleWindow;
   mappedRoles?: readonly ('student' | 'coach')[];
   principalKey?: string;
   store?: ReturnType<typeof createOnboardingStore>;
@@ -46,6 +51,8 @@ function buildSyntheticApp(input?: {
     {
       allowSyntheticOnboarding: true,
       onboarding: {
+        claimFailureTracker: input?.claimFailureTracker,
+        claimThrottleWindow: input?.claimThrottleWindow,
         resolveContext: () => ({
           mappedRoles,
           principalKey,
@@ -816,6 +823,168 @@ describe('POST /v1/onboarding/attempts', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(body.error.code).toBe('INTERNAL_ERROR');
     expect(response.body).not.toContain('private onboarding failure');
+    await app.close();
+  });
+});
+
+describe('claim-secret brute-force throttle', () => {
+  const throttleWindow: ClaimThrottleWindow = {
+    maxFailuresPerWindow: 2,
+    windowMs: 60_000,
+  };
+
+  it('throttles POST /invitations/inspect after repeated wrong guesses and returns the same envelope shape', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+    const { app } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      store,
+    });
+
+    const inspect = () =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/onboarding/invitations/inspect',
+        payload: { claimSecret: OTHER_SECRET },
+      });
+
+    const first = await inspect();
+    const second = await inspect();
+    const third = await inspect();
+
+    for (const response of [first, second, third]) {
+      expect(response.statusCode).toBe(200);
+      expect(
+        onboardingOperationResponseSchema.parse(response.json()).result,
+      ).toEqual({ outcome: 'invalid_or_unavailable' });
+    }
+
+    // A correct guess against the same key remains indistinguishable once
+    // throttled: the wrong-secret failures already reached the cap.
+    const correctWhileThrottled = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(correctWhileThrottled.json())
+        .result,
+    ).toEqual({ outcome: 'invalid_or_unavailable' });
+
+    await app.close();
+  });
+
+  it('does not record a failure for a correctly matched claim secret', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+    const { app } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      store,
+    });
+
+    for (let i = 0; i < 5; i += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/onboarding/invitations/inspect',
+        payload: { claimSecret: CLAIM_SECRET },
+      });
+      expect(
+        onboardingOperationResponseSchema.parse(response.json()).result,
+      ).toMatchObject({ outcome: 'command_succeeded' });
+    }
+
+    await expect(
+      claimFailureTracker.recentFailures('principal-a', 0),
+    ).resolves.toEqual([]);
+
+    await app.close();
+  });
+
+  it('isolates the throttle by authenticated principal', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+
+    const { app: appA } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      principalKey: 'principal-a',
+      store,
+    });
+    const { app: appB } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      principalKey: 'principal-b',
+      store,
+    });
+
+    for (let i = 0; i < 2; i += 1) {
+      await appA.inject({
+        method: 'POST',
+        url: '/v1/onboarding/invitations/inspect',
+        payload: { claimSecret: OTHER_SECRET },
+      });
+    }
+
+    const throttledForA = await appA.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+    const stillAllowedForB = await appB.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+
+    expect(
+      onboardingOperationResponseSchema.parse(throttledForA.json()).result,
+    ).toEqual({ outcome: 'invalid_or_unavailable' });
+    expect(
+      onboardingOperationResponseSchema.parse(stillAllowedForB.json()).result,
+    ).toMatchObject({ outcome: 'command_succeeded' });
+
+    await appA.close();
+    await appB.close();
+  });
+
+  it('throttles POST /attempts (create) after repeated wrong guesses without mutating the store', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+    const { app } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      store,
+    });
+
+    for (let i = 0; i < 2; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/onboarding/attempts',
+        payload: {
+          claimSecret: OTHER_SECRET,
+          retryToken: retryTokenSchema.parse(`synthetic-retry-throttle-${i}`),
+        },
+      });
+    }
+
+    const throttled = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+
+    expect(throttled.statusCode).toBe(200);
+    expect(
+      onboardingOperationResponseSchema.parse(throttled.json()).result,
+    ).toEqual({ outcome: 'invalid_or_unavailable' });
+    expect(store.attempts.size).toBe(0);
+
     await app.close();
   });
 });
