@@ -137,6 +137,63 @@ describe('attempt timeout evaluation', () => {
       }),
     ).toBe('active');
   });
+
+  it('fails closed on a non-finite timestamp or bound instead of reporting active', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: Number.NaN,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: Number.NaN, inactivityTtlMs: 30 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('rejects a zero or negative TTL bound', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: 0, inactivityTtlMs: 30 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: 100, inactivityTtlMs: -1 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('rejects a clock that runs backward relative to createdAtMs', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 50,
+        lastActivityAtMs: 10,
+        nowUtcMs: 60,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 5,
+      }),
+    ).toThrow(RangeError);
+  });
 });
 
 describe('claim eligibility', () => {

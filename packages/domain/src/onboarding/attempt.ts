@@ -114,6 +114,12 @@ export type AttemptTimeoutStatus = 'active' | 'expired' | 'inactive';
  * `'expired'` for `expired` and `'abandoned'` for `inactive` — PRD 07 has no
  * distinct terminal reason for server-triggered inactivity, only for the
  * abandonment outcome it produces.
+ *
+ * Fails closed on malformed input rather than silently reporting `'active'`:
+ * a non-finite timestamp/bound (`NaN` included), a non-positive TTL, or a
+ * clock that runs backward relative to `createdAtMs` throws instead of
+ * evaluating, since this function's whole purpose is trusted-time expiry
+ * enforcement and a silent "always active" fallback would defeat it.
  */
 export function evaluateAttemptTimeout(input: {
   createdAtMs: number;
@@ -121,11 +127,41 @@ export function evaluateAttemptTimeout(input: {
   nowUtcMs: number;
   bounds: AttemptTimeoutBounds;
 }): AttemptTimeoutStatus {
-  if (input.nowUtcMs - input.createdAtMs >= input.bounds.absoluteTtlMs) {
+  const { createdAtMs, lastActivityAtMs, nowUtcMs, bounds } = input;
+
+  if (
+    !Number.isFinite(createdAtMs) ||
+    !Number.isFinite(lastActivityAtMs) ||
+    !Number.isFinite(nowUtcMs) ||
+    !Number.isFinite(bounds.absoluteTtlMs) ||
+    !Number.isFinite(bounds.inactivityTtlMs)
+  ) {
+    throw new RangeError(
+      'evaluateAttemptTimeout requires finite timestamps and bounds.',
+    );
+  }
+
+  if (bounds.absoluteTtlMs <= 0 || bounds.inactivityTtlMs <= 0) {
+    throw new RangeError(
+      'evaluateAttemptTimeout requires positive absoluteTtlMs and inactivityTtlMs.',
+    );
+  }
+
+  if (
+    lastActivityAtMs < createdAtMs ||
+    nowUtcMs < createdAtMs ||
+    nowUtcMs < lastActivityAtMs
+  ) {
+    throw new RangeError(
+      'evaluateAttemptTimeout requires createdAtMs <= lastActivityAtMs <= nowUtcMs.',
+    );
+  }
+
+  if (nowUtcMs - createdAtMs >= bounds.absoluteTtlMs) {
     return 'expired';
   }
 
-  if (input.nowUtcMs - input.lastActivityAtMs >= input.bounds.inactivityTtlMs) {
+  if (nowUtcMs - lastActivityAtMs >= bounds.inactivityTtlMs) {
     return 'inactive';
   }
 
