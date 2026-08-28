@@ -1627,6 +1627,34 @@ export type PrivacySyntheticProcessorStepRecordResponse = z.infer<
 >;
 
 /**
+ * Disposable synthetic API to append one governance-lifecycle proof record
+ * behind `allowSyntheticPrivacy`. Recording a row is not authorization to
+ * execute a governance-lifecycle command; that remains a separately gated
+ * concern under `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ */
+export const privacySyntheticGovernanceLifecycleRecordRequestSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    operationId: privacyOperationIdSchema,
+    result: governanceLifecycleResultSchema,
+  })
+  .strict();
+export type PrivacySyntheticGovernanceLifecycleRecordRequest = z.infer<
+  typeof privacySyntheticGovernanceLifecycleRecordRequestSchema
+>;
+
+export const privacySyntheticGovernanceLifecycleRecordResponseSchema = z
+  .object({
+    status: z.enum(['recorded', 'conflict']),
+    proof: privacyGovernanceLifecycleProofReferenceSchema,
+  })
+  .strict();
+export type PrivacySyntheticGovernanceLifecycleRecordResponse = z.infer<
+  typeof privacySyntheticGovernanceLifecycleRecordResponseSchema
+>;
+
+/**
  * Synthetic-only expected-vs-runtime processor inventory coverage check.
  * Mechanism evidence only — does not authorize production readiness.
  */

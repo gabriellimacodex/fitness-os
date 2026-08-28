@@ -16,6 +16,7 @@ import {
   privacySubjectRequestTransitionIdSchema,
   privacySubjectScopeIdSchema,
   privacySyntheticExpectedInventoryResponseSchema,
+  privacySyntheticGovernanceLifecycleRecordResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticProcessorStepRecordResponseSchema,
@@ -25,6 +26,7 @@ import {
 } from '@fitness-os/schemas';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectDataProcessor,
@@ -2047,6 +2049,116 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-step-record',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
+  const lifecycleRequestId = privacySubjectRequestIdSchema.parse(
+    '77777777-7777-4777-8777-777777777777',
+  );
+  const lifecycleProcessorId = '99999999-9999-4999-8999-999999999999';
+
+  const basePayload = (overrides: Record<string, unknown> = {}) => ({
+    requestId: lifecycleRequestId,
+    processorId: lifecycleProcessorId,
+    operationId: privacyOperationIdSchema.parse(
+      'c3333333-3333-4333-8333-333333333333',
+    ),
+    result: {
+      outcome: 'completed',
+      proofId: 'd4444444-4444-4444-8444-444444444444',
+    },
+    ...overrides,
+  });
+
+  it('records a governance-lifecycle proof, forcing synthetic/recordedAt server-side', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+    const body = privacySyntheticGovernanceLifecycleRecordResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body).toEqual({
+      status: 'recorded',
+      proof: {
+        requestId: lifecycleRequestId,
+        processorId: lifecycleProcessorId,
+        operationId: 'c3333333-3333-4333-8333-333333333333',
+        result: {
+          outcome: 'completed',
+          proofId: 'd4444444-4444-4444-8444-444444444444',
+        },
+        recordedAt: '2026-08-18T12:00:00.000Z',
+        synthetic: true,
+      },
+    });
+
+    await app.close();
+  });
+
+  it('returns the stored proof as a conflict on an exact operationId replay', async () => {
+    const governanceLifecycle = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          governanceLifecycle: governanceLifecycle as never,
+        },
+      },
+    );
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+    expect(first.statusCode).toBe(200);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload({
+        result: { outcome: 'denied' },
+      }),
+    });
+    const body = privacySyntheticGovernanceLifecycleRecordResponseSchema.parse(
+      replay.json(),
+    );
+
+    expect(replay.statusCode).toBe(200);
+    expect(body.status).toBe('conflict');
+    expect(body.proof.result).toEqual({
+      outcome: 'completed',
+      proofId: 'd4444444-4444-4444-8444-444444444444',
+    });
+
+    await app.close();
+  });
+
+  it('rejects a malformed request body', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
       payload: {},
     });
 

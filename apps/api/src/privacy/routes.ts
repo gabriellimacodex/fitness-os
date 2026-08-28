@@ -8,6 +8,7 @@ import {
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAuthorizationEvidenceLedger,
+  SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
@@ -19,6 +20,7 @@ import {
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
+  type PrivacyGovernanceLifecycleLedger,
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
@@ -35,6 +37,8 @@ import {
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
   privacySyntheticExpectedInventoryResponseSchema,
+  privacySyntheticGovernanceLifecycleRecordRequestSchema,
+  privacySyntheticGovernanceLifecycleRecordResponseSchema,
   privacySyntheticInventoryCoverageRequestSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
@@ -86,6 +90,13 @@ export interface PrivacySyntheticOptions {
    * registration.
    */
   processorSteps?: PrivacyProcessorStepRepository;
+  /**
+   * Optional disposable governance-lifecycle proof ledger (e.g. Postgres).
+   * Defaults to an in-memory synthetic ledger shared for the lifetime of
+   * this route registration. Recording a row is not authorization to
+   * execute a governance-lifecycle command.
+   */
+  governanceLifecycle?: PrivacyGovernanceLifecycleLedger;
   /**
    * Optional disposable evidence ledger (e.g. Postgres). When omitted, the
    * in-memory synthetic ledger is used and may be seeded from the request body.
@@ -242,6 +253,9 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const processorSteps =
     options.processorSteps ?? new SyntheticPrivacyProcessorStepRepository();
+  const governanceLifecycle =
+    options.governanceLifecycle ??
+    new SyntheticPrivacyGovernanceLifecycleLedger();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;
@@ -731,6 +745,55 @@ export function registerPrivacySyntheticRoutes(
         status: result.status,
         completion: result.completion,
         request: result.request,
+      });
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/governance-lifecycle-record',
+    async (request, reply) => {
+      const body =
+        privacySyntheticGovernanceLifecycleRecordRequestSchema.safeParse(
+          request.body,
+        );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      const record = {
+        requestId: body.data.requestId,
+        processorId: body.data.processorId,
+        operationId: body.data.operationId,
+        result: body.data.result,
+        recordedAt: clock.nowUtcMs(),
+        synthetic: true,
+      };
+
+      const status = await governanceLifecycle.append(record);
+
+      if (status === 'conflict') {
+        const existing = await governanceLifecycle.getByOperationId(
+          body.data.operationId,
+        );
+        if (existing === null) {
+          return sendError(
+            request,
+            reply,
+            404,
+            'NOT_FOUND',
+            'Resource not found',
+          );
+        }
+        return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
+          status: 'conflict',
+          proof: existing,
+        });
+      }
+
+      return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
+        status: 'recorded',
+        proof: record,
       });
     },
   );
