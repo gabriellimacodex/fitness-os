@@ -6,8 +6,11 @@ import {
   sortPrivacySetIdentifiers,
   type PrivacyPolicyVersionId,
   type PrivacyRetentionExceptionId,
+  type PrivacyRetentionRuleReference,
   type RetentionPreviewCanonicalInput,
 } from '@fitness-os/schemas';
+
+import type { PrivacyRetentionRuleRepository } from './ports.js';
 
 export type RetentionPreviewPlan =
   | {
@@ -94,6 +97,82 @@ export function planRetentionPreview(input: {
     },
     status: 'planned',
   };
+}
+
+export type RetentionRuleSelectionResult =
+  | { status: 'selected'; rule: PrivacyRetentionRuleReference }
+  | {
+      status: 'invalid';
+      reason:
+        'no_active_retention_rule' | 'retention_rule_not_active_for_scope';
+    };
+
+/**
+ * Selects the caller-identified retention-rule version from the active set
+ * bound to a category/purpose pair. Never infers "latest" or "default" — the
+ * caller's `ruleVersionId` must already be present in `activeRules`, mirroring
+ * `PrivacyRetentionRuleRepository.listActiveForCategoryAndPurpose`'s own
+ * contract that it never picks a version on the caller's behalf.
+ */
+export function selectActiveRetentionRule(input: {
+  activeRules: readonly PrivacyRetentionRuleReference[];
+  ruleVersionId: string;
+}): RetentionRuleSelectionResult {
+  if (input.activeRules.length === 0) {
+    return { reason: 'no_active_retention_rule', status: 'invalid' };
+  }
+
+  const rule = input.activeRules.find(
+    (candidate) => candidate.ruleVersionId === input.ruleVersionId,
+  );
+  if (rule === undefined) {
+    return { reason: 'retention_rule_not_active_for_scope', status: 'invalid' };
+  }
+
+  return { rule, status: 'selected' };
+}
+
+export type RetentionPreviewPlanWithRule =
+  | RetentionPreviewPlan
+  | {
+      status: 'invalid';
+      reason:
+        'no_active_retention_rule' | 'retention_rule_not_active_for_scope';
+    };
+
+/**
+ * Fail-closed wrapper around `planRetentionPreview`: a preview may only be
+ * planned when an active retention rule already governs the exact
+ * category/purpose pair being previewed. An unconfigured or unmatched rule
+ * denies the preview rather than defaulting to indefinite retention or
+ * immediate deletion, per PRD 21's retention-enforcement business rule.
+ */
+export async function planRetentionPreviewWithRetentionRule(
+  input: {
+    retentionRules: PrivacyRetentionRuleRepository;
+    engineeringCategoryId: string;
+    purposeVersionId: string;
+    ruleVersionId: string;
+  } & Parameters<typeof planRetentionPreview>[0],
+): Promise<RetentionPreviewPlanWithRule> {
+  const {
+    retentionRules,
+    engineeringCategoryId,
+    purposeVersionId,
+    ruleVersionId,
+    ...previewInput
+  } = input;
+
+  const activeRules = await retentionRules.listActiveForCategoryAndPurpose(
+    engineeringCategoryId,
+    purposeVersionId,
+  );
+  const selection = selectActiveRetentionRule({ activeRules, ruleVersionId });
+  if (selection.status === 'invalid') {
+    return selection;
+  }
+
+  return planRetentionPreview(previewInput);
 }
 
 export type RetentionExecutionAuthorization =

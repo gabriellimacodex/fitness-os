@@ -61,8 +61,12 @@ export {
 export {
   authorizeRetentionExecution,
   planRetentionPreview,
+  planRetentionPreviewWithRetentionRule,
+  selectActiveRetentionRule,
   type RetentionExecutionAuthorization,
   type RetentionPreviewPlan,
+  type RetentionPreviewPlanWithRule,
+  type RetentionRuleSelectionResult,
 } from './retention.js';
 export {
   createSyntheticPrivacyDataUsePorts,
