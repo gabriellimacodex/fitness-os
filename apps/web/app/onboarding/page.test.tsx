@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { InvitationLandingView } from './onboarding-views';
 import OnboardingPage from './page';
@@ -29,11 +32,15 @@ describe('OnboardingPage', () => {
 });
 
 describe('web onboarding boundary', () => {
-  it('does not import domain or database packages', async () => {
-    const source = await vi.importActual<typeof import('./page')>('./page');
+  it('does not import domain or database packages', () => {
+    for (const file of ['./page.tsx', './onboarding-views.tsx']) {
+      const source = readFileSync(
+        fileURLToPath(new URL(file, import.meta.url)),
+        'utf8',
+      );
 
-    expect(source.default).toEqual(expect.any(Function));
-    expect(JSON.stringify(source)).not.toContain('@fitness-os/domain');
-    expect(JSON.stringify(source)).not.toContain('@fitness-os/database');
+      expect(source).not.toContain('@fitness-os/domain');
+      expect(source).not.toContain('@fitness-os/database');
+    }
   });
 });
