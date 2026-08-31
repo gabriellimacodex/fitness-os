@@ -229,3 +229,45 @@ export const onboardingPrincipalBinding = pgTable(
     ),
   ],
 );
+
+/**
+ * Disposable synthetic append-only onboarding transition evidence.
+ * Mirrors the domain `OnboardingTransitionSink` port shape exactly; a
+ * (aggregate, aggregate_id, operation_id, previous_state, next_state) repeat
+ * is rejected as a conflict without a duplicate row, matching
+ * `SyntheticOnboardingTransitionSink`'s in-memory dedup rule.
+ */
+export const onboardingTransition = pgTable(
+  'onboarding_transition',
+  {
+    transitionId: uuid('transition_id').primaryKey().defaultRandom(),
+    aggregate: text('aggregate').notNull(),
+    aggregateId: text('aggregate_id').notNull(),
+    previousState: text('previous_state').notNull(),
+    nextState: text('next_state').notNull(),
+    operationId: text('operation_id').notNull(),
+    reason: text('reason').notNull(),
+    recordedAt: timestamp('recorded_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    check(
+      'onboarding_transition_aggregate_check',
+      sql`${table.aggregate} IN ('invitation', 'attempt', 'role_mapping', 'operation')`,
+    ),
+    uniqueIndex('onboarding_transition_dedup_unique').on(
+      table.aggregate,
+      table.aggregateId,
+      table.operationId,
+      table.previousState,
+      table.nextState,
+    ),
+    index('onboarding_transition_aggregate_idx').on(
+      table.aggregate,
+      table.aggregateId,
+    ),
+    index('onboarding_transition_recorded_at_idx').on(table.recordedAt),
+  ],
+);
