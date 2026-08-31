@@ -65,6 +65,7 @@ export {
 } from './request.js';
 export {
   authorizeRetentionExecution,
+  digestRetentionRuleReference,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
   selectActiveRetentionRule,

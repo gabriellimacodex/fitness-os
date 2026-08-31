@@ -2753,6 +2753,15 @@ describe('selectActiveRetentionRule', () => {
       }),
     ).toEqual({ rule: ruleA, status: 'selected' });
   });
+
+  it('denies duplicate matches for the selected rule version', () => {
+    expect(
+      selectActiveRetentionRule({
+        activeRules: [ruleA, ruleA],
+        ruleVersionId: ruleA.ruleVersionId,
+      }),
+    ).toEqual({ reason: 'retention_rule_ambiguous', status: 'invalid' });
+  });
 });
 
 describe('planRetentionPreviewWithRetentionRule', () => {
@@ -2833,6 +2842,22 @@ describe('planRetentionPreviewWithRetentionRule', () => {
     });
   });
 
+  it('denies the preview when rule and policy synthetic provenance differ', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      policySynthetic: false,
+      retentionRules: repository,
+    });
+
+    expect(result).toEqual({
+      reason: 'retention_rule_synthetic_mismatch',
+      status: 'invalid',
+    });
+  });
+
   it('plans the preview once an active rule governs the scope', async () => {
     const repository = new SyntheticPrivacyRetentionRuleRepository();
     await repository.put(ruleA);
@@ -2848,6 +2873,46 @@ describe('planRetentionPreviewWithRetentionRule', () => {
     }
     expect(result.preview.policyVersionId).toBe(
       privacyPolicyVersionIdSchema.parse(policy.versionId),
+    );
+  });
+
+  it('binds the exact retention rule into deterministic preview evidence', async () => {
+    const otherRule = privacyRetentionRuleReferenceSchema.parse({
+      ...ruleA,
+      action: 'irreversibly_transform',
+      parametersDigest: 'd'.repeat(64),
+      ruleId: '55555555-5555-4555-8555-555555555555',
+      ruleVersionId: '66666666-6666-4666-8666-666666666666',
+    });
+    const repositoryA = new SyntheticPrivacyRetentionRuleRepository();
+    const repositoryB = new SyntheticPrivacyRetentionRuleRepository();
+    await repositoryA.put(ruleA);
+    await repositoryB.put(otherRule);
+
+    const previewA = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repositoryA,
+    });
+    const previewB = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repositoryB,
+      ruleVersionId: otherRule.ruleVersionId,
+    });
+
+    expect(previewA.status).toBe('planned');
+    expect(previewB.status).toBe('planned');
+    if (previewA.status !== 'planned' || previewB.status !== 'planned') {
+      throw new Error('expected planned previews');
+    }
+    expect(previewA.preview.selectionDigest).not.toBe(
+      previewB.preview.selectionDigest,
+    );
+    expect(previewA.preview.retentionRuleVersionId).toBe(ruleA.ruleVersionId);
+    expect(previewB.preview.retentionRuleVersionId).toBe(
+      otherRule.ruleVersionId,
+    );
+    expect(previewA.preview.retentionRuleDigest).not.toBe(
+      previewB.preview.retentionRuleDigest,
     );
   });
 });

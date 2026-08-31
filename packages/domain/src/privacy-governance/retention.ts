@@ -34,6 +34,11 @@ export type RetentionPreviewPlan =
         | 'missing_watermark';
     };
 
+type PlannedRetentionPreview = Extract<
+  RetentionPreviewPlan,
+  { status: 'planned' }
+>;
+
 /**
  * Read-only retention preview planning. Never deletes or transforms data.
  * Production mode rejects synthetic policy input.
@@ -104,7 +109,9 @@ export type RetentionRuleSelectionResult =
   | {
       status: 'invalid';
       reason:
-        'no_active_retention_rule' | 'retention_rule_not_active_for_scope';
+        | 'no_active_retention_rule'
+        | 'retention_rule_not_active_for_scope'
+        | 'retention_rule_ambiguous';
     };
 
 /**
@@ -122,33 +129,68 @@ export function selectActiveRetentionRule(input: {
     return { reason: 'no_active_retention_rule', status: 'invalid' };
   }
 
-  const rule = input.activeRules.find(
+  const matchingRules = input.activeRules.filter(
     (candidate) => candidate.ruleVersionId === input.ruleVersionId,
   );
-  if (rule === undefined) {
+  if (matchingRules.length === 0) {
     return { reason: 'retention_rule_not_active_for_scope', status: 'invalid' };
   }
+  if (matchingRules.length > 1) {
+    return { reason: 'retention_rule_ambiguous', status: 'invalid' };
+  }
 
-  return { rule, status: 'selected' };
+  return { rule: matchingRules[0]!, status: 'selected' };
 }
 
 export type RetentionPreviewPlanWithRule =
-  | RetentionPreviewPlan
+  | {
+      status: 'planned';
+      preview: PlannedRetentionPreview['preview'] & {
+        retentionRuleDigest: string;
+        retentionRuleVersionId: PrivacyRetentionRuleReference['ruleVersionId'];
+      };
+    }
+  | Exclude<RetentionPreviewPlan, { status: 'planned' }>
   | {
       status: 'invalid';
       reason:
         | 'no_active_retention_rule'
         | 'retention_rule_not_active_for_scope'
-        | 'retention_rule_policy_mismatch';
+        | 'retention_rule_ambiguous'
+        | 'retention_rule_policy_mismatch'
+        | 'retention_rule_synthetic_mismatch';
     };
+
+/** Stable opaque digest of the exact retention-rule authority. */
+export function digestRetentionRuleReference(
+  rule: PrivacyRetentionRuleReference,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        action: rule.action,
+        canonicalizationVersion: rule.canonicalizationVersion,
+        engineeringCategoryId: rule.engineeringCategoryId,
+        parametersDigest: rule.parametersDigest,
+        policyVersionId: rule.policyVersionId,
+        purposeVersionId: rule.purposeVersionId,
+        ruleId: rule.ruleId,
+        ruleVersionId: rule.ruleVersionId,
+        synthetic: rule.synthetic,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}
 
 /**
  * Fail-closed wrapper around `planRetentionPreview`: a preview may only be
- * planned when an active retention rule already governs the exact
- * category/purpose pair and carries the same policy provenance as the preview.
- * An unconfigured or unmatched rule denies the preview rather than defaulting
- * to indefinite retention or immediate deletion, per PRD 21's
- * retention-enforcement business rule.
+ * planned when exactly one active retention rule governs the category/purpose
+ * pair and carries the same policy and synthetic provenance as the preview.
+ * The exact rule version and its opaque digest are bound into the deterministic
+ * selection digest. An unconfigured, ambiguous, or unmatched rule denies the
+ * preview rather than defaulting to indefinite retention or immediate
+ * deletion, per PRD 21's retention-enforcement business rule.
  */
 export async function planRetentionPreviewWithRetentionRule(
   input: {
@@ -177,8 +219,36 @@ export async function planRetentionPreviewWithRetentionRule(
   if (selection.rule.policyVersionId !== previewInput.policyVersionId) {
     return { reason: 'retention_rule_policy_mismatch', status: 'invalid' };
   }
+  if (selection.rule.synthetic !== previewInput.policySynthetic) {
+    return { reason: 'retention_rule_synthetic_mismatch', status: 'invalid' };
+  }
 
-  return planRetentionPreview(previewInput);
+  const plan = planRetentionPreview(previewInput);
+  if (plan.status !== 'planned') {
+    return plan;
+  }
+
+  const retentionRuleDigest = digestRetentionRuleReference(selection.rule);
+  const selectionDigest = createHash('sha256')
+    .update(
+      JSON.stringify({
+        previewSelectionDigest: plan.preview.selectionDigest,
+        retentionRuleDigest,
+        retentionRuleVersionId: selection.rule.ruleVersionId,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+
+  return {
+    preview: {
+      ...plan.preview,
+      retentionRuleDigest,
+      retentionRuleVersionId: selection.rule.ruleVersionId,
+      selectionDigest,
+    },
+    status: 'planned',
+  };
 }
 
 export type RetentionExecutionAuthorization =
