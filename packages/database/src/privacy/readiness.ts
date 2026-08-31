@@ -152,16 +152,17 @@ export function createPostgresPrivacyReadinessProbe(
         requiredHashes: options.requiredHashes,
       });
 
-      const migrationsComponent: PrivacyReadinessComponent = schemaResult.ready
-        ? { componentId: 'migrations', state: 'ready', diagnosticCode: null }
-        : {
-            componentId: 'migrations',
-            state: 'not_ready',
-            diagnosticCode:
-              schemaResult.reason === 'missing_required_migration'
-                ? 'migration_missing'
-                : 'repository_unavailable',
-          };
+      const migrationsComponent: PrivacyReadinessComponent =
+        schemaResult.ready || schemaResult.reason === 'missing_required_table'
+          ? { componentId: 'migrations', state: 'ready', diagnosticCode: null }
+          : {
+              componentId: 'migrations',
+              state: 'not_ready',
+              diagnosticCode:
+                schemaResult.reason === 'missing_required_migration'
+                  ? 'migration_missing'
+                  : 'repository_unavailable',
+            };
       const repositoriesComponent: PrivacyReadinessComponent =
         schemaResult.ready
           ? {
@@ -175,12 +176,15 @@ export function createPostgresPrivacyReadinessProbe(
               diagnosticCode: 'repository_unavailable',
             };
 
-      const components = base.components.map((component) => {
-        if (component.componentId === 'migrations') return migrationsComponent;
-        if (component.componentId === 'repositories')
-          return repositoriesComponent;
-        return component;
-      });
+      const components = [
+        migrationsComponent,
+        repositoriesComponent,
+        ...base.components.filter(
+          (component) =>
+            component.componentId !== 'migrations' &&
+            component.componentId !== 'repositories',
+        ),
+      ];
       const mechanismReady = components.every(
         (component) => component.state === 'ready',
       );
