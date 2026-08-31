@@ -36,6 +36,7 @@ import {
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
@@ -888,9 +889,26 @@ export function registerPrivacySyntheticRoutes(
             'Lifecycle proof ledger inconsistent',
           );
         }
+
+        const stored =
+          privacyGovernanceLifecycleProofReferenceSchema.safeParse(existing);
+        if (
+          !stored.success ||
+          stored.data.synthetic !== true ||
+          !sameGovernanceLifecycleBinding(verification.binding, stored.data)
+        ) {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger inconsistent',
+          );
+        }
+
         return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
           status: 'conflict',
-          proof: existing,
+          proof: stored.data,
         });
       }
 

@@ -2211,6 +2211,53 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
     await app.close();
   });
 
+  it.each([
+    ['request', { requestId: '88888888-8888-4888-8888-888888888888' }],
+    ['processor', { processorId: '88888888-8888-4888-8888-888888888888' }],
+    ['operation', { operationId: '88888888-8888-4888-8888-888888888888' }],
+    ['result', { result: { outcome: 'denied' } }],
+    ['synthetic marker', { synthetic: false }],
+    ['malformed timestamp', { recordedAt: 'not-a-trusted-time' }],
+  ])(
+    'fails closed when conflict evidence has a mismatched %s',
+    async (_field, mismatch) => {
+      const governanceLifecycleVerifier =
+        new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+      governanceLifecycleVerifier.seal(basePayload());
+      const existing = {
+        ...basePayload(),
+        recordedAt: '2026-08-18T12:00:00.000Z',
+        synthetic: true,
+        ...mismatch,
+      };
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            governanceLifecycleVerifier,
+            governanceLifecycle: {
+              append: async () => 'conflict' as const,
+              getByOperationId: async () => existing as never,
+            },
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/governance-lifecycle-record',
+        payload: basePayload(),
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+        'SERVICE_UNAVAILABLE',
+      );
+      await app.close();
+    },
+  );
+
   it('fails closed with zero appends when no exact sealed binding exists', async () => {
     let appendCalls = 0;
     const app = buildApp(
