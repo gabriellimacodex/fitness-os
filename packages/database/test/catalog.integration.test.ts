@@ -74,6 +74,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'onboarding_operation',
         'onboarding_principal_binding',
         'onboarding_role_mapping',
+        'onboarding_transition',
         'privacy_audit_event',
         'privacy_authorization_evidence',
         'privacy_governance_lifecycle_proof',
