@@ -28,6 +28,7 @@ import {
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyProcessorStepRepository,
+  SyntheticPrivacyRetentionPreviewRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -1158,6 +1159,51 @@ describe('POST /v1/privacy/synthetic/retention-preview', () => {
       status: 'invalid',
       reason: 'policy_synthetic_in_production',
     });
+
+    await app.close();
+  });
+
+  it('persists a planned preview write-through when injected, keyed by selectionDigest', async () => {
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionPreviews,
+        },
+      },
+    );
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+    expect(first.statusCode).toBe(200);
+    const selectionDigest = first.json().preview.selectionDigest;
+
+    const stored =
+      await retentionPreviews.getBySelectionDigest(selectionDigest);
+    expect(stored).toMatchObject({
+      selectionDigest,
+      status: 'planned',
+      createdAt: '2026-08-18T12:00:00.000Z',
+      executedAt: null,
+    });
+
+    // Replanning the identical input is idempotent write-through: no error
+    // surfaced, and the persisted record is unaffected.
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().preview.selectionDigest).toBe(selectionDigest);
 
     await app.close();
   });
