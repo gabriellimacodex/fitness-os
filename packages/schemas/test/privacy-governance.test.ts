@@ -16,10 +16,12 @@ import {
   privacyActorContextReferenceSchema,
   privacyAuditEventReferenceSchema,
   privacyCanonicalizationVersionSchema,
+  privacyCoveredExpectedProcessorInventorySchema,
   privacyDataUseDecisionSchema,
   privacyDataUseDenyReasonSchema,
   privacyEvidenceReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceRecordFamilySchema,
   privacyGovernanceLifecycleProofReferenceSchema,
   privacyLifecycleProofIdSchema,
   privacyOperationIdSchema,
@@ -835,6 +837,46 @@ describe('expected processor inventory contracts', () => {
         ],
       }).success,
     ).toBe(false);
+  });
+
+  it('requires every governance record family to map exactly once', () => {
+    const fixturePath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '../fixtures/privacy/processor-inventory.v1.json',
+    );
+    const parsed = privacyCoveredExpectedProcessorInventorySchema.parse(
+      JSON.parse(readFileSync(fixturePath, 'utf8')) as unknown,
+    );
+    const processor = parsed.processors[0]!;
+
+    expect(
+      privacyCoveredExpectedProcessorInventorySchema.safeParse({
+        ...parsed,
+        processors: [
+          {
+            ...processor,
+            recordFamilies: processor.recordFamilies.slice(1),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyCoveredExpectedProcessorInventorySchema.safeParse({
+        ...parsed,
+        processors: [
+          {
+            ...processor,
+            recordFamilies: [
+              ...processor.recordFamilies,
+              processor.recordFamilies[0],
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(processor.recordFamilies.map(({ family }) => family).sort()).toEqual(
+      [...privacyGovernanceRecordFamilySchema.options].sort(),
+    );
   });
 
   it('canonicalizes processors and nested sets by stable sort', () => {
