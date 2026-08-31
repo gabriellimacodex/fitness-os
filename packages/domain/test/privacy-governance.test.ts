@@ -36,8 +36,10 @@ import {
   deriveRequestCompletionFromSteps,
   evaluateDataUse,
   planRetentionPreview,
+  planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
+  selectActiveRetentionRule,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyGovernanceLifecycleLedger,
@@ -2699,6 +2701,219 @@ describe('retention preview and execution gates', () => {
       status: 'hard_disabled',
       reason: 'synthetic_fixtures_required',
     });
+  });
+});
+
+describe('selectActiveRetentionRule', () => {
+  const ruleA = privacyRetentionRuleReferenceSchema.parse({
+    ruleId: '11111111-1111-4111-8111-111111111111',
+    ruleVersionId: '22222222-2222-4222-8222-222222222222',
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+      '33333333-3333-4333-8333-333333333333',
+    ),
+    purposeVersionId: purpose.purposeVersionId,
+    policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+    action: 'delete',
+    parametersDigest: 'c'.repeat(64),
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    synthetic: true,
+  });
+
+  it('denies when no active rule governs the scope', () => {
+    expect(
+      selectActiveRetentionRule({
+        activeRules: [],
+        ruleVersionId: ruleA.ruleVersionId,
+      }),
+    ).toEqual({ reason: 'no_active_retention_rule', status: 'invalid' });
+  });
+
+  it('denies when the caller selects a version outside the active set', () => {
+    expect(
+      selectActiveRetentionRule({
+        activeRules: [ruleA],
+        ruleVersionId: '99999999-9999-4999-8999-999999999999',
+      }),
+    ).toEqual({
+      reason: 'retention_rule_not_active_for_scope',
+      status: 'invalid',
+    });
+  });
+
+  it('selects the exact caller-identified version without inferring a default', () => {
+    const otherVersion = privacyRetentionRuleReferenceSchema.parse({
+      ...ruleA,
+      ruleVersionId: '44444444-4444-4444-8444-444444444444',
+    });
+
+    expect(
+      selectActiveRetentionRule({
+        activeRules: [otherVersion, ruleA],
+        ruleVersionId: ruleA.ruleVersionId,
+      }),
+    ).toEqual({ rule: ruleA, status: 'selected' });
+  });
+
+  it('denies duplicate matches for the selected rule version', () => {
+    expect(
+      selectActiveRetentionRule({
+        activeRules: [ruleA, ruleA],
+        ruleVersionId: ruleA.ruleVersionId,
+      }),
+    ).toEqual({ reason: 'retention_rule_ambiguous', status: 'invalid' });
+  });
+});
+
+describe('planRetentionPreviewWithRetentionRule', () => {
+  const ruleA = privacyRetentionRuleReferenceSchema.parse({
+    ruleId: '11111111-1111-4111-8111-111111111111',
+    ruleVersionId: '22222222-2222-4222-8222-222222222222',
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+      '33333333-3333-4333-8333-333333333333',
+    ),
+    purposeVersionId: purpose.purposeVersionId,
+    policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+    action: 'delete',
+    parametersDigest: 'c'.repeat(64),
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    synthetic: true,
+  });
+
+  function previewInput() {
+    return {
+      approvedExceptionIds: [],
+      engineeringCategoryId: ruleA.engineeringCategoryId,
+      inventoryVersionDigest: '3'.repeat(64),
+      policySynthetic: true,
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      processorDescriptorDigests: ['c'.repeat(64)],
+      productionMode: false,
+      purposeVersionId: ruleA.purposeVersionId,
+      ruleVersionId: ruleA.ruleVersionId,
+      watermark: '2026-08-18T00:00:00.000Z',
+    };
+  }
+
+  it('denies the preview when no active rule governs the category/purpose pair', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repository,
+    });
+
+    expect(result).toEqual({
+      reason: 'no_active_retention_rule',
+      status: 'invalid',
+    });
+  });
+
+  it('denies the preview when the caller selects a rule version not active for the scope', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repository,
+      ruleVersionId: '99999999-9999-4999-8999-999999999999',
+    });
+
+    expect(result).toEqual({
+      reason: 'retention_rule_not_active_for_scope',
+      status: 'invalid',
+    });
+  });
+
+  it('denies the preview when the active rule belongs to a different policy version', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      policyVersionId: privacyPolicyVersionIdSchema.parse(
+        '99999999-9999-4999-8999-999999999999',
+      ),
+      retentionRules: repository,
+    });
+
+    expect(result).toEqual({
+      reason: 'retention_rule_policy_mismatch',
+      status: 'invalid',
+    });
+  });
+
+  it('denies the preview when rule and policy synthetic provenance differ', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      policySynthetic: false,
+      retentionRules: repository,
+    });
+
+    expect(result).toEqual({
+      reason: 'retention_rule_synthetic_mismatch',
+      status: 'invalid',
+    });
+  });
+
+  it('plans the preview once an active rule governs the scope', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repository,
+    });
+
+    expect(result.status).toBe('planned');
+    if (result.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+    expect(result.preview.policyVersionId).toBe(
+      privacyPolicyVersionIdSchema.parse(policy.versionId),
+    );
+  });
+
+  it('binds the exact retention rule into deterministic preview evidence', async () => {
+    const otherRule = privacyRetentionRuleReferenceSchema.parse({
+      ...ruleA,
+      action: 'irreversibly_transform',
+      parametersDigest: 'd'.repeat(64),
+      ruleId: '55555555-5555-4555-8555-555555555555',
+      ruleVersionId: '66666666-6666-4666-8666-666666666666',
+    });
+    const repositoryA = new SyntheticPrivacyRetentionRuleRepository();
+    const repositoryB = new SyntheticPrivacyRetentionRuleRepository();
+    await repositoryA.put(ruleA);
+    await repositoryB.put(otherRule);
+
+    const previewA = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repositoryA,
+    });
+    const previewB = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      retentionRules: repositoryB,
+      ruleVersionId: otherRule.ruleVersionId,
+    });
+
+    expect(previewA.status).toBe('planned');
+    expect(previewB.status).toBe('planned');
+    if (previewA.status !== 'planned' || previewB.status !== 'planned') {
+      throw new Error('expected planned previews');
+    }
+    expect(previewA.preview.selectionDigest).not.toBe(
+      previewB.preview.selectionDigest,
+    );
+    expect(previewA.preview.retentionRuleVersionId).toBe(ruleA.ruleVersionId);
+    expect(previewB.preview.retentionRuleVersionId).toBe(
+      otherRule.ruleVersionId,
+    );
+    expect(previewA.preview.retentionRuleDigest).not.toBe(
+      previewB.preview.retentionRuleDigest,
+    );
   });
 });
 
