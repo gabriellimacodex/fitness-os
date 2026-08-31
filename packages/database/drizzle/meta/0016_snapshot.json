@@ -1,6 +1,6 @@
 {
-  "id": "29cb7b60-03fb-45b6-94e9-8e55f1a9ae52",
-  "prevId": "d46076cf-5080-4066-bc23-4b381422f62d",
+  "id": "d46076cf-5080-4066-bc23-4b381422f62d",
+  "prevId": "a8cbc984-ff0e-4373-b2ad-31df3093ee67",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3115,121 +3115,6 @@
         "taxonomy_term_replacement_shape_check": {
           "name": "taxonomy_term_replacement_shape_check",
           "value": "(\n        (\"taxonomy_term\".\"lifecycle\" = 'replaced' AND \"taxonomy_term\".\"replaced_by_term_id\" IS NOT NULL AND \"taxonomy_term\".\"replaced_by_term_id\" <> \"taxonomy_term\".\"id\")\n        OR\n        (\"taxonomy_term\".\"lifecycle\" <> 'replaced' AND \"taxonomy_term\".\"replaced_by_term_id\" IS NULL)\n      )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.privacy_retention_preview": {
-      "name": "privacy_retention_preview",
-      "schema": "",
-      "columns": {
-        "selection_digest": {
-          "name": "selection_digest",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "policy_version_id": {
-          "name": "policy_version_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "inventory_version_digest": {
-          "name": "inventory_version_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "processor_descriptor_digests": {
-          "name": "processor_descriptor_digests",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "watermark": {
-          "name": "watermark",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "approved_exception_ids": {
-          "name": "approved_exception_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "executed_at": {
-          "name": "executed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "privacy_retention_preview_created_at_idx": {
-          "name": "privacy_retention_preview_created_at_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "privacy_retention_preview_policy_version_id_idx": {
-          "name": "privacy_retention_preview_policy_version_id_idx",
-          "columns": [
-            {
-              "expression": "policy_version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "privacy_retention_preview_selection_digest_check": {
-          "name": "privacy_retention_preview_selection_digest_check",
-          "value": "\"privacy_retention_preview\".\"selection_digest\" ~ '^[a-f0-9]{64}$'"
-        },
-        "privacy_retention_preview_inventory_digest_check": {
-          "name": "privacy_retention_preview_inventory_digest_check",
-          "value": "\"privacy_retention_preview\".\"inventory_version_digest\" ~ '^[a-f0-9]{64}$'"
-        },
-        "privacy_retention_preview_status_check": {
-          "name": "privacy_retention_preview_status_check",
-          "value": "\"privacy_retention_preview\".\"status\" IN ('planned', 'executed')"
-        },
-        "privacy_retention_preview_status_executed_at_pair_check": {
-          "name": "privacy_retention_preview_status_executed_at_pair_check",
-          "value": "(\n        (\"privacy_retention_preview\".\"status\" = 'executed' AND \"privacy_retention_preview\".\"executed_at\" IS NOT NULL) OR\n        (\"privacy_retention_preview\".\"status\" = 'planned' AND \"privacy_retention_preview\".\"executed_at\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": false
