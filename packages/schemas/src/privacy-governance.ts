@@ -838,6 +838,20 @@ export type PrivacyGovernanceLifecycleProofReference = z.infer<
   typeof privacyGovernanceLifecycleProofReferenceSchema
 >;
 
+/**
+ * Exact, server-sealed authority fields required before a lifecycle proof may
+ * be appended. The client may present the same tuple, but it is never trusted
+ * unless a composition-owned verifier resolves one unambiguous match.
+ */
+export const privacyGovernanceLifecycleBindingSchema =
+  privacyGovernanceLifecycleProofReferenceSchema.omit({
+    recordedAt: true,
+    synthetic: true,
+  });
+export type PrivacyGovernanceLifecycleBinding = z.infer<
+  typeof privacyGovernanceLifecycleBindingSchema
+>;
+
 export const privacyProcessorInventorySchemaVersionSchema = z.literal(
   'privacy.processor-inventory.v1',
 );
@@ -1688,12 +1702,7 @@ export type PrivacySyntheticProcessorStepRecordResponse = z.infer<
  * concern under `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export const privacySyntheticGovernanceLifecycleRecordRequestSchema = z
-  .object({
-    requestId: privacySubjectRequestIdSchema,
-    processorId: privacyProcessorIdSchema,
-    operationId: privacyOperationIdSchema,
-    result: governanceLifecycleResultSchema,
-  })
+  .object(privacyGovernanceLifecycleBindingSchema.shape)
   .strict();
 export type PrivacySyntheticGovernanceLifecycleRecordRequest = z.infer<
   typeof privacySyntheticGovernanceLifecycleRecordRequestSchema

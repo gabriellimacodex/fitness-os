@@ -26,6 +26,7 @@ import {
 } from '@fitness-os/schemas';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRetentionPreviewRepository,
@@ -2126,8 +2127,31 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
     ...overrides,
   });
 
+  const createVerifiedComposition = () => {
+    const governanceLifecycle = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const governanceLifecycleVerifier =
+      new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    governanceLifecycleVerifier.seal(basePayload());
+
+    return {
+      governanceLifecycle,
+      governanceLifecycleVerifier,
+      app: buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            governanceLifecycle,
+            governanceLifecycleVerifier,
+          },
+        },
+      ),
+    };
+  };
+
   it('records a governance-lifecycle proof, forcing synthetic/recordedAt server-side', async () => {
-    const app = buildSyntheticPrivacyApp();
+    const { app } = createVerifiedComposition();
 
     const response = await app.inject({
       method: 'POST',
@@ -2159,17 +2183,7 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
   });
 
   it('returns the stored proof as a conflict on an exact operationId replay', async () => {
-    const governanceLifecycle = new SyntheticPrivacyGovernanceLifecycleLedger();
-    const app = buildApp(
-      { logger: false },
-      {
-        allowSyntheticPrivacy: true,
-        privacy: {
-          fixedUtcMs: '2026-08-18T12:00:00.000Z',
-          governanceLifecycle: governanceLifecycle as never,
-        },
-      },
-    );
+    const { app } = createVerifiedComposition();
 
     const first = await app.inject({
       method: 'POST',
@@ -2181,9 +2195,7 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
     const replay = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/governance-lifecycle-record',
-      payload: basePayload({
-        result: { outcome: 'denied' },
-      }),
+      payload: basePayload(),
     });
     const body = privacySyntheticGovernanceLifecycleRecordResponseSchema.parse(
       replay.json(),
@@ -2196,6 +2208,186 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
       proofId: 'd4444444-4444-4444-8444-444444444444',
     });
 
+    await app.close();
+  });
+
+  it('fails closed with zero appends when no exact sealed binding exists', async () => {
+    let appendCalls = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          governanceLifecycle: {
+            append: async () => {
+              appendCalls += 1;
+              return 'accepted' as const;
+            },
+            getByOperationId: async () => null,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+    expect(appendCalls).toBe(0);
+    await app.close();
+  });
+
+  it.each([
+    ['request', { requestId: '88888888-8888-4888-8888-888888888888' }],
+    ['processor', { processorId: '88888888-8888-4888-8888-888888888888' }],
+    ['operation', { operationId: '88888888-8888-4888-8888-888888888888' }],
+    ['result', { result: { outcome: 'denied' } }],
+  ])(
+    'rejects a mismatched %s binding before append',
+    async (_field, mismatch) => {
+      const governanceLifecycleVerifier =
+        new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+      governanceLifecycleVerifier.seal(basePayload());
+      let appendCalls = 0;
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            governanceLifecycleVerifier,
+            governanceLifecycle: {
+              append: async () => {
+                appendCalls += 1;
+                return 'accepted' as const;
+              },
+              getByOperationId: async () => null,
+            },
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/governance-lifecycle-record',
+        payload: basePayload(mismatch),
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(appendCalls).toBe(0);
+      await app.close();
+    },
+  );
+
+  it('rejects ambiguous sealed bindings before append', async () => {
+    const governanceLifecycleVerifier =
+      new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    governanceLifecycleVerifier.seal(basePayload());
+    governanceLifecycleVerifier.seal(
+      basePayload({ result: { outcome: 'denied' } }),
+    );
+    let appendCalls = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          governanceLifecycleVerifier,
+          governanceLifecycle: {
+            append: async () => {
+              appendCalls += 1;
+              return 'accepted' as const;
+            },
+            getByOperationId: async () => null,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(appendCalls).toBe(0);
+    await app.close();
+  });
+
+  it('returns 503 with zero appends when binding verification is unavailable', async () => {
+    let appendCalls = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          governanceLifecycleVerifier: {
+            verify: async () => {
+              throw new Error('sealed evidence unavailable');
+            },
+          },
+          governanceLifecycle: {
+            append: async () => {
+              appendCalls += 1;
+              return 'accepted' as const;
+            },
+            getByOperationId: async () => null,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+    expect(appendCalls).toBe(0);
+    await app.close();
+  });
+
+  it('returns 503 without claiming a record when the ledger is unavailable', async () => {
+    const governanceLifecycleVerifier =
+      new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    governanceLifecycleVerifier.seal(basePayload());
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          governanceLifecycleVerifier,
+          governanceLifecycle: {
+            append: async () => {
+              throw new Error('ledger unavailable');
+            },
+            getByOperationId: async () => null,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
     await app.close();
   });
 

@@ -9,6 +9,7 @@ import {
   recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyGovernanceLifecycleLedger,
+  SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
@@ -21,6 +22,7 @@ import {
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
   type PrivacyGovernanceLifecycleLedger,
+  type PrivacyGovernanceLifecycleBindingVerifier,
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
@@ -59,6 +61,7 @@ import {
   privacySyntheticWithdrawalPlanRequestSchema,
   privacySyntheticWithdrawalPlanResponseSchema,
   type ApiErrorCode,
+  type PrivacyGovernanceLifecycleBinding,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -98,6 +101,11 @@ export interface PrivacySyntheticOptions {
    * execute a governance-lifecycle command.
    */
   governanceLifecycle?: PrivacyGovernanceLifecycleLedger;
+  /**
+   * Composition-owned verifier for the exact request/processor/operation/result
+   * tuple. Defaults to an empty fail-closed verifier.
+   */
+  governanceLifecycleVerifier?: PrivacyGovernanceLifecycleBindingVerifier;
   /**
    * Optional disposable evidence ledger (e.g. Postgres). When omitted, the
    * in-memory synthetic ledger is used and may be seeded from the request body.
@@ -167,6 +175,21 @@ function sendError(
         requestId: request.id,
       },
     }),
+  );
+}
+
+function sameGovernanceLifecycleBinding(
+  presented: PrivacyGovernanceLifecycleBinding,
+  trusted: PrivacyGovernanceLifecycleBinding,
+): boolean {
+  return (
+    presented.requestId === trusted.requestId &&
+    presented.processorId === trusted.processorId &&
+    presented.operationId === trusted.operationId &&
+    presented.result.outcome === trusted.result.outcome &&
+    (presented.result.outcome === 'denied' ||
+      (trusted.result.outcome !== 'denied' &&
+        presented.result.proofId === trusted.result.proofId))
   );
 }
 
@@ -265,6 +288,9 @@ export function registerPrivacySyntheticRoutes(
   const governanceLifecycle =
     options.governanceLifecycle ??
     new SyntheticPrivacyGovernanceLifecycleLedger();
+  const governanceLifecycleVerifier =
+    options.governanceLifecycleVerifier ??
+    new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;
@@ -783,28 +809,83 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
+      let verification;
+      try {
+        verification = await governanceLifecycleVerifier.verify(body.data);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle binding verification unavailable',
+        );
+      }
+
+      if (verification.status === 'unavailable') {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle binding verification unavailable',
+        );
+      }
+
+      if (
+        verification.status === 'invalid' ||
+        !sameGovernanceLifecycleBinding(body.data, verification.binding)
+      ) {
+        return sendError(
+          request,
+          reply,
+          400,
+          'BAD_REQUEST',
+          'Lifecycle binding invalid',
+        );
+      }
+
       const record = {
-        requestId: body.data.requestId,
-        processorId: body.data.processorId,
-        operationId: body.data.operationId,
-        result: body.data.result,
+        ...verification.binding,
         recordedAt: clock.nowUtcMs(),
         synthetic: true,
       };
 
-      const status = await governanceLifecycle.append(record);
+      let status;
+      try {
+        status = await governanceLifecycle.append(record);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle proof ledger unavailable',
+        );
+      }
 
       if (status === 'conflict') {
-        const existing = await governanceLifecycle.getByOperationId(
-          body.data.operationId,
-        );
+        let existing;
+        try {
+          existing = await governanceLifecycle.getByOperationId(
+            verification.binding.operationId,
+          );
+        } catch {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger unavailable',
+          );
+        }
         if (existing === null) {
           return sendError(
             request,
             reply,
-            404,
-            'NOT_FOUND',
-            'Resource not found',
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger inconsistent',
           );
         }
         return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
