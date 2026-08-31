@@ -30,6 +30,7 @@ export {
   privacyProcessorRegistration,
   privacyProcessorStep,
   privacyPurposeVersion,
+  privacyRetentionPreview,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,
