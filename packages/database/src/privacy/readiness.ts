@@ -9,6 +9,7 @@ import type {
   PrivacyReadinessComponent,
   PrivacyReadinessResult,
 } from '@fitness-os/schemas';
+import { canonicalizePrivacyReadinessDiagnosticCodes } from '@fitness-os/schemas';
 import type { PrivacyReadinessProbe } from '@fitness-os/domain';
 import { SyntheticPrivacyReadinessProbe } from '@fitness-os/domain';
 
@@ -176,14 +177,15 @@ export function createPostgresPrivacyReadinessProbe(
               diagnosticCode: 'repository_unavailable',
             };
 
+      const remainingComponents = base.components.filter(
+        (component) =>
+          component.componentId !== 'migrations' &&
+          component.componentId !== 'repositories',
+      );
       const components = [
         migrationsComponent,
         repositoriesComponent,
-        ...base.components.filter(
-          (component) =>
-            component.componentId !== 'migrations' &&
-            component.componentId !== 'repositories',
-        ),
+        ...remainingComponents,
       ];
       const mechanismReady = components.every(
         (component) => component.state === 'ready',
@@ -192,23 +194,37 @@ export function createPostgresPrivacyReadinessProbe(
       // codes describe its default (unavailable) migrations/repositories
       // components; drop them before re-adding only what the real check
       // still reports, so a resolved component doesn't leave a stale code.
-      const staleOverriddenCodes = new Set([
-        'migration_missing',
-        'repository_unavailable',
-      ]);
-      const diagnosticCodes = [
+      const overriddenDiagnosticCodes = new Set(
+        base.components
+          .filter(
+            (component) =>
+              component.componentId === 'migrations' ||
+              component.componentId === 'repositories',
+          )
+          .flatMap((component) =>
+            component.diagnosticCode === null ? [] : [component.diagnosticCode],
+          ),
+      );
+      const remainingDiagnosticCodes = new Set(
+        remainingComponents.flatMap((component) =>
+          component.diagnosticCode === null ? [] : [component.diagnosticCode],
+        ),
+      );
+      const diagnosticCodes = canonicalizePrivacyReadinessDiagnosticCodes([
         ...new Set([
           ...base.diagnosticCodes.filter(
-            (code) => !staleOverriddenCodes.has(code),
+            (code) =>
+              !overriddenDiagnosticCodes.has(code) ||
+              remainingDiagnosticCodes.has(code),
           ),
-          ...(migrationsComponent.diagnosticCode !== null
-            ? [migrationsComponent.diagnosticCode]
-            : []),
-          ...(repositoriesComponent.diagnosticCode !== null
-            ? [repositoriesComponent.diagnosticCode]
-            : []),
+          ...(migrationsComponent.diagnosticCode === null
+            ? []
+            : [migrationsComponent.diagnosticCode]),
+          ...(repositoriesComponent.diagnosticCode === null
+            ? []
+            : [repositoriesComponent.diagnosticCode]),
         ]),
-      ];
+      ]);
 
       return {
         ...base,
