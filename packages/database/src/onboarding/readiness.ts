@@ -124,9 +124,11 @@ export async function checkOnboardingSchemaReadiness(
  * migration and schema markers"). Every other component (clock, id/secret
  * factories, repositories, identity/policy adapters) is left exactly as the
  * base probe reports it — this does not verify those, only schema/migration
- * presence. `mechanismReady` is recomputed as the conjunction of all
- * components so a real schema gap flips it `false`; `productionReady` stays
- * `false`, unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ * presence. The final evidence is normalized to exactly one database-derived
+ * `schema` component, even if a custom base omits or duplicates it.
+ * `mechanismReady` is recomputed as the conjunction of all components so a
+ * real schema gap flips it `false`; `productionReady` stays `false`,
+ * unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export function createPostgresOnboardingReadinessProbe(
   connection: PostgresConnection,
@@ -162,15 +164,26 @@ export function createPostgresOnboardingReadinessProbe(
             state: 'not_ready',
           };
 
-      const components = base.components.map((component) =>
-        component.componentId === 'schema' ? schemaComponent : component,
-      );
+      const components = [
+        schemaComponent,
+        ...base.components.filter(
+          (component) => component.componentId !== 'schema',
+        ),
+      ];
       const mechanismReady = components.every(
         (component) => component.state === 'ready',
       );
+      const replacedSchemaDiagnostics = new Set(
+        base.components
+          .filter((component) => component.componentId === 'schema')
+          .map((component) => component.diagnosticCode)
+          .filter((diagnostic) => diagnostic !== null),
+      );
       const diagnosticCodes = [
         ...new Set([
-          ...base.diagnosticCodes,
+          ...base.diagnosticCodes.filter(
+            (diagnostic) => !replacedSchemaDiagnostics.has(diagnostic),
+          ),
           ...(schemaComponent.diagnosticCode !== null
             ? [schemaComponent.diagnosticCode]
             : []),
