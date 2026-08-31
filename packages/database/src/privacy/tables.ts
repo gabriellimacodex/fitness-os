@@ -417,6 +417,64 @@ export const privacySubjectRequestTransition = pgTable(
 );
 
 /**
+ * Persisted retention preview evidence, keyed by the deterministic
+ * `selectionDigest` computed by `planRetentionPreview`. Immutable once
+ * accepted; `status` moves `planned` -> `executed` exactly once.
+ */
+export const privacyRetentionPreview = pgTable(
+  'privacy_retention_preview',
+  {
+    selectionDigest: text('selection_digest').primaryKey(),
+    policyVersionId: uuid('policy_version_id').notNull(),
+    inventoryVersionDigest: text('inventory_version_digest').notNull(),
+    processorDescriptorDigests: jsonb('processor_descriptor_digests')
+      .$type<string[]>()
+      .notNull(),
+    watermark: timestamp('watermark', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+    approvedExceptionIds: jsonb('approved_exception_ids')
+      .$type<string[]>()
+      .notNull(),
+    status: text('status').notNull(),
+    createdAt: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+    executedAt: timestamp('executed_at', {
+      mode: 'string',
+      withTimezone: true,
+    }),
+  },
+  (table) => [
+    check(
+      'privacy_retention_preview_selection_digest_check',
+      sql`${table.selectionDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_retention_preview_inventory_digest_check',
+      sql`${table.inventoryVersionDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_retention_preview_status_check',
+      sql`${table.status} IN ('planned', 'executed')`,
+    ),
+    check(
+      'privacy_retention_preview_status_executed_at_pair_check',
+      sql`(
+        (${table.status} = 'executed' AND ${table.executedAt} IS NOT NULL) OR
+        (${table.status} = 'planned' AND ${table.executedAt} IS NULL)
+      )`,
+    ),
+    index('privacy_retention_preview_created_at_idx').on(table.createdAt),
+    index('privacy_retention_preview_policy_version_id_idx').on(
+      table.policyVersionId,
+    ),
+  ],
+);
+
+/**
  * Append-only governance-lifecycle proof ledger. Records the outcome/proofId
  * of a governance-lifecycle command without executing it — execution remains
  * a separately gated concern under `LEGAL_PRIVACY_DECISION_REQUIRED`. Keyed
