@@ -137,15 +137,18 @@ export type RetentionPreviewPlanWithRule =
   | {
       status: 'invalid';
       reason:
-        'no_active_retention_rule' | 'retention_rule_not_active_for_scope';
+        | 'no_active_retention_rule'
+        | 'retention_rule_not_active_for_scope'
+        | 'retention_rule_policy_mismatch';
     };
 
 /**
  * Fail-closed wrapper around `planRetentionPreview`: a preview may only be
  * planned when an active retention rule already governs the exact
- * category/purpose pair being previewed. An unconfigured or unmatched rule
- * denies the preview rather than defaulting to indefinite retention or
- * immediate deletion, per PRD 21's retention-enforcement business rule.
+ * category/purpose pair and carries the same policy provenance as the preview.
+ * An unconfigured or unmatched rule denies the preview rather than defaulting
+ * to indefinite retention or immediate deletion, per PRD 21's
+ * retention-enforcement business rule.
  */
 export async function planRetentionPreviewWithRetentionRule(
   input: {
@@ -170,6 +173,9 @@ export async function planRetentionPreviewWithRetentionRule(
   const selection = selectActiveRetentionRule({ activeRules, ruleVersionId });
   if (selection.status === 'invalid') {
     return selection;
+  }
+  if (selection.rule.policyVersionId !== previewInput.policyVersionId) {
+    return { reason: 'retention_rule_policy_mismatch', status: 'invalid' };
   }
 
   return planRetentionPreview(previewInput);

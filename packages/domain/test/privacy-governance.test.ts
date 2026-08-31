@@ -2815,6 +2815,24 @@ describe('planRetentionPreviewWithRetentionRule', () => {
     });
   });
 
+  it('denies the preview when the active rule belongs to a different policy version', async () => {
+    const repository = new SyntheticPrivacyRetentionRuleRepository();
+    await repository.put(ruleA);
+
+    const result = await planRetentionPreviewWithRetentionRule({
+      ...previewInput(),
+      policyVersionId: privacyPolicyVersionIdSchema.parse(
+        '99999999-9999-4999-8999-999999999999',
+      ),
+      retentionRules: repository,
+    });
+
+    expect(result).toEqual({
+      reason: 'retention_rule_policy_mismatch',
+      status: 'invalid',
+    });
+  });
+
   it('plans the preview once an active rule governs the scope', async () => {
     const repository = new SyntheticPrivacyRetentionRuleRepository();
     await repository.put(ruleA);
