@@ -21,18 +21,18 @@
 
 ## Disposition by area
 
-| Area                         | Result                      | Notes                                                                   |
-| ---------------------------- | --------------------------- | ----------------------------------------------------------------------- |
-| CI on Option A PRs           | `UNVERIFIED_IN_THIS_RECORD` | Authoritative evidence is each PR’s Agent 90 + Actions run at merge     |
-| Synthetic / mechanism tests  | `PASS` (slice-level)        | Schemas, domain, disposable PG, synthetic API seams on merged PRs       |
-| Architecture (Option A)      | `PASS` (slice-level)        | Binding decision `docs/execution/decisions/PRD_21_OPTION_A.md`          |
-| Security / privacy           | `BLOCKED`                   | Production paths stopped; synthetic-only seams                          |
-| Scope                        | `PASS` (slice-level)        | Disposable/synthetic Option A only                                      |
-| Contracts                    | `CONSISTENT` (slice-level)  | Frozen rows in `docs/contracts/README.md`                               |
-| Migrations                   | `VALIDATED` (slice-level)   | `0002`–`0006` + `0011`–`0012` privacy migrations and readiness coverage |
-| Production policy activation | `BLOCKED`                   | `LEGAL_PRIVACY_DECISION_REQUIRED`                                       |
-| Destructive lifecycle        | `BLOCKED`                   | Synthetic deny `requires_legal_privacy_decision` (#58)                  |
-| Gate A package review        | `PENDING`                   | Requires independent Agent 90 on a future **completion** candidate      |
+| Area                         | Result                      | Notes                                                                                                        |
+| ---------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| CI on Option A PRs           | `UNVERIFIED_IN_THIS_RECORD` | Authoritative evidence is each PR’s Agent 90 + Actions run at merge                                          |
+| Synthetic / mechanism tests  | `PASS` (slice-level)        | Schemas, domain, disposable PG, synthetic API seams on merged PRs                                            |
+| Architecture (Option A)      | `PASS` (slice-level)        | Binding decision `docs/execution/decisions/PRD_21_OPTION_A.md`                                               |
+| Security / privacy           | `BLOCKED`                   | Production paths stopped; synthetic-only seams                                                               |
+| Scope                        | `PASS` (slice-level)        | Disposable/synthetic Option A only                                                                           |
+| Contracts                    | `CONSISTENT` (slice-level)  | Frozen rows in `docs/contracts/README.md`                                                                    |
+| Migrations                   | `VALIDATED` (slice-level)   | PRD 21 `0002`–`0006`, `0011`–`0012`, `0014`–`0015`; onboarding `0013` is landed but outside this PRD's scope |
+| Production policy activation | `BLOCKED`                   | `LEGAL_PRIVACY_DECISION_REQUIRED`                                                                            |
+| Destructive lifecycle        | `BLOCKED`                   | Synthetic deny `requires_legal_privacy_decision` (#58)                                                       |
+| Gate A package review        | `PENDING`                   | Requires independent Agent 90 on a future **completion** candidate                                           |
 
 ## Landed Option A evidence (merged)
 
