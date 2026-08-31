@@ -24,6 +24,7 @@ import {
   type PrivacyPolicyPackageRepository,
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
+  type PrivacyRetentionPreviewRepository,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacySubjectDataProcessorResolver,
@@ -128,6 +129,14 @@ export interface PrivacySyntheticOptions {
    * Optional attribution verifier for opaque synthetic actor/subject bindings.
    */
   attributionVerifier?: PrivacyAttributionVerifier;
+  /**
+   * Optional disposable retention preview repository (e.g. Postgres). When
+   * set, a successfully planned retention preview is additionally persisted
+   * keyed by its deterministic `selectionDigest`. The public response shape
+   * is unchanged; consuming the persisted record at execution-authorize time
+   * remains a later composition step.
+   */
+  retentionPreviews?: PrivacyRetentionPreviewRepository;
 }
 
 function sendError(
@@ -249,6 +258,7 @@ export function registerPrivacySyntheticRoutes(
   const expectedInventory = options.expectedInventory;
   const processors = options.processors;
   const readiness = options.readiness;
+  const retentionPreviews = options.retentionPreviews;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -611,6 +621,18 @@ export function registerPrivacySyntheticRoutes(
         return privacySyntheticRetentionPreviewResponseSchema.parse({
           status: 'invalid',
           reason: result.reason,
+        });
+      }
+
+      if (retentionPreviews !== undefined) {
+        // Idempotent write-through: replanning the identical input yields the
+        // identical selectionDigest, so a 'conflict' here is an expected
+        // no-op, not an error to surface to the caller.
+        await retentionPreviews.put({
+          ...result.preview,
+          status: 'planned',
+          createdAt: clock.nowUtcMs(),
+          executedAt: null,
         });
       }
 

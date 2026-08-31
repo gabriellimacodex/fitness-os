@@ -30,6 +30,7 @@ export {
   privacyProcessorRegistration,
   privacyProcessorStep,
   privacyPurposeVersion,
+  privacyRetentionPreview,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,
@@ -41,6 +42,7 @@ export {
   onboardingOperation,
   onboardingPrincipalBinding,
   onboardingRoleMapping,
+  onboardingTransition,
 } from './onboarding/tables.js';
 
 export const students = pgTable('students', {

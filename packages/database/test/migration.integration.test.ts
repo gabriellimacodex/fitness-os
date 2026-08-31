@@ -74,6 +74,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
       'onboarding_operation',
       'onboarding_principal_binding',
       'onboarding_role_mapping',
+      'onboarding_transition',
       'privacy_audit_event',
       'privacy_authorization_evidence',
       'privacy_governance_lifecycle_proof',
@@ -81,6 +82,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
       'privacy_processor_registration',
       'privacy_processor_step',
       'privacy_purpose_version',
+      'privacy_retention_preview',
       'privacy_subject_request',
       'privacy_subject_request_transition',
       'privacy_withdrawal',
@@ -307,7 +309,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
     const after = await connection.db.execute<{ count: number }>(sql`
       SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
     `);
-    expect(before[0]?.count).toBe(16);
+    expect(before[0]?.count).toBe(18);
     expect(after).toEqual(before);
   });
 

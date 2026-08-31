@@ -113,6 +113,20 @@
       "when": 1787846354549,
       "tag": "0015_prd21_privacy_governance_lifecycle_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787857857947,
+      "tag": "0016_prd07_onboarding_transition",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787864604123,
+      "tag": "0017_prd21_privacy_retention_preview",
+      "breakpoints": true
     }
   ]
 }
