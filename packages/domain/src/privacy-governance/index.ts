@@ -27,6 +27,7 @@ export type {
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
+  PrivacyRetentionPreviewRepository,
   PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectDataProcessor,
@@ -54,6 +55,10 @@ export {
   type RequestCompletionStatus,
 } from './processor-step.js';
 export {
+  SyntheticPrivacyReadinessProbe,
+  type PrivacyReadinessProbe,
+} from './readiness.js';
+export {
   isTerminalSubjectRequestState,
   transitionSubjectRequest,
   type SubjectRequestTransitionResult,
@@ -80,6 +85,7 @@ export {
   SyntheticPrivacyPolicyPackageRepository,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyPurposeRegistry,
+  SyntheticPrivacyRetentionPreviewRepository,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectRequestRepository,

@@ -45,6 +45,8 @@ import {
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  SyntheticPrivacyReadinessProbe,
+  SyntheticPrivacyRetentionPreviewRepository,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -2832,6 +2834,40 @@ describe('planRetentionPreviewWithRetentionRule', () => {
   });
 });
 
+describe('synthetic retention preview repository', () => {
+  it('accepts a planned preview once, keyed by its deterministic selectionDigest', async () => {
+    const plan = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      productionMode: false,
+    });
+    if (plan.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    const record = {
+      ...plan.preview,
+      status: 'planned' as const,
+      createdAt: '2026-08-18T00:00:01.000Z',
+      executedAt: null,
+    };
+
+    await expect(repository.put(record)).resolves.toBe('accepted');
+    await expect(repository.put(record)).resolves.toBe('conflict');
+    await expect(
+      repository.getBySelectionDigest(plan.preview.selectionDigest),
+    ).resolves.toEqual(record);
+    await expect(
+      repository.getBySelectionDigest('0'.repeat(64)),
+    ).resolves.toBeNull();
+  });
+});
+
 describe('governance lifecycle proof ledger', () => {
   const requestId = privacySubjectRequestIdSchema.parse(
     'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
@@ -2944,5 +2980,31 @@ describe('retention rule repository', () => {
       ruleA.purposeVersionId,
     );
     expect(matched).toEqual([ruleA]);
+  });
+});
+
+describe('synthetic privacy readiness probe', () => {
+  it('reports every component not ready with the standing legal-privacy stop and mechanism/production both false', async () => {
+    const probe = new SyntheticPrivacyReadinessProbe({
+      evaluatedAt: '2026-08-27T00:00:00.000Z',
+    });
+
+    const result = await probe.evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.productionReady).toBe(false);
+    expect(result.evaluatedAt).toBe('2026-08-27T00:00:00.000Z');
+    expect(result.diagnosticCodes).toContain('legal_privacy_decision_required');
+    expect(result.components).toContainEqual({
+      componentId: 'contracts',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'migrations',
+      state: 'not_ready',
+      diagnosticCode: 'migration_missing',
+    });
+    expect(result.components).toHaveLength(10);
   });
 });
