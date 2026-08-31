@@ -55,6 +55,7 @@ export {
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
   createPostgresPrivacyPurposeRegistry,
+  createPostgresPrivacyReadinessProbe,
   createPostgresPrivacyRetentionPreviewRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
