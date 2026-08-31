@@ -84,6 +84,7 @@ export {
   asPrincipalBindingRepository,
   asPrincipalRoleMappingRepository,
   checkOnboardingSchemaReadiness,
+  createPostgresOnboardingReadinessProbe,
   createPostgresOnboardingRoleMappingRepository,
   asOnboardingTransitionSink,
   createPostgresOnboardingTransitionSink,

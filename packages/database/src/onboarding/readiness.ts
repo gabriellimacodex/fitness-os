@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import { sql } from 'drizzle-orm';
 
+import type {
+  OnboardingReadinessComponent,
+  OnboardingReadinessProbe,
+  OnboardingReadinessResult,
+} from '@fitness-os/domain';
+import { SyntheticOnboardingReadinessProbe } from '@fitness-os/domain';
+
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
@@ -107,4 +114,89 @@ export async function checkOnboardingSchemaReadiness(
       detail: error instanceof Error ? error.message : 'unknown',
     };
   }
+}
+
+/**
+ * Wraps a base `OnboardingReadinessProbe` (defaults to the domain synthetic
+ * probe) and replaces only its `schema` component with a real evaluation of
+ * `checkOnboardingSchemaReadiness` against `connection`, per PRD 07's
+ * "Readiness" section ("Mechanism readiness requires: exact required
+ * migration and schema markers"). Every other component (clock, id/secret
+ * factories, repositories, identity/policy adapters) is left exactly as the
+ * base probe reports it — this does not verify those, only schema/migration
+ * presence. The final evidence is normalized to exactly one database-derived
+ * `schema` component, even if a custom base omits or duplicates it.
+ * `mechanismReady` is recomputed as the conjunction of all components so a
+ * real schema gap flips it `false`; `productionReady` stays `false`,
+ * unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ */
+export function createPostgresOnboardingReadinessProbe(
+  connection: PostgresConnection,
+  options: {
+    baseProbe?: OnboardingReadinessProbe;
+    evaluatedAt?: string;
+    requiredHashes?: readonly string[];
+  } = {},
+): OnboardingReadinessProbe {
+  const baseProbe =
+    options.baseProbe ??
+    new SyntheticOnboardingReadinessProbe({
+      evaluatedAt: options.evaluatedAt ?? new Date().toISOString(),
+    });
+
+  return {
+    async evaluate(): Promise<OnboardingReadinessResult> {
+      const base = await baseProbe.evaluate();
+      const schemaResult = await checkOnboardingSchemaReadiness(connection, {
+        requiredHashes: options.requiredHashes,
+      });
+
+      const schemaComponent: OnboardingReadinessComponent = schemaResult.ready
+        ? { componentId: 'schema', diagnosticCode: null, state: 'ready' }
+        : {
+            componentId: 'schema',
+            diagnosticCode:
+              schemaResult.reason === 'missing_required_migration'
+                ? 'migration_missing'
+                : schemaResult.reason === 'missing_required_table'
+                  ? 'schema_mismatch'
+                  : 'configuration_mismatch',
+            state: 'not_ready',
+          };
+
+      const components = [
+        schemaComponent,
+        ...base.components.filter(
+          (component) => component.componentId !== 'schema',
+        ),
+      ];
+      const mechanismReady = components.every(
+        (component) => component.state === 'ready',
+      );
+      const replacedSchemaDiagnostics = new Set(
+        base.components
+          .filter((component) => component.componentId === 'schema')
+          .map((component) => component.diagnosticCode)
+          .filter((diagnostic) => diagnostic !== null),
+      );
+      const diagnosticCodes = [
+        ...new Set([
+          ...base.diagnosticCodes.filter(
+            (diagnostic) => !replacedSchemaDiagnostics.has(diagnostic),
+          ),
+          ...(schemaComponent.diagnosticCode !== null
+            ? [schemaComponent.diagnosticCode]
+            : []),
+        ]),
+      ];
+
+      return {
+        components,
+        diagnosticCodes,
+        evaluatedAt: base.evaluatedAt,
+        mechanismReady,
+        productionReady: false,
+      };
+    },
+  };
 }
