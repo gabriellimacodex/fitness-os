@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `3fcae686ad097309c38bd165e85c8cc656ccf061` (progress refresh; disposition unchanged)
-- Prior recorded heads: `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e` (progress refresh; disposition unchanged)
+- Prior recorded heads: `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-08-31` (landed-evidence refresh only; includes #191/#197)
+- Record timestamp: `2026-08-31` (landed-evidence refresh only; includes #191/#197/#198)
 
 ## Explicit non-claims
 
@@ -79,6 +79,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Retention-preview persistence             | `#168` (synthetic + disposable PG repository and optional API write-through; execution binding/transition still deferred)        |
 | Privacy database readiness probe          | `#191` (migration/table evidence replaces only readiness `migrations`/`repositories`; remaining components stay synthetic)       |
 | Active retention-rule preview guard       | `#197` (exact rule/policy/synthetic provenance; rule digest/version bound into deterministic preview evidence; API wiring open)  |
+| Bound lifecycle-proof synthetic seam      | `#198` (exact sealed request/processor/operation/result binding; invalid/ambiguous/unavailable evidence fails before append)     |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -138,7 +139,9 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   guards (#163/#175), exact plan pinning and synthetic route (#176/#177), PG
   processor-step persistence/resume (#179/#182/#185), and governance-lifecycle
   proof persistence (#173/#183/#188), retention-preview persistence (#168), and
-  exact active-rule selection/evidence binding (#197) landed. Rule-aware API
+  exact active-rule selection/evidence binding (#197), and fail-closed sealed
+  lifecycle-proof recording (#198) landed. Real bootstrap composition of the PG
+  lifecycle ledger plus an execution/coordinator-backed verifier, rule-aware API
   preview composition, retention-rule PG persistence, persisted-preview lookup/
   transition in execution authorization, and full coordinator semantics across
   these pieces remain open; H4 is not closed.
@@ -149,10 +152,10 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   synthetic fixture maps all 14 declared governance record families exactly once
   (#210). Runtime readiness binding, lifecycle-handler coverage, and independently
   reviewed exception semantics remain open; H5 is not closed.
-- Remaining open residual bands: H4 (rule-aware API composition, retention-rule
-  persistence, persisted-preview execution binding/transition, coordinator
-  semantics), H5 (runtime readiness/exceptions), and H6 (not attribution of
-  legal identity).
+- Remaining open residual bands: H4 (real PG lifecycle/verifier bootstrap
+  composition, rule-aware API composition, retention-rule persistence,
+  persisted-preview execution binding/transition, coordinator semantics), H5
+  (runtime readiness/exceptions), and H6 (not attribution of legal identity).
 - Migration rollback/forward-correction and destructive synthetic recovery
   evidence remain insufficient for a Gate A package (H6).
 - Ordinary-role live `SET LOCAL ROLE` DML / TRUNCATE denial harness is covered
