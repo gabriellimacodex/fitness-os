@@ -95,7 +95,7 @@ integrated after its POC gate.
 | PRD 03               | `COMPLETED` — Option A Gate A PASS (`docs/execution/gates/PRD_03_GATE_A.md`, #30)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | PRD 04               | `IN_PROGRESS` — mechanics on `main`; **content publication** paused on `HUMAN_PERCEPTION_REQUIRED` (`blocks/PRD_04_HUMAN_PERCEPTION_REQUIRED.md`)                                                                                                                                                                                                                                                                                                                                                      |
 | PRD 05               | `APPROVED` — **blocked** until PRD 04 is `COMPLETED`                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 ports composed in API through #137 (IdentitySession, PrincipalBinding/Reference, ClaimRepository, TransitionSink lifecycle + create→claim / issue→revoke / resume→abandon / create→resume→policy→claim `list()` chain tests, Id/Secret factories, SecretVerifier, TrustedClock). Real-user still `LEGAL_PRIVACY`. Tip `e4a4132`.                                                                                                             |
+| PRD 07               | `IN_PROGRESS` — synthetic/disposable persistence + TD 007 ports composed in API through #137, then non-public coach-bootstrap issuance, PG principal-binding persistence/readiness, API bundle wiring, identifier isolation, and trusted readiness factories through #187 (#169, #170, #172, #174, #186, #187). Real-user remains under `LEGAL_PRIVACY`; select the next slice from still-unmet TD acceptance criteria rather than repeating landed principal-binding work.                            |
 | PRD 21               | `IN_PROGRESS` — Option A synthetic through #210. H3 closed. H4 has trusted intake, processor plans/steps, guarded completion/resume, and PG-backed step/lifecycle ledgers through #188; retention-rule PG persistence and full coordinator semantics remain open. H5 exact-once record-family contract coverage landed in #210, while runtime readiness and reviewed-exception coverage remain open. Gate A `PENDING`; production `BLOCKED` by `LEGAL_PRIVACY`; H6 open. See `gates/PRD_21_GATE_A.md`. |
 | PRD 06, 08–20, 22–24 | `APPROVED` — start only when registry deps + gates allow                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | PRD 25               | `PROPOSED` — out of scope                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -107,8 +107,8 @@ Open stop that blocks production privacy / real-user onboarding: **LEGAL_PRIVACY
 — disposable/synthetic persistence and policy-neutral mechanics remain authorized.
 
 Disposable migrations already on `main` (do not regenerate): `0001` catalog;
-`0002`–`0006` + `0011`–`0012` privacy; `0007`–`0010` onboarding
-invitation/attempt/operation/role-mapping.
+`0002`–`0006` + `0011`–`0012` + `0014`–`0015` privacy; `0007`–`0010` +
+`0013` onboarding invitation/attempt/operation/role-mapping/principal-binding.
 
 Immediate next authorized Wave 3 work:
 
@@ -152,9 +152,10 @@ Work the DAG; use safe wave parallelism only when ownership and contracts allow.
 
 ### Wave 3 — authorized in parallel where deps allow
 
-3. **PRD 07** — continue synthetic/disposable composition (TransitionSink /
-   factories and chain tests through #137); keep real-user activation blocked
-   by `LEGAL_PRIVACY` until cleared.
+3. **PRD 07** — continue synthetic/disposable composition from the current
+   landed state through #187 (principal-binding PG/readiness/API and trusted
+   readiness factories included); choose only still-unmet TD acceptance criteria
+   and keep real-user activation blocked by `LEGAL_PRIVACY` until cleared.
 4. **PRD 21** — continue Option A from current `main` (composition through
    #210 record-family coverage; request orchestration components through #188):
    - keep destructive/lifecycle paths denied under `LEGAL_PRIVACY`;
