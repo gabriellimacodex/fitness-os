@@ -1003,6 +1003,29 @@ export type PrivacyExpectedProcessorInventory = z.infer<
   typeof privacyExpectedProcessorInventorySchema
 >;
 
+/** Reviewed inventory coverage: every governed family has one owner. */
+export const privacyCoveredExpectedProcessorInventorySchema =
+  privacyExpectedProcessorInventorySchema.superRefine((value, ctx) => {
+    const familyCounts = new Map<PrivacyGovernanceRecordFamily, number>();
+
+    for (const processor of value.processors) {
+      for (const { family } of processor.recordFamilies) {
+        familyCounts.set(family, (familyCounts.get(family) ?? 0) + 1);
+      }
+    }
+
+    for (const family of privacyGovernanceRecordFamilySchema.options) {
+      const count = familyCounts.get(family) ?? 0;
+      if (count !== 1) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `record family ${family} must map exactly once; received ${count}`,
+          path: ['processors'],
+        });
+      }
+    }
+  });
+
 export const canonicalizePrivacyExpectedProcessorInventory = (
   input: PrivacyExpectedProcessorInventory,
 ): PrivacyExpectedProcessorInventory => ({
