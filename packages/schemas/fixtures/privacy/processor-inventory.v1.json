@@ -1,15 +1,15 @@
 {
   "schemaVersion": "privacy.processor-inventory.v1",
   "inventoryId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  "inventoryVersionDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "inventoryVersionDigest": "2222222222222222222222222222222222222222222222222222222222222222",
   "canonicalizationVersion": "privacy-governance.canonical.v1",
-  "sourceCommit": "ad3f3e2",
+  "sourceCommit": "1d60821",
   "processors": [
     {
       "processorId": "99999999-9999-4999-8999-999999999999",
       "registrationVersion": 1,
       "inventoryId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      "descriptorDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "descriptorDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "codeOwner": "packages.domain.privacy",
       "adapterPackage": "@fitness-os/domain",
       "storageKind": "in_memory_synthetic",
@@ -66,6 +66,30 @@
         },
         {
           "family": "privacy_subject_request_transition",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_retention_rule",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_retention_preview",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_retention_work",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_processor_step",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_export_metadata",
+          "lifecycleAction": "retain_until_reviewed"
+        },
+        {
+          "family": "privacy_lifecycle_proof",
           "lifecycleAction": "retain_until_reviewed"
         }
       ],
