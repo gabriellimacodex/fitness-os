@@ -17,6 +17,8 @@ export type {
   PrivacyEvidenceAppendResult,
   PrivacyExpectedProcessorInventoryPort,
   PrivacyGovernanceLifecycleAppendResult,
+  PrivacyGovernanceLifecycleBindingVerificationResult,
+  PrivacyGovernanceLifecycleBindingVerifier,
   PrivacyGovernanceLifecycleLedger,
   PrivacyIdFactory,
   PrivacyIntegritySubjectKind,
@@ -55,15 +57,24 @@ export {
   type RequestCompletionStatus,
 } from './processor-step.js';
 export {
+  SyntheticPrivacyReadinessProbe,
+  type PrivacyReadinessProbe,
+} from './readiness.js';
+export {
   isTerminalSubjectRequestState,
   transitionSubjectRequest,
   type SubjectRequestTransitionResult,
 } from './request.js';
 export {
   authorizeRetentionExecution,
+  digestRetentionRuleReference,
   planRetentionPreview,
+  planRetentionPreviewWithRetentionRule,
+  selectActiveRetentionRule,
   type RetentionExecutionAuthorization,
   type RetentionPreviewPlan,
+  type RetentionPreviewPlanWithRule,
+  type RetentionRuleSelectionResult,
 } from './retention.js';
 export {
   createSyntheticPrivacyDataUsePorts,
@@ -72,6 +83,7 @@ export {
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyGovernanceLifecycleLedger,
+  SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyPolicyPackageRepository,
