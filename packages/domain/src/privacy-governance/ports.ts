@@ -8,12 +8,14 @@ import type {
   PrivacyEvidenceReference,
   PrivacyExpectedProcessorInventory,
   PrivacyGovernanceLifecycleProofReference,
+  PrivacyGovernanceLifecycleBinding,
   PrivacyOperationId,
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
   PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
+  PrivacyRetentionPreviewRecord,
   PrivacyRetentionRuleReference,
   PrivacySubjectRequestReference,
   PrivacySubjectRequestState,
@@ -99,6 +101,25 @@ export interface PrivacyGovernanceLifecycleLedger {
   append(
     record: PrivacyGovernanceLifecycleProofReference,
   ): Promise<PrivacyGovernanceLifecycleAppendResult>;
+}
+
+export type PrivacyGovernanceLifecycleBindingVerificationResult =
+  | {
+      status: 'verified';
+      binding: PrivacyGovernanceLifecycleBinding;
+    }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+/**
+ * Resolves a caller-presented lifecycle tuple against sealed execution or
+ * coordinator evidence. A verifier must fail closed for missing, mismatched,
+ * or ambiguous evidence; the presented tuple is never authority by itself.
+ */
+export interface PrivacyGovernanceLifecycleBindingVerifier {
+  verify(
+    input: PrivacyGovernanceLifecycleBinding,
+  ): Promise<PrivacyGovernanceLifecycleBindingVerificationResult>;
 }
 
 /**
@@ -267,6 +288,21 @@ export interface PrivacySubjectRequestRepository {
     verification?: PrivacyVerificationReference | null;
     productionMode?: boolean;
   }): Promise<PrivacySubjectRequestApplyResult>;
+}
+
+/**
+ * Persisted retention preview evidence, keyed by the deterministic
+ * `selectionDigest` computed by `planRetentionPreview`. A preview is
+ * accepted at most once per digest; consuming/marking it `executed` is a
+ * separate, later composition step.
+ */
+export interface PrivacyRetentionPreviewRepository {
+  getBySelectionDigest(
+    selectionDigest: string,
+  ): Promise<PrivacyRetentionPreviewRecord | null>;
+  put(
+    record: PrivacyRetentionPreviewRecord,
+  ): Promise<PrivacyReferencePutResult>;
 }
 
 /**

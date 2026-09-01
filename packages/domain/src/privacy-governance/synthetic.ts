@@ -5,16 +5,19 @@ import {
   privacyAuditEventIdSchema,
   privacyCorrelationIdSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleBindingSchema,
   privacyOperationIdSchema,
   privacySubjectScopeIdSchema,
   type PrivacyAuditEventReference,
   type PrivacyEvidenceReference,
   type PrivacyExpectedProcessorInventory,
   type PrivacyGovernanceLifecycleProofReference,
+  type PrivacyGovernanceLifecycleBinding,
   type PrivacyPolicyPackageReference,
   type PrivacyProcessorDescriptorReference,
   type PrivacyProcessorStepReference,
   type PrivacyPurposeVersionReference,
+  type PrivacyRetentionPreviewRecord,
   type PrivacyRetentionRuleReference,
   type PrivacySubjectRequestReference,
   type PrivacySubjectRequestTransitionReference,
@@ -32,6 +35,7 @@ import type {
   PrivacyDataUsePorts,
   PrivacyExpectedProcessorInventoryPort,
   PrivacyGovernanceLifecycleLedger,
+  PrivacyGovernanceLifecycleBindingVerifier,
   PrivacyIdFactory,
   PrivacyIntegrityVerificationInput,
   PrivacyIntegrityVerificationResult,
@@ -39,6 +43,7 @@ import type {
   PrivacyPolicyPackageRepository,
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
+  PrivacyRetentionPreviewRepository,
   PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
@@ -215,6 +220,57 @@ export class SyntheticPrivacyGovernanceLifecycleLedger implements PrivacyGoverna
     this.byOperationId.set(record.operationId, record);
     return 'accepted' as const;
   }
+}
+
+/**
+ * Disposable composition-owned verifier for exact lifecycle evidence tuples.
+ * Multiple sealed rows for one operation are treated as ambiguous and denied.
+ */
+export class SyntheticPrivacyGovernanceLifecycleBindingVerifier implements PrivacyGovernanceLifecycleBindingVerifier {
+  private readonly byOperationId = new Map<
+    string,
+    PrivacyGovernanceLifecycleBinding[]
+  >();
+  unavailable = false;
+
+  seal(input: unknown): void {
+    const binding = privacyGovernanceLifecycleBindingSchema.parse(input);
+    const existing = this.byOperationId.get(binding.operationId) ?? [];
+    this.byOperationId.set(binding.operationId, [...existing, binding]);
+  }
+
+  async verify(input: PrivacyGovernanceLifecycleBinding) {
+    if (this.unavailable) {
+      return { status: 'unavailable' as const };
+    }
+
+    const candidates = this.byOperationId.get(input.operationId) ?? [];
+    if (candidates.length !== 1) {
+      return { status: 'invalid' as const };
+    }
+
+    const [binding] = candidates;
+    if (binding === undefined || !sameLifecycleBinding(binding, input)) {
+      return { status: 'invalid' as const };
+    }
+
+    return { status: 'verified' as const, binding };
+  }
+}
+
+function sameLifecycleBinding(
+  expected: PrivacyGovernanceLifecycleBinding,
+  actual: PrivacyGovernanceLifecycleBinding,
+): boolean {
+  return (
+    expected.requestId === actual.requestId &&
+    expected.processorId === actual.processorId &&
+    expected.operationId === actual.operationId &&
+    expected.result.outcome === actual.result.outcome &&
+    (expected.result.outcome === 'denied' ||
+      (actual.result.outcome !== 'denied' &&
+        expected.result.proofId === actual.result.proofId))
+  );
 }
 
 export class SyntheticPrivacyRetentionRuleRepository implements PrivacyRetentionRuleRepository {
@@ -567,6 +623,32 @@ export class SyntheticPrivacyAttributionVerifier implements PrivacyAttributionVe
     }
 
     return { status: 'attributed' };
+  }
+}
+
+/**
+ * In-memory retention preview evidence, keyed by the deterministic
+ * `selectionDigest`. A digest is accepted at most once — a repeat `put` is a
+ * conflict rather than a silent overwrite, matching persisted append-only
+ * evidence elsewhere in this domain.
+ */
+export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetentionPreviewRepository {
+  private readonly previews = new Map<string, PrivacyRetentionPreviewRecord>();
+
+  async getBySelectionDigest(
+    selectionDigest: string,
+  ): Promise<PrivacyRetentionPreviewRecord | null> {
+    return this.previews.get(selectionDigest) ?? null;
+  }
+
+  async put(
+    record: PrivacyRetentionPreviewRecord,
+  ): Promise<'accepted' | 'conflict'> {
+    if (this.previews.has(record.selectionDigest)) {
+      return 'conflict';
+    }
+    this.previews.set(record.selectionDigest, record);
+    return 'accepted';
   }
 }
 
