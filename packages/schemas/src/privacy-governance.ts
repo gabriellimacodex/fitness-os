@@ -838,6 +838,20 @@ export type PrivacyGovernanceLifecycleProofReference = z.infer<
   typeof privacyGovernanceLifecycleProofReferenceSchema
 >;
 
+/**
+ * Exact, server-sealed authority fields required before a lifecycle proof may
+ * be appended. The client may present the same tuple, but it is never trusted
+ * unless a composition-owned verifier resolves one unambiguous match.
+ */
+export const privacyGovernanceLifecycleBindingSchema =
+  privacyGovernanceLifecycleProofReferenceSchema.omit({
+    recordedAt: true,
+    synthetic: true,
+  });
+export type PrivacyGovernanceLifecycleBinding = z.infer<
+  typeof privacyGovernanceLifecycleBindingSchema
+>;
+
 export const privacyProcessorInventorySchemaVersionSchema = z.literal(
   'privacy.processor-inventory.v1',
 );
@@ -1537,6 +1551,38 @@ export type PrivacySyntheticRetentionExecutionAuthorizeResponse = z.infer<
 >;
 
 /**
+ * Persisted retention preview evidence. Keyed by the deterministic
+ * `selectionDigest` already computed by `planRetentionPreview` — a preview is
+ * immutable once accepted; `status` moves `planned` → `executed` exactly once.
+ * Disposable/synthetic only until `LEGAL_PRIVACY_DECISION_REQUIRED` clears.
+ */
+export const privacyRetentionPreviewStatusSchema = z.enum([
+  'planned',
+  'executed',
+]);
+export type PrivacyRetentionPreviewStatus = z.infer<
+  typeof privacyRetentionPreviewStatusSchema
+>;
+
+export const privacyRetentionPreviewRecordSchema = z
+  .object({
+    selectionDigest: privacySha256DigestSchema,
+    policyVersionId: privacyPolicyVersionIdSchema,
+    inventoryVersionDigest: privacySha256DigestSchema,
+    processorDescriptorDigests: z.array(privacySha256DigestSchema).max(64),
+    watermark: privacyTrustedUtcMsSchema,
+    approvedExceptionIds: privacyApprovedExceptionIdsSchema,
+    synthetic: z.literal(true),
+    status: privacyRetentionPreviewStatusSchema,
+    createdAt: privacyTrustedUtcMsSchema,
+    executedAt: privacyTrustedUtcMsSchema.nullable(),
+  })
+  .strict();
+export type PrivacyRetentionPreviewRecord = z.infer<
+  typeof privacyRetentionPreviewRecordSchema
+>;
+
+/**
  * Disposable synthetic API pinning the exact processor plan for a subject-
  * request type against a reviewed expected inventory. Read-only; never
  * mutates a request, step, or evidence row.
@@ -1647,6 +1693,29 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
   .strict();
 export type PrivacySyntheticProcessorStepRecordResponse = z.infer<
   typeof privacySyntheticProcessorStepRecordResponseSchema
+>;
+
+/**
+ * Disposable synthetic API to append one governance-lifecycle proof record
+ * behind `allowSyntheticPrivacy`. Recording a row is not authorization to
+ * execute a governance-lifecycle command; that remains a separately gated
+ * concern under `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ */
+export const privacySyntheticGovernanceLifecycleRecordRequestSchema = z
+  .object(privacyGovernanceLifecycleBindingSchema.shape)
+  .strict();
+export type PrivacySyntheticGovernanceLifecycleRecordRequest = z.infer<
+  typeof privacySyntheticGovernanceLifecycleRecordRequestSchema
+>;
+
+export const privacySyntheticGovernanceLifecycleRecordResponseSchema = z
+  .object({
+    status: z.enum(['recorded', 'conflict']),
+    proof: privacyGovernanceLifecycleProofReferenceSchema,
+  })
+  .strict();
+export type PrivacySyntheticGovernanceLifecycleRecordResponse = z.infer<
+  typeof privacySyntheticGovernanceLifecycleRecordResponseSchema
 >;
 
 /**
