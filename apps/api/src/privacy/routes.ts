@@ -8,6 +8,8 @@ import {
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAuthorizationEvidenceLedger,
+  SyntheticPrivacyGovernanceLifecycleLedger,
+  SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyIdFactory,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
@@ -19,11 +21,14 @@ import {
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
+  type PrivacyGovernanceLifecycleLedger,
+  type PrivacyGovernanceLifecycleBindingVerifier,
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
+  type PrivacyRetentionPreviewRepository,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacySubjectDataProcessorResolver,
@@ -31,10 +36,13 @@ import {
 } from '@fitness-os/domain';
 import {
   apiErrorResponseSchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
   privacyReadinessResultSchema,
   privacySyntheticDataUseEvaluateRequestSchema,
   privacySyntheticDataUseEvaluateResponseSchema,
   privacySyntheticExpectedInventoryResponseSchema,
+  privacySyntheticGovernanceLifecycleRecordRequestSchema,
+  privacySyntheticGovernanceLifecycleRecordResponseSchema,
   privacySyntheticInventoryCoverageRequestSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
@@ -54,6 +62,7 @@ import {
   privacySyntheticWithdrawalPlanRequestSchema,
   privacySyntheticWithdrawalPlanResponseSchema,
   type ApiErrorCode,
+  type PrivacyGovernanceLifecycleBinding,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -86,6 +95,18 @@ export interface PrivacySyntheticOptions {
    * registration.
    */
   processorSteps?: PrivacyProcessorStepRepository;
+  /**
+   * Optional disposable governance-lifecycle proof ledger (e.g. Postgres).
+   * Defaults to an in-memory synthetic ledger shared for the lifetime of
+   * this route registration. Recording a row is not authorization to
+   * execute a governance-lifecycle command.
+   */
+  governanceLifecycle?: PrivacyGovernanceLifecycleLedger;
+  /**
+   * Composition-owned verifier for the exact request/processor/operation/result
+   * tuple. Defaults to an empty fail-closed verifier.
+   */
+  governanceLifecycleVerifier?: PrivacyGovernanceLifecycleBindingVerifier;
   /**
    * Optional disposable evidence ledger (e.g. Postgres). When omitted, the
    * in-memory synthetic ledger is used and may be seeded from the request body.
@@ -128,6 +149,14 @@ export interface PrivacySyntheticOptions {
    * Optional attribution verifier for opaque synthetic actor/subject bindings.
    */
   attributionVerifier?: PrivacyAttributionVerifier;
+  /**
+   * Optional disposable retention preview repository (e.g. Postgres). When
+   * set, a successfully planned retention preview is additionally persisted
+   * keyed by its deterministic `selectionDigest`. The public response shape
+   * is unchanged; consuming the persisted record at execution-authorize time
+   * remains a later composition step.
+   */
+  retentionPreviews?: PrivacyRetentionPreviewRepository;
 }
 
 function sendError(
@@ -147,6 +176,21 @@ function sendError(
         requestId: request.id,
       },
     }),
+  );
+}
+
+function sameGovernanceLifecycleBinding(
+  presented: PrivacyGovernanceLifecycleBinding,
+  trusted: PrivacyGovernanceLifecycleBinding,
+): boolean {
+  return (
+    presented.requestId === trusted.requestId &&
+    presented.processorId === trusted.processorId &&
+    presented.operationId === trusted.operationId &&
+    presented.result.outcome === trusted.result.outcome &&
+    (presented.result.outcome === 'denied' ||
+      (trusted.result.outcome !== 'denied' &&
+        presented.result.proofId === trusted.result.proofId))
   );
 }
 
@@ -242,6 +286,12 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const processorSteps =
     options.processorSteps ?? new SyntheticPrivacyProcessorStepRepository();
+  const governanceLifecycle =
+    options.governanceLifecycle ??
+    new SyntheticPrivacyGovernanceLifecycleLedger();
+  const governanceLifecycleVerifier =
+    options.governanceLifecycleVerifier ??
+    new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;
@@ -249,6 +299,7 @@ export function registerPrivacySyntheticRoutes(
   const expectedInventory = options.expectedInventory;
   const processors = options.processors;
   const readiness = options.readiness;
+  const retentionPreviews = options.retentionPreviews;
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -614,6 +665,18 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      if (retentionPreviews !== undefined) {
+        // Idempotent write-through: replanning the identical input yields the
+        // identical selectionDigest, so a 'conflict' here is an expected
+        // no-op, not an error to surface to the caller.
+        await retentionPreviews.put({
+          ...result.preview,
+          status: 'planned',
+          createdAt: clock.nowUtcMs(),
+          executedAt: null,
+        });
+      }
+
       return privacySyntheticRetentionPreviewResponseSchema.parse({
         status: 'planned',
         preview: result.preview,
@@ -731,6 +794,127 @@ export function registerPrivacySyntheticRoutes(
         status: result.status,
         completion: result.completion,
         request: result.request,
+      });
+    },
+  );
+
+  app.post(
+    '/v1/privacy/synthetic/governance-lifecycle-record',
+    async (request, reply) => {
+      const body =
+        privacySyntheticGovernanceLifecycleRecordRequestSchema.safeParse(
+          request.body,
+        );
+
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+
+      let verification;
+      try {
+        verification = await governanceLifecycleVerifier.verify(body.data);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle binding verification unavailable',
+        );
+      }
+
+      if (verification.status === 'unavailable') {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle binding verification unavailable',
+        );
+      }
+
+      if (
+        verification.status === 'invalid' ||
+        !sameGovernanceLifecycleBinding(body.data, verification.binding)
+      ) {
+        return sendError(
+          request,
+          reply,
+          400,
+          'BAD_REQUEST',
+          'Lifecycle binding invalid',
+        );
+      }
+
+      const record = {
+        ...verification.binding,
+        recordedAt: clock.nowUtcMs(),
+        synthetic: true,
+      };
+
+      let status;
+      try {
+        status = await governanceLifecycle.append(record);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Lifecycle proof ledger unavailable',
+        );
+      }
+
+      if (status === 'conflict') {
+        let existing;
+        try {
+          existing = await governanceLifecycle.getByOperationId(
+            verification.binding.operationId,
+          );
+        } catch {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger unavailable',
+          );
+        }
+        if (existing === null) {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger inconsistent',
+          );
+        }
+
+        const stored =
+          privacyGovernanceLifecycleProofReferenceSchema.safeParse(existing);
+        if (
+          !stored.success ||
+          stored.data.synthetic !== true ||
+          !sameGovernanceLifecycleBinding(verification.binding, stored.data)
+        ) {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Lifecycle proof ledger inconsistent',
+          );
+        }
+
+        return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
+          status: 'conflict',
+          proof: stored.data,
+        });
+      }
+
+      return privacySyntheticGovernanceLifecycleRecordResponseSchema.parse({
+        status: 'recorded',
+        proof: record,
       });
     },
   );
