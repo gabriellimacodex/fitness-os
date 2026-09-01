@@ -31,6 +31,7 @@ export {
   privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
+  privacyRetentionRule,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,
