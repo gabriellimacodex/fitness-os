@@ -8,6 +8,7 @@ import type {
   PrivacyEvidenceReference,
   PrivacyExpectedProcessorInventory,
   PrivacyGovernanceLifecycleProofReference,
+  PrivacyGovernanceLifecycleBinding,
   PrivacyOperationId,
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
@@ -100,6 +101,25 @@ export interface PrivacyGovernanceLifecycleLedger {
   append(
     record: PrivacyGovernanceLifecycleProofReference,
   ): Promise<PrivacyGovernanceLifecycleAppendResult>;
+}
+
+export type PrivacyGovernanceLifecycleBindingVerificationResult =
+  | {
+      status: 'verified';
+      binding: PrivacyGovernanceLifecycleBinding;
+    }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+/**
+ * Resolves a caller-presented lifecycle tuple against sealed execution or
+ * coordinator evidence. A verifier must fail closed for missing, mismatched,
+ * or ambiguous evidence; the presented tuple is never authority by itself.
+ */
+export interface PrivacyGovernanceLifecycleBindingVerifier {
+  verify(
+    input: PrivacyGovernanceLifecycleBinding,
+  ): Promise<PrivacyGovernanceLifecycleBindingVerificationResult>;
 }
 
 /**
