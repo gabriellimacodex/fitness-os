@@ -2347,18 +2347,9 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     base: Pick<AdvanceInput, 'requests' | 'steps'>,
     overrides: Partial<Omit<AdvanceInput, 'requests' | 'steps'>> = {},
   ): AdvanceInput => ({
-    correlationId: privacyCorrelationIdSchema.parse(
-      '55555555-5555-4555-8555-555555555555',
-    ),
     expected: expectedOnePair,
-    operationId: privacyOperationIdSchema.parse(
-      'b2222222-2222-4222-8222-222222222222',
-    ),
     productionMode: false,
     step: step(),
-    transitionId: privacySubjectRequestTransitionIdSchema.parse(
-      'a1111111-1111-4111-8111-111111111111',
-    ),
     updatedAt: '2026-08-18T12:03:00.000Z',
     ...base,
     ...overrides,
@@ -2507,14 +2498,7 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     expect(first.status).toBe('advanced');
 
     const replay = await recordProcessorStepAndAdvanceRequest(
-      advanceInput(
-        { requests, steps },
-        {
-          transitionId: privacySubjectRequestTransitionIdSchema.parse(
-            'c3333333-3333-4333-8333-333333333333',
-          ),
-        },
-      ),
+      advanceInput({ requests, steps }),
     );
 
     expect(replay).toMatchObject({
@@ -2547,6 +2531,47 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     expect(result.request.state).toBe('completed');
     await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
   });
+
+  it.each([
+    {
+      field: 'outcome',
+      changedStep: step({ outcome: 'permanent_failure' }),
+    },
+    {
+      field: 'operationId',
+      changedStep: step({
+        operationId: privacyOperationIdSchema.parse(
+          'd4444444-4444-4444-8444-444444444444',
+        ),
+      }),
+    },
+    {
+      field: 'processor pair',
+      changedStep: step({
+        processorId: privacyProcessorIdSchema.parse(processorB),
+        capability: 'access',
+      }),
+    },
+  ])(
+    'does not recover a dropped transition when reused stepId changes $field',
+    async ({ changedStep }) => {
+      const requests = new SyntheticPrivacySubjectRequestRepository();
+      requests.seedForTest(requestInState('in_progress'));
+      const steps = new SyntheticPrivacyProcessorStepRepository();
+      await steps.append(step());
+
+      const result = await recordProcessorStepAndAdvanceRequest(
+        advanceInput({ requests, steps }, { step: changedStep }),
+      );
+
+      expect(result).toMatchObject({ status: 'step_conflict' });
+      await expect(requests.get(requestId)).resolves.toMatchObject({
+        state: 'in_progress',
+      });
+      await expect(requests.listTransitions(requestId)).resolves.toEqual([]);
+      await expect(steps.listForRequest(requestId)).resolves.toEqual([step()]);
+    },
+  );
 
   it('still reports step_conflict when a replayed step needs no transition', async () => {
     // The request is not yet executing, so neither the original call nor a

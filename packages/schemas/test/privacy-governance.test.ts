@@ -1380,9 +1380,6 @@ describe('synthetic processor-step record contracts', () => {
   };
   const validRequest = {
     step,
-    transitionId: 'a1111111-1111-4111-8111-111111111111',
-    operationId: 'b2222222-2222-4222-8222-222222222222',
-    correlationId: '55555555-5555-4555-8555-555555555555',
     productionMode: false,
   };
 
@@ -1428,12 +1425,21 @@ describe('synthetic processor-step record contracts', () => {
     ).toBe(false);
   });
 
-  it('rejects a request missing the transition envelope', () => {
+  it.each(['transitionId', 'operationId', 'correlationId'] as const)(
+    'rejects caller-supplied transition envelope field %s',
+    (field) => {
+      expect(
+        privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+          ...validRequest,
+          [field]: 'a1111111-1111-4111-8111-111111111111',
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('rejects a request missing the processor step', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse({
-        step,
-        operationId: validRequest.operationId,
-        correlationId: validRequest.correlationId,
         productionMode: false,
       }).success,
     ).toBe(false);

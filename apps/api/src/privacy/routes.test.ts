@@ -2537,15 +2537,6 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
 
   const basePayload = (overrides: Record<string, unknown> = {}) => ({
     step: step(),
-    transitionId: privacySubjectRequestTransitionIdSchema.parse(
-      'a1111111-1111-4111-8111-111111111111',
-    ),
-    operationId: privacyOperationIdSchema.parse(
-      'b2222222-2222-4222-8222-222222222222',
-    ),
-    correlationId: privacyCorrelationIdSchema.parse(
-      '55555555-5555-4555-8555-555555555555',
-    ),
     productionMode: false,
     ...overrides,
   });
@@ -2730,52 +2721,38 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     await app.close();
   });
 
-  it.each([
-    {
-      field: 'step correlation',
+  it('rejects step correlation that differs from the pinned request', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
       payload: basePayload({
         step: step({
           correlationId: '77777777-7777-4777-8777-777777777777',
         }),
       }),
-    },
-    {
-      field: 'transition correlation',
-      payload: basePayload({
-        correlationId: '77777777-7777-4777-8777-777777777777',
-      }),
-    },
-  ])(
-    'rejects $field that differs from the pinned request',
-    async ({ payload }) => {
-      const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
-      subjectRequests.seedForTest(seedRequest('in_progress'));
-      const processorSteps = new SyntheticPrivacyProcessorStepRepository();
-      const app = buildApp(
-        { logger: false },
-        {
-          allowSyntheticPrivacy: true,
-          privacy: {
-            expectedInventory: stepInventory([processorA]),
-            processorSteps,
-            subjectRequests: subjectRequests as never,
-          },
-        },
-      );
+    });
 
-      const response = await app.inject({
-        method: 'POST',
-        url: '/v1/privacy/synthetic/processor-step-record',
-        payload,
-      });
-
-      expect(response.json()).toEqual({ status: 'binding_mismatch' });
-      await expect(
-        processorSteps.listForRequest(stepRequestId),
-      ).resolves.toEqual([]);
-      await app.close();
-    },
-  );
+    expect(response.json()).toEqual({ status: 'binding_mismatch' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
 
   it('returns 503 without appending when the trusted clock is unavailable', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
@@ -2843,7 +2820,12 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       status: 'advanced',
       completion: 'completed',
       request: { state: 'completed' },
-      transition: { nextState: 'completed' },
+      transition: {
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        nextState: 'completed',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        transitionId: 'e1111111-1111-4111-8111-111111111111',
+      },
     });
 
     await app.close();

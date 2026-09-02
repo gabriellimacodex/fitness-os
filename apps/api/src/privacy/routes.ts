@@ -956,10 +956,7 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
-      if (
-        body.data.step.correlationId !== subjectRequest.correlationId ||
-        body.data.correlationId !== subjectRequest.correlationId
-      ) {
+      if (body.data.step.correlationId !== subjectRequest.correlationId) {
         return privacySyntheticProcessorStepRecordResponseSchema.parse({
           status: 'binding_mismatch',
         });
@@ -1025,9 +1022,6 @@ export function registerPrivacySyntheticRoutes(
           step: { ...body.data.step, recordedAt },
           expected: plan.steps,
           updatedAt: recordedAt,
-          transitionId: body.data.transitionId,
-          operationId: body.data.operationId,
-          correlationId: body.data.correlationId,
           productionMode: false,
         });
       } catch {
