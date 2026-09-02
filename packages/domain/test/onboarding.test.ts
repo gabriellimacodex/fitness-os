@@ -229,6 +229,39 @@ describe('claim eligibility', () => {
       }),
     ).toEqual({ status: 'allowed' });
   });
+
+  it('hard-disables a same-role reclaim identically to a second role', () => {
+    expect(
+      evaluateClaimEligibility({
+        alreadyMappedRoles: ['student'],
+        invitationPurpose: 'student_onboarding',
+        proposedRole: 'student',
+        targetCoachIsSelf: false,
+      }),
+    ).toEqual({ reason: 'second_role', status: 'hard_disabled' });
+  });
+
+  it('allows a coach_bootstrap claim even when the invitation targets the claimant', () => {
+    expect(
+      evaluateClaimEligibility({
+        alreadyMappedRoles: [],
+        invitationPurpose: 'coach_bootstrap',
+        proposedRole: 'coach',
+        targetCoachIsSelf: true,
+      }),
+    ).toEqual({ status: 'allowed' });
+  });
+
+  it('allows an unmapped principal to claim a coach role', () => {
+    expect(
+      evaluateClaimEligibility({
+        alreadyMappedRoles: [],
+        invitationPurpose: 'coach_bootstrap',
+        proposedRole: 'coach',
+        targetCoachIsSelf: false,
+      }),
+    ).toEqual({ status: 'allowed' });
+  });
 });
 
 describe('invitation inspection', () => {

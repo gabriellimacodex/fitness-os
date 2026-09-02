@@ -10,10 +10,6 @@ export function evaluateClaimEligibility(input: {
   invitationPurpose: 'coach_bootstrap' | 'student_onboarding';
   targetCoachIsSelf: boolean;
 }): ClaimDenial {
-  if (input.alreadyMappedRoles.includes(input.proposedRole)) {
-    return { reason: 'second_role', status: 'hard_disabled' };
-  }
-
   if (input.alreadyMappedRoles.length > 0) {
     return { reason: 'second_role', status: 'hard_disabled' };
   }
