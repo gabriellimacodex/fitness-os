@@ -1377,23 +1377,42 @@ describe('synthetic processor-step record contracts', () => {
     outcome: 'completed',
     operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     correlationId: '55555555-5555-4555-8555-555555555555',
-    recordedAt: '2026-08-18T12:02:00.000Z',
   };
   const validRequest = {
     step,
-    expected: [
-      {
-        processorId: '99999999-9999-4999-8999-999999999999',
-        capability: 'export',
-      },
-    ],
     transitionId: 'a1111111-1111-4111-8111-111111111111',
     operationId: 'b2222222-2222-4222-8222-222222222222',
     correlationId: '55555555-5555-4555-8555-555555555555',
     productionMode: false,
   };
 
-  it('accepts a strict request pairing a step with its expected pairs and transition envelope', () => {
+  it('rejects a caller-supplied expected processor plan', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        expected: [
+          {
+            processorId: '99999999-9999-4999-8999-999999999999',
+            capability: 'export',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a caller-supplied processor-step timestamp', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        step: {
+          ...validRequest.step,
+          recordedAt: '2026-08-18T12:02:00.000Z',
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a strict request pairing a step with its transition envelope', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse(validRequest)
         .success,
@@ -1409,20 +1428,10 @@ describe('synthetic processor-step record contracts', () => {
     ).toBe(false);
   });
 
-  it('rejects a request missing the expected set or transition envelope', () => {
+  it('rejects a request missing the transition envelope', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse({
         step,
-        transitionId: validRequest.transitionId,
-        operationId: validRequest.operationId,
-        correlationId: validRequest.correlationId,
-        productionMode: false,
-      }).success,
-    ).toBe(false);
-    expect(
-      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
-        step,
-        expected: validRequest.expected,
         operationId: validRequest.operationId,
         correlationId: validRequest.correlationId,
         productionMode: false,
@@ -1487,6 +1496,18 @@ describe('synthetic processor-step record contracts', () => {
         status: 'request_not_found',
       }),
     ).toEqual({ status: 'request_not_found' });
+  });
+
+  it.each([
+    'binding_mismatch',
+    'plan_unavailable',
+    'inventory_mismatch',
+    'plan_incomplete',
+    'step_not_planned',
+  ] as const)('accepts the fail-closed %s response', (status) => {
+    expect(
+      privacySyntheticProcessorStepRecordResponseSchema.parse({ status }),
+    ).toEqual({ status });
   });
 
   it('accepts an invalid_transition response carrying a closed reason', () => {

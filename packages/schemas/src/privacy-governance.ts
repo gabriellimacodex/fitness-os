@@ -1673,25 +1673,16 @@ export type PrivacySyntheticProcessorPlanResponse = z.infer<
 
 /**
  * Disposable synthetic API to append one append-only processor-step attempt
- * and, only when the full expected (processorId, capability) set is now
- * terminal, advance the subject request through its own state machine. A
- * replay of the exact same `step.stepId` still evaluates and, if needed,
- * attempts the dropped transition — this is the mechanism-proof seam for
- * partial-failure resume, not a new decision surface.
+ * and, only when the server-derived expected (processorId, capability) plan
+ * is now terminal, advance the subject request through its own state machine.
+ * The route binds correlation metadata to the persisted request and assigns
+ * the trusted step timestamp. A replay of the exact same `step.stepId` still
+ * evaluates and, if needed, attempts the dropped transition — this is the
+ * mechanism-proof seam for partial-failure resume, not a new decision surface.
  */
 export const privacySyntheticProcessorStepRecordRequestSchema = z
   .object({
-    step: privacyProcessorStepReferenceSchema,
-    expected: z
-      .array(
-        z
-          .object({
-            processorId: privacyProcessorIdSchema,
-            capability: privacyProcessorCapabilitySchema,
-          })
-          .strict(),
-      )
-      .max(128),
+    step: privacyProcessorStepReferenceSchema.omit({ recordedAt: true }),
     transitionId: privacySubjectRequestTransitionIdSchema,
     operationId: privacyOperationIdSchema,
     correlationId: privacyCorrelationIdSchema,
@@ -1712,6 +1703,12 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
       'invalid_transition',
       'transition_conflict',
       'request_not_found',
+      'binding_mismatch',
+      'plan_unavailable',
+      'inventory_mismatch',
+      'plan_incomplete',
+      'step_not_planned',
+      'hard_disabled',
     ]),
     completion: z
       .enum(['incomplete', 'completed', 'partially_failed'])
@@ -1725,6 +1722,7 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
         'synthetic_verification_in_production',
         'terminal_state',
         'not_found',
+        'production_path',
       ])
       .optional(),
   })
