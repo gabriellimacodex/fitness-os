@@ -28,7 +28,7 @@ const policy = privacyPolicyPackageReferenceSchema.parse({
 const request = privacySubjectRequestReferenceSchema.parse({
   requestId: '66666666-6666-4666-8666-666666666666',
   requestType: 'export',
-  state: 'in_progress',
+  state: 'received',
   subjectScopeId: '22222222-2222-4222-8222-222222222222',
   verification: null,
   policyVersionId: policy.versionId,
