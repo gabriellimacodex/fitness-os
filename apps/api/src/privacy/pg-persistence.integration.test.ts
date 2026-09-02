@@ -16,6 +16,7 @@ import {
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionReceiptSchema,
   privacyProcessorIdSchema,
   privacyPurposeVersionReferenceSchema,
   privacySubjectRequestIdSchema,
@@ -632,6 +633,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           privacy: {
             expectedInventory: processorStepInventory,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            processorExecutionReceipts: {
+              listByOperationId: async () => [
+                privacyProcessorExecutionReceiptSchema.parse({
+                  requestId,
+                  processorId: processor.processorId,
+                  capability: 'export',
+                  outcome: 'completed',
+                  operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+                  correlationId,
+                }),
+              ],
+            },
             subjectRequests: persistence.subjectRequests,
             processorSteps: persistence.processorSteps,
           },
@@ -648,7 +661,6 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             requestId,
             processorId,
             capability: 'export',
-            outcome: 'completed',
             operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
             correlationId,
           },

@@ -1,8 +1,14 @@
-import type { PrivacyGovernanceLifecycleBinding } from '@fitness-os/schemas';
+import {
+  privacyProcessorExecutionReceiptSchema,
+  type PrivacyGovernanceLifecycleBinding,
+  type PrivacyProcessorExecutionBinding,
+  type PrivacyProcessorExecutionReceipt,
+} from '@fitness-os/schemas';
 
 import type {
   PrivacyGovernanceExecutionReceiptSource,
   PrivacyGovernanceLifecycleBindingVerifier,
+  PrivacyProcessorExecutionReceiptSource,
 } from './ports.js';
 
 function sameBinding(
@@ -45,6 +51,54 @@ export function createPrivacyGovernanceExecutionReceiptVerifier(
       }
 
       return { binding: receipt, status: 'verified' };
+    },
+  };
+}
+
+const sameProcessorExecutionBinding = (
+  expected: PrivacyProcessorExecutionReceipt,
+  presented: PrivacyProcessorExecutionBinding,
+): boolean =>
+  expected.requestId === presented.requestId &&
+  expected.processorId === presented.processorId &&
+  expected.capability === presented.capability &&
+  expected.operationId === presented.operationId &&
+  expected.correlationId === presented.correlationId;
+
+export type PrivacyProcessorExecutionReceiptVerificationResult =
+  | { status: 'verified'; receipt: PrivacyProcessorExecutionReceipt }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+/** Resolves one exact processor outcome from an independent receipt source. */
+export function createPrivacyProcessorExecutionReceiptVerifier(
+  source: PrivacyProcessorExecutionReceiptSource,
+): {
+  verify(
+    input: PrivacyProcessorExecutionBinding,
+  ): Promise<PrivacyProcessorExecutionReceiptVerificationResult>;
+} {
+  return {
+    verify: async (presented) => {
+      let receipts: readonly PrivacyProcessorExecutionReceipt[];
+      try {
+        receipts = await source.listByOperationId(presented.operationId);
+      } catch {
+        return { status: 'unavailable' };
+      }
+      if (!Array.isArray(receipts) || receipts.length !== 1) {
+        return { status: 'invalid' };
+      }
+      const parsed = privacyProcessorExecutionReceiptSchema.safeParse(
+        receipts[0],
+      );
+      if (
+        !parsed.success ||
+        !sameProcessorExecutionBinding(parsed.data, presented)
+      ) {
+        return { status: 'invalid' };
+      }
+      return { receipt: parsed.data, status: 'verified' };
     },
   };
 }
