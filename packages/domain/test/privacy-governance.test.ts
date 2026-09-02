@@ -2701,6 +2701,66 @@ describe('retention preview and execution gates', () => {
       status: 'hard_disabled',
       reason: 'synthetic_fixtures_required',
     });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: false,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'synthetic_fixtures_required',
+    });
+  });
+
+  it('hard-disables execution against an already-executed or expired preview', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: true,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: true,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+  });
+
+  it('hard-disables execution when the reviewed preview digest no longer matches', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: false,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_mismatch',
+    });
   });
 });
 
