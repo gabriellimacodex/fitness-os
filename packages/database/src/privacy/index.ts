@@ -7,6 +7,7 @@ export {
   privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
+  privacyRetentionRule,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,
@@ -26,7 +27,10 @@ export {
   createPostgresPrivacyRuntimeProcessorRegistry,
 } from './registries.js';
 export { createPostgresPrivacySubjectRequestRepository } from './subject-request.js';
-export { createPostgresPrivacyRetentionPreviewRepository } from './retention.js';
+export {
+  createPostgresPrivacyRetentionPreviewRepository,
+  createPostgresPrivacyRetentionRuleRepository,
+} from './retention.js';
 export { createPostgresPrivacyProcessorStepRepository } from './processor-step.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
