@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `68e973c8863addab4efb0193188b960dbaad2cae` (integrated progress refresh through #227; disposition unchanged)
-- Prior recorded heads: `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `c4d4d77033748d5a82b915dd34fece024d78f049` (integrated progress refresh through #230; disposition unchanged)
+- Prior recorded heads: `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-09-02` (landed-evidence refresh only; includes #209/#217–#227)
+- Record timestamp: `2026-09-02` (landed-evidence refresh only; includes #209/#217–#230)
 
 ## Explicit non-claims
 
@@ -88,6 +88,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | PG lifecycle binding verifier             | `#221` (exact post-persistence proof lookup; not a pre-append authority when pointed at the same target lifecycle ledger)        |
 | Rule-aware preview API composition        | `#222` (optional explicit rule selection; unseeded default remains fail-closed)                                                  |
 | Persisted-preview execution authorization | `#225`, `#227` (persisted state/TTL plus trusted current inventory and processor digests; route composition remains open)        |
+| Independent execution-receipt source      | `#230` (optional read-only source and fail-closed verifier composition before append to a separate lifecycle ledger)             |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -150,11 +151,11 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   exact active-rule selection/evidence binding (#197), fail-closed sealed
   lifecycle-proof recording (#198), retention-rule PG persistence (#217/#227),
   preview-bundle/rule-aware API composition (#218/#222), the PG lifecycle
-  binding verifier (#221), and persisted-preview/current-runtime authorization
-  (#225/#227) landed. A trusted execution/coordinator-backed verifier (or an
-  explicitly separate evidence source) remains required for pre-append route
-  authorization; the target PG lifecycle ledger cannot verify a new row before
-  that row exists. Route-level persisted-preview execution transition and full
+  binding verifier (#221), persisted-preview/current-runtime authorization
+  (#225/#227), and an independent read-only execution/coordinator receipt source
+  for fail-closed pre-append verification (#230) landed. The target PG lifecycle
+  ledger remains the separate append target and cannot authorize its own new row.
+  Route-level persisted-preview execution transition and full
   coordinator semantics across these pieces remain open; H4 is not closed.
 - Privacy DB readiness now replaces the migration/repository components with
   real journal/table evidence (#191); the other readiness components remain
@@ -163,9 +164,8 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   synthetic fixture maps all 14 declared governance record families exactly once
   (#210). Runtime readiness binding, lifecycle-handler coverage, and independently
   reviewed exception semantics remain open; H5 is not closed.
-- Remaining open residual bands: H4 (real PG lifecycle/verifier bootstrap
-  composition, rule-aware API composition, retention-rule persistence,
-  persisted-preview execution binding/transition, coordinator semantics), H5
+- Remaining open residual bands: H4 (route-level persisted-preview execution
+  binding/transition and full coordinator semantics), H5
   (runtime readiness/exceptions), and H6 (not attribution of legal identity).
 - Disposable migration/recovery evidence landed in #209, but package-level
   rollback/forward-correction and destructive retention recovery evidence remain
