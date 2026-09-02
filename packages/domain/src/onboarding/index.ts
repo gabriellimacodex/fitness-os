@@ -15,6 +15,15 @@ export {
   type ProposedRole,
 } from './claim.js';
 export {
+  checkClaimThrottle,
+  DEFAULT_CLAIM_THROTTLE_WINDOW,
+  evaluateClaimThrottle,
+  SyntheticClaimFailureTracker,
+  type ClaimFailureTracker,
+  type ClaimThrottleStatus,
+  type ClaimThrottleWindow,
+} from './claim-throttle.js';
+export {
   claimInvitation,
   inspectInvitationState,
   revokeInvitation,
