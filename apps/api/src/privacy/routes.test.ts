@@ -2592,6 +2592,67 @@ describe('POST /v1/privacy/synthetic/processor-coordinate', () => {
     await app.close();
   });
 
+  it('returns reconciliation_required for a durable unfinished reservation without executing', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let executions = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processorExecutionJournal: {
+            complete: async () => 'conflict',
+            getByOperationId: async () => null,
+            markReconciliationRequired: async () => 'accepted',
+            reserve: async () => ({ status: 'reconciliation_required' }),
+          },
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                executions += 1;
+                throw new Error('must not execute');
+              },
+            }),
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'reconciliation_required' });
+    expect(executions).toBe(0);
+    await app.close();
+  });
+
   it('rejects caller-selected processor, capability, outcome, and step identity', async () => {
     const app = buildSyntheticPrivacyApp();
     const response = await app.inject({

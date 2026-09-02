@@ -337,6 +337,71 @@ export const privacyProcessorStep = pgTable(
 );
 
 /**
+ * Mutable execution ownership journal for synthetic/disposable processors.
+ * Unlike the append-only outcome ledger, this row is reserved before calling
+ * a handler and may only move to a terminal outcome or reconciliation hold.
+ */
+export const privacyProcessorExecutionJournal = pgTable(
+  'privacy_processor_execution_journal',
+  {
+    operationId: uuid('operation_id').primaryKey(),
+    requestId: uuid('request_id').notNull(),
+    processorId: uuid('processor_id').notNull(),
+    capability: text('capability').notNull(),
+    correlationId: uuid('correlation_id').notNull(),
+    bindingDigest: text('binding_digest').notNull(),
+    state: text('state').notNull(),
+    outcome: text('outcome'),
+    reservedAt: timestamp('reserved_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+    completedAt: timestamp('completed_at', {
+      mode: 'string',
+      withTimezone: true,
+    }),
+    synthetic: boolean('synthetic').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.requestId],
+      foreignColumns: [privacySubjectRequest.requestId],
+      name: 'privacy_processor_execution_journal_request_id_fk',
+    }).onDelete('restrict'),
+    check(
+      'privacy_processor_execution_journal_capability_check',
+      sql`${table.capability} IN ('access', 'export', 'delete', 'retention', 'governance_lifecycle')`,
+    ),
+    check(
+      'privacy_processor_execution_journal_binding_digest_check',
+      sql`${table.bindingDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_processor_execution_journal_state_check',
+      sql`${table.state} IN ('reserved', 'completed', 'reconciliation_required')`,
+    ),
+    check(
+      'privacy_processor_execution_journal_outcome_check',
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('completed', 'retryable_failure', 'permanent_failure')`,
+    ),
+    check(
+      'privacy_processor_execution_journal_completion_pair_check',
+      sql`(
+        (${table.state} = 'completed' AND ${table.outcome} IS NOT NULL AND ${table.completedAt} IS NOT NULL) OR
+        (${table.state} IN ('reserved', 'reconciliation_required') AND ${table.outcome} IS NULL AND ${table.completedAt} IS NULL)
+      )`,
+    ),
+    check(
+      'privacy_processor_execution_journal_synthetic_check',
+      sql`${table.synthetic} = true`,
+    ),
+    index('privacy_processor_execution_journal_request_id_idx').on(
+      table.requestId,
+    ),
+  ],
+);
+
+/**
  * Append-only transition history for data-subject requests.
  * DB guards reject UPDATE/DELETE; ordinary role has SELECT/INSERT only.
  */

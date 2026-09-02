@@ -79,6 +79,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'privacy_authorization_evidence',
         'privacy_governance_lifecycle_proof',
         'privacy_policy_package_version',
+        'privacy_processor_execution_journal',
         'privacy_processor_registration',
         'privacy_processor_step',
         'privacy_purpose_version',

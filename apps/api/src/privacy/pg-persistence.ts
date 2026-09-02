@@ -5,6 +5,7 @@ import {
   createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
+  createPostgresPrivacyProcessorExecutionJournal,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRetentionPreviewRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
@@ -16,6 +17,7 @@ import type {
   PrivacyGovernanceLifecycleLedger,
   PrivacyPolicyPackageRepository,
   PrivacyProcessorStepRepository,
+  PrivacyProcessorExecutionJournal,
   PrivacyPurposeRegistry,
   PrivacyRetentionPreviewRepository,
   PrivacyRuntimeProcessorRegistry,
@@ -34,6 +36,7 @@ export type PrivacyPgPersistence = {
   purposes: PrivacyPurposeRegistry;
   processors: PrivacyRuntimeProcessorRegistry;
   processorSteps: PrivacyProcessorStepRepository;
+  processorExecutionJournal: PrivacyProcessorExecutionJournal;
   governanceLifecycle: PrivacyGovernanceLifecycleLedger;
   retentionPreviews: PrivacyRetentionPreviewRepository;
 };
@@ -49,6 +52,8 @@ export function createPrivacyPgPersistence(
     purposes: createPostgresPrivacyPurposeRegistry(connection),
     processors: createPostgresPrivacyRuntimeProcessorRegistry(connection),
     processorSteps: createPostgresPrivacyProcessorStepRepository(connection),
+    processorExecutionJournal:
+      createPostgresPrivacyProcessorExecutionJournal(connection),
     governanceLifecycle:
       createPostgresPrivacyGovernanceLifecycleLedger(connection),
     retentionPreviews:
