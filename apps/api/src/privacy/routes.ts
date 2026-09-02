@@ -2,6 +2,7 @@ import {
   buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
   createPrivacyGovernanceExecutionReceiptVerifier,
+  createPrivacyProcessorExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
   digestRetentionExecutionInput,
   evaluateDataUse,
@@ -31,6 +32,7 @@ import {
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
+  type PrivacyProcessorExecutionReceiptSource,
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRetentionPreviewRepository,
@@ -102,6 +104,11 @@ export interface PrivacySyntheticOptions {
    * registration.
    */
   processorSteps?: PrivacyProcessorStepRepository;
+  /**
+   * Independent read-only evidence for synthetic processor outcomes. Omission,
+   * ambiguity, mismatch, or unavailability prevents every step append.
+   */
+  processorExecutionReceipts?: PrivacyProcessorExecutionReceiptSource;
   /**
    * Optional disposable governance-lifecycle proof ledger (e.g. Postgres).
    * Defaults to an in-memory synthetic ledger shared for the lifetime of
@@ -308,6 +315,12 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const processorSteps =
     options.processorSteps ?? new SyntheticPrivacyProcessorStepRepository();
+  const processorExecutionReceiptVerifier =
+    options.processorExecutionReceipts === undefined
+      ? undefined
+      : createPrivacyProcessorExecutionReceiptVerifier(
+          options.processorExecutionReceipts,
+        );
   const governanceLifecycle =
     options.governanceLifecycle ??
     new SyntheticPrivacyGovernanceLifecycleLedger();
@@ -1011,6 +1024,35 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      if (processorExecutionReceiptVerifier === undefined) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'execution_receipt_unavailable',
+        });
+      }
+
+      const receiptVerification =
+        await processorExecutionReceiptVerifier.verify({
+          requestId: body.data.step.requestId,
+          processorId: body.data.step.processorId,
+          capability: body.data.step.capability,
+          operationId: body.data.step.operationId,
+          correlationId: body.data.step.correlationId,
+        });
+      if (receiptVerification.status === 'unavailable') {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor execution receipt unavailable',
+        );
+      }
+      if (receiptVerification.status === 'invalid') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'execution_receipt_invalid',
+        });
+      }
+
       let result: Awaited<
         ReturnType<typeof recordProcessorStepAndAdvanceRequest>
       >;
@@ -1019,7 +1061,11 @@ export function registerPrivacySyntheticRoutes(
         result = await recordProcessorStepAndAdvanceRequest({
           requests: subjectRequests,
           steps: processorSteps,
-          step: { ...body.data.step, recordedAt },
+          step: {
+            ...body.data.step,
+            outcome: receiptVerification.receipt.outcome,
+            recordedAt,
+          },
           expected: plan.steps,
           updatedAt: recordedAt,
           productionMode: false,

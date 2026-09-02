@@ -816,6 +816,27 @@ export type PrivacyProcessorStepReference = z.infer<
 >;
 
 /**
+ * Read-only execution/coordinator evidence for one processor operation. This
+ * is structurally separate from the append-only processor-step record: the
+ * route resolves one exact receipt before it assigns the trusted timestamp
+ * and records the authoritative outcome under the requested stepId.
+ */
+export const privacyProcessorExecutionReceiptSchema =
+  privacyProcessorStepReferenceSchema.omit({
+    stepId: true,
+    recordedAt: true,
+  });
+export type PrivacyProcessorExecutionReceipt = z.infer<
+  typeof privacyProcessorExecutionReceiptSchema
+>;
+
+export const privacyProcessorExecutionBindingSchema =
+  privacyProcessorExecutionReceiptSchema.omit({ outcome: true });
+export type PrivacyProcessorExecutionBinding = z.infer<
+  typeof privacyProcessorExecutionBindingSchema
+>;
+
+/**
  * Append-only governance-lifecycle proof ledger record. Wraps the frozen
  * `governanceLifecycleResultSchema` outcome/proofId rule (Option A) with the
  * minimum association metadata needed to locate a proof — never the
@@ -1676,14 +1697,18 @@ export type PrivacySyntheticProcessorPlanResponse = z.infer<
  * and, only when the server-derived expected (processorId, capability) plan
  * is now terminal, advance the subject request through its own state machine.
  * The route binds correlation metadata to the persisted request, assigns the
- * trusted step timestamp, and derives the transition identity from the step.
- * A replay of the exact same `step.stepId` still evaluates and, if needed,
- * attempts the dropped transition — this is the mechanism-proof seam for
- * partial-failure resume, not a new decision surface.
+ * trusted step timestamp, resolves the outcome from one independent execution
+ * receipt, and derives the transition identity from the step. A replay of the
+ * exact same `step.stepId` still evaluates and, if needed, attempts the dropped
+ * transition — this is the mechanism-proof seam for partial-failure resume,
+ * not a new decision surface.
  */
 export const privacySyntheticProcessorStepRecordRequestSchema = z
   .object({
-    step: privacyProcessorStepReferenceSchema.omit({ recordedAt: true }),
+    step: privacyProcessorStepReferenceSchema.omit({
+      outcome: true,
+      recordedAt: true,
+    }),
     productionMode: z.boolean(),
   })
   .strict();
@@ -1706,6 +1731,8 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
       'inventory_mismatch',
       'plan_incomplete',
       'step_not_planned',
+      'execution_receipt_unavailable',
+      'execution_receipt_invalid',
       'hard_disabled',
     ]),
     completion: z

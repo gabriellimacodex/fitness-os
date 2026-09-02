@@ -13,6 +13,7 @@ import type {
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
+  PrivacyProcessorExecutionReceipt,
   PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
   PrivacyRetentionPreviewRecord,
@@ -131,6 +132,17 @@ export interface PrivacyGovernanceExecutionReceiptSource {
   listByOperationId(
     operationId: string,
   ): Promise<readonly PrivacyGovernanceLifecycleBinding[]>;
+}
+
+/**
+ * Read-only outcome evidence emitted by an independent synthetic processor or
+ * coordinator. Plural lookup makes missing and ambiguous operation receipts
+ * explicit fail-closed states; this port cannot append processor steps.
+ */
+export interface PrivacyProcessorExecutionReceiptSource {
+  listByOperationId(
+    operationId: string,
+  ): Promise<readonly PrivacyProcessorExecutionReceipt[]>;
 }
 
 /**

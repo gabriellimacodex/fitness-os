@@ -1374,7 +1374,6 @@ describe('synthetic processor-step record contracts', () => {
     requestId: '66666666-6666-4666-8666-666666666666',
     processorId: '99999999-9999-4999-8999-999999999999',
     capability: 'export',
-    outcome: 'completed',
     operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     correlationId: '55555555-5555-4555-8555-555555555555',
   };
@@ -1405,6 +1404,15 @@ describe('synthetic processor-step record contracts', () => {
           ...validRequest.step,
           recordedAt: '2026-08-18T12:02:00.000Z',
         },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a caller-supplied processor outcome', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        step: { ...validRequest.step, outcome: 'completed' },
       }).success,
     ).toBe(false);
   });
@@ -1510,6 +1518,8 @@ describe('synthetic processor-step record contracts', () => {
     'inventory_mismatch',
     'plan_incomplete',
     'step_not_planned',
+    'execution_receipt_unavailable',
+    'execution_receipt_invalid',
   ] as const)('accepts the fail-closed %s response', (status) => {
     expect(
       privacySyntheticProcessorStepRecordResponseSchema.parse({ status }),

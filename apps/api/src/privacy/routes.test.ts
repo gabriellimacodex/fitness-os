@@ -8,6 +8,7 @@ import {
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionReceiptSchema,
   privacyPurposeVersionReferenceSchema,
   privacyExpectedProcessorInventorySchema,
   privacyGovernanceLifecycleBindingSchema,
@@ -2529,10 +2530,24 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     requestId: stepRequestId,
     processorId: processorA,
     capability: 'export',
-    outcome: 'completed',
     operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     correlationId: '55555555-5555-4555-8555-555555555555',
     ...overrides,
+  });
+
+  const executionReceipt = (overrides: Record<string, unknown> = {}) =>
+    privacyProcessorExecutionReceiptSchema.parse({
+      requestId: stepRequestId,
+      processorId: processorA,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      ...overrides,
+    });
+
+  const executionReceipts = (overrides: Record<string, unknown> = {}) => ({
+    listByOperationId: async () => [executionReceipt(overrides)],
   });
 
   const basePayload = (overrides: Record<string, unknown> = {}) => ({
@@ -2569,6 +2584,9 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts({
+            outcome: 'permanent_failure',
+          }),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           expectedInventory: stepInventory([processorA, processorB]),
           processorSteps,
@@ -2596,7 +2614,12 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     });
     await expect(
       processorSteps.listForRequest(stepRequestId),
-    ).resolves.toMatchObject([{ recordedAt: '2026-08-18T12:00:00.000Z' }]);
+    ).resolves.toMatchObject([
+      {
+        outcome: 'permanent_failure',
+        recordedAt: '2026-08-18T12:00:00.000Z',
+      },
+    ]);
 
     await app.close();
   });
@@ -2754,6 +2777,118 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     await app.close();
   });
 
+  it('fails closed without an independent processor execution receipt source', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.json()).toEqual({
+      status: 'execution_receipt_unavailable',
+    });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it.each([
+    ['missing', []],
+    ['ambiguous', [executionReceipt(), executionReceipt()]],
+    [
+      'mismatched',
+      [executionReceipt({ outcome: 'completed', processorId: processorB })],
+    ],
+  ])(
+    'rejects %s independent processor execution evidence before append',
+    async (_case, receipts) => {
+      const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+      subjectRequests.seedForTest(seedRequest('in_progress'));
+      const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            expectedInventory: stepInventory([processorA]),
+            processorExecutionReceipts: {
+              listByOperationId: async () => receipts,
+            },
+            processorSteps,
+            subjectRequests: subjectRequests as never,
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/processor-step-record',
+        payload: basePayload(),
+      });
+
+      expect(response.json()).toEqual({
+        status: 'execution_receipt_invalid',
+      });
+      await expect(
+        processorSteps.listForRequest(stepRequestId),
+      ).resolves.toEqual([]);
+      await app.close();
+    },
+  );
+
+  it('returns 503 without appending when processor receipt evidence is unavailable', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorExecutionReceipts: {
+            listByOperationId: () => {
+              throw new Error('processor receipt unavailable');
+            },
+          },
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
   it('returns 503 without appending when the trusted clock is unavailable', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
     subjectRequests.seedForTest(seedRequest('in_progress'));
@@ -2769,6 +2904,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
             },
           },
           expectedInventory: stepInventory([processorA]),
+          processorExecutionReceipts: executionReceipts(),
           processorSteps,
           subjectRequests: subjectRequests as never,
         },
@@ -2799,6 +2935,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
@@ -2842,6 +2979,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     const processorSteps = new SyntheticPrivacyProcessorStepRepository();
     await processorSteps.append({
       ...step(),
+      outcome: 'completed',
       recordedAt: '2026-08-18T12:02:00.000Z',
     } as never);
     const app = buildApp(
@@ -2849,6 +2987,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
@@ -2887,6 +3026,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
           expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
@@ -2925,6 +3065,9 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
         privacy: {
           clock: { nowUtcMs: unavailable },
           expectedInventory: { getInventory: async () => unavailable() },
+          processorExecutionReceipts: {
+            listByOperationId: async () => unavailable(),
+          },
           processorSteps: {
             append: async () => unavailable(),
             listForRequest: async () => unavailable(),
@@ -2962,6 +3105,25 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-step-record',
       payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+
+  it('rejects a caller-supplied processor outcome at the HTTP boundary', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({
+        step: { ...step(), outcome: 'completed' },
+      }),
     });
 
     expect(response.statusCode).toBe(400);
