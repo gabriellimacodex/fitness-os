@@ -1,10 +1,14 @@
+import { createHash } from 'node:crypto';
+
 import {
+  privacyProcessorExecutionJournalRecordSchema,
   privacyProcessorExecutionReceiptSchema,
   privacyOperationIdSchema,
   privacyProcessorIdSchema,
   privacyProcessorStepIdSchema,
   privacySyntheticProcessorResultSchema,
   type PrivacyExpectedProcessorInventoryEntry,
+  type PrivacyProcessorDescriptorReference,
   type PrivacyProcessorExecutionReceipt,
   type PrivacySyntheticProcessorCommand,
 } from '@fitness-os/schemas';
@@ -19,6 +23,7 @@ import type {
   PrivacyExpectedProcessorInventoryPort,
   PrivacyProcessorExecutionCoordinator,
   PrivacyProcessorExecutionCoordinationResult,
+  PrivacyProcessorExecutionJournal,
   PrivacyProcessorStepRepository,
   PrivacyProcessorExecutionReceiptSource,
   PrivacySubjectRequestRepository,
@@ -30,21 +35,9 @@ const sameExecutionInput = (
   left: ProcessorExecutionInput,
   right: ProcessorExecutionInput,
 ): boolean =>
-  left.requestId === right.requestId &&
-  left.command.processorId === right.command.processorId &&
-  left.command.capability === right.command.capability &&
-  left.command.subjectScopeId === right.command.subjectScopeId &&
-  left.command.correlationId === right.command.correlationId &&
-  left.command.operationId === right.command.operationId &&
-  left.command.productionMode === right.command.productionMode &&
-  left.expected.inventoryVersionDigest ===
-    right.expected.inventoryVersionDigest &&
-  left.expected.processor.processorId ===
-    right.expected.processor.processorId &&
-  left.expected.processor.descriptorDigest ===
-    right.expected.processor.descriptorDigest;
+  digestProcessorExecutionInput(left) === digestProcessorExecutionInput(right);
 
-type ProcessorExecutionInput = {
+export type ProcessorExecutionInput = {
   requestId: string;
   command: PrivacySyntheticProcessorCommand;
   expected: {
@@ -52,6 +45,211 @@ type ProcessorExecutionInput = {
     processor: PrivacyExpectedProcessorInventoryEntry;
   };
 };
+
+export const digestProcessorExecutionInput = (input: ProcessorExecutionInput) =>
+  createHash('sha256')
+    .update(
+      JSON.stringify({
+        canonicalizationVersion: 'privacy-processor-execution-binding.v1',
+        requestId: input.requestId,
+        command: input.command,
+        expected: input.expected,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+
+const descriptorMatchesReviewedInventory = (
+  input: ProcessorExecutionInput,
+  descriptor: PrivacyProcessorDescriptorReference,
+): boolean =>
+  descriptor.processorId === input.command.processorId &&
+  descriptor.inventoryId === input.expected.processor.inventoryId &&
+  descriptor.inventoryVersionDigest === input.expected.inventoryVersionDigest &&
+  descriptor.descriptorDigest === input.expected.processor.descriptorDigest &&
+  descriptor.codeOwner === input.expected.processor.codeOwner &&
+  descriptor.synthetic === true &&
+  descriptor.supportsSubjectLookup === true &&
+  input.expected.processor.synthetic === true &&
+  input.expected.processor.subjectLookupStrategy === 'synthetic_scope_id' &&
+  input.expected.processor.requiredReadiness === 'mechanism_only' &&
+  ['synthetic_only', 'disposable_test'].includes(
+    input.expected.processor.environmentApplicability,
+  ) &&
+  descriptor.capabilities.includes(input.command.capability);
+
+/**
+ * Disposable coordinator with durable operation ownership. It validates the
+ * reviewed handler before reserving, reserves before executing, and treats an
+ * unfinished reservation as ambiguous after restart. Exact completed replays
+ * are served from the journal without invoking the processor again.
+ */
+export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
+  implements
+    PrivacyProcessorExecutionCoordinator,
+    PrivacyProcessorExecutionReceiptSource
+{
+  private readonly operations = new Map<
+    string,
+    {
+      input: ProcessorExecutionInput;
+      result: Promise<PrivacyProcessorExecutionCoordinationResult>;
+    }
+  >();
+
+  constructor(
+    private readonly dependencies: {
+      resolver: PrivacySubjectDataProcessorResolver;
+      journal: PrivacyProcessorExecutionJournal;
+      clock: PrivacyTrustedClock;
+    },
+  ) {}
+
+  async execute(
+    input: ProcessorExecutionInput,
+  ): Promise<PrivacyProcessorExecutionCoordinationResult> {
+    const existing = this.operations.get(input.command.operationId);
+    if (existing !== undefined) {
+      return sameExecutionInput(existing.input, input)
+        ? existing.result
+        : { status: 'conflict' };
+    }
+
+    const result = this.executeOnce(input);
+    this.operations.set(input.command.operationId, { input, result });
+    return result;
+  }
+
+  async listByOperationId(
+    operationId: string,
+  ): Promise<readonly PrivacyProcessorExecutionReceipt[]> {
+    const record =
+      await this.dependencies.journal.getByOperationId(operationId);
+    if (record?.state !== 'completed' || record.outcome === null) return [];
+
+    return [
+      privacyProcessorExecutionReceiptSchema.parse({
+        requestId: record.requestId,
+        processorId: record.processorId,
+        capability: record.capability,
+        outcome: record.outcome,
+        operationId: record.operationId,
+        correlationId: record.correlationId,
+      }),
+    ];
+  }
+
+  private async executeOnce(
+    input: ProcessorExecutionInput,
+  ): Promise<PrivacyProcessorExecutionCoordinationResult> {
+    if (input.command.productionMode) return { status: 'receipt_invalid' };
+
+    let processor;
+    try {
+      processor = await this.dependencies.resolver.resolve(
+        input.command.processorId,
+      );
+    } catch {
+      return { status: 'unavailable' };
+    }
+    if (
+      processor === null ||
+      !descriptorMatchesReviewedInventory(
+        input,
+        processor.descriptorReference(),
+      )
+    ) {
+      return { status: 'handler_missing' };
+    }
+
+    const bindingDigest = digestProcessorExecutionInput(input);
+    const reservation = privacyProcessorExecutionJournalRecordSchema.parse({
+      operationId: input.command.operationId,
+      requestId: input.requestId,
+      processorId: input.command.processorId,
+      capability: input.command.capability,
+      correlationId: input.command.correlationId,
+      bindingDigest,
+      state: 'reserved',
+      outcome: null,
+      reservedAt: this.dependencies.clock.nowUtcMs(),
+      completedAt: null,
+      synthetic: true,
+    });
+
+    let reserveResult;
+    try {
+      reserveResult = await this.dependencies.journal.reserve(reservation);
+    } catch {
+      return { status: 'unavailable' };
+    }
+    if (reserveResult.status === 'conflict') return { status: 'conflict' };
+    if (reserveResult.status === 'reconciliation_required') {
+      return { status: 'reconciliation_required' };
+    }
+    if (reserveResult.status === 'completed') {
+      const completed = privacyProcessorExecutionJournalRecordSchema.safeParse(
+        reserveResult.record,
+      );
+      return completed.success &&
+        completed.data.state === 'completed' &&
+        completed.data.operationId === reservation.operationId &&
+        completed.data.requestId === reservation.requestId &&
+        completed.data.processorId === reservation.processorId &&
+        completed.data.capability === reservation.capability &&
+        completed.data.correlationId === reservation.correlationId &&
+        completed.data.bindingDigest === reservation.bindingDigest
+        ? { status: 'executed' }
+        : { status: 'conflict' };
+    }
+
+    let rawResult;
+    try {
+      rawResult = await processor.execute(input.command);
+    } catch {
+      await this.markAmbiguous(input.command.operationId, bindingDigest);
+      return { status: 'reconciliation_required' };
+    }
+    const parsed = privacySyntheticProcessorResultSchema.safeParse(rawResult);
+    if (
+      !parsed.success ||
+      parsed.data.capability !== input.command.capability ||
+      parsed.data.operationId !== input.command.operationId ||
+      parsed.data.correlationId !== input.command.correlationId
+    ) {
+      await this.markAmbiguous(input.command.operationId, bindingDigest);
+      return { status: 'reconciliation_required' };
+    }
+
+    const completed = privacyProcessorExecutionJournalRecordSchema.parse({
+      ...reservation,
+      state: 'completed',
+      outcome:
+        parsed.data.status === 'completed' ? 'completed' : 'permanent_failure',
+      completedAt: this.dependencies.clock.nowUtcMs(),
+    });
+    try {
+      const completion = await this.dependencies.journal.complete(completed);
+      return completion === 'conflict'
+        ? { status: 'reconciliation_required' }
+        : { status: 'executed' };
+    } catch {
+      await this.markAmbiguous(input.command.operationId, bindingDigest);
+      return { status: 'reconciliation_required' };
+    }
+  }
+
+  private async markAmbiguous(operationId: string, bindingDigest: string) {
+    try {
+      await this.dependencies.journal.markReconciliationRequired(
+        operationId,
+        bindingDigest,
+      );
+    } catch {
+      // The reservation remains fail-closed even if this best-effort marker fails.
+    }
+  }
+}
 
 /**
  * In-process disposable execution authority. It memoizes the promise before
@@ -178,6 +376,7 @@ export type SyntheticProcessorCoordinationResult =
     }
   | { status: 'execution_unavailable' }
   | { status: 'execution_conflict' }
+  | { status: 'reconciliation_required' }
   | { status: 'handler_missing' };
 
 const receiptMatches = (
@@ -310,6 +509,9 @@ export async function coordinateSyntheticProcessorStep(input: {
   }
   if (execution.status === 'receipt_invalid') {
     return { status: 'receipt_invalid' };
+  }
+  if (execution.status === 'reconciliation_required') {
+    return { status: 'reconciliation_required' };
   }
 
   const receiptVerification =

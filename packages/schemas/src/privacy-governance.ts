@@ -837,6 +837,53 @@ export type PrivacyProcessorExecutionBinding = z.infer<
 >;
 
 /**
+ * Durable, synthetic-only reservation for one processor operation. A reserved
+ * row proves that execution may already have started, so it must be reconciled
+ * after a restart rather than executed again automatically.
+ */
+export const privacyProcessorExecutionJournalStateSchema = z.enum([
+  'reserved',
+  'completed',
+  'reconciliation_required',
+]);
+export type PrivacyProcessorExecutionJournalState = z.infer<
+  typeof privacyProcessorExecutionJournalStateSchema
+>;
+
+export const privacyProcessorExecutionJournalRecordSchema = z
+  .object({
+    operationId: privacyOperationIdSchema,
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    capability: privacyProcessorCapabilitySchema,
+    correlationId: privacyCorrelationIdSchema,
+    bindingDigest: privacySha256DigestSchema,
+    state: privacyProcessorExecutionJournalStateSchema,
+    outcome: privacyProcessorStepOutcomeSchema.nullable(),
+    reservedAt: privacyTrustedUtcMsSchema,
+    completedAt: privacyTrustedUtcMsSchema.nullable(),
+    synthetic: z.literal(true),
+  })
+  .strict()
+  .superRefine((record, context) => {
+    const isCompleted = record.state === 'completed';
+    const hasCompletion =
+      record.outcome !== null && record.completedAt !== null;
+
+    if (isCompleted !== hasCompletion) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'completed state requires outcome and completedAt; other states forbid both',
+        path: ['state'],
+      });
+    }
+  });
+export type PrivacyProcessorExecutionJournalRecord = z.infer<
+  typeof privacyProcessorExecutionJournalRecordSchema
+>;
+
+/**
  * Append-only governance-lifecycle proof ledger record. Wraps the frozen
  * `governanceLifecycleResultSchema` outcome/proofId rule (Option A) with the
  * minimum association metadata needed to locate a proof — never the
@@ -1726,6 +1773,7 @@ export const privacySyntheticProcessorCoordinateResponseSchema = z
       'handler_missing',
       'execution_unavailable',
       'execution_conflict',
+      'reconciliation_required',
       'receipt_invalid',
       'hard_disabled',
     ]),

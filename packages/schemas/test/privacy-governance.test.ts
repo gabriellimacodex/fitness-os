@@ -28,6 +28,7 @@ import {
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionJournalRecordSchema,
   privacyProcessorIdSchema,
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
@@ -697,6 +698,64 @@ describe('subject request and audit event references', () => {
         recordedAt: parsed.recordedAt,
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts a strict reserved processor execution journal record', () => {
+    const record = {
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      bindingDigest: '1'.repeat(64),
+      state: 'reserved',
+      outcome: null,
+      reservedAt: '2026-08-18T12:03:00.000Z',
+      completedAt: null,
+      synthetic: true,
+    } as const;
+
+    expect(privacyProcessorExecutionJournalRecordSchema.parse(record)).toEqual(
+      record,
+    );
+  });
+
+  it('requires journal outcome and completion time to match completed state', () => {
+    const reserved = {
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      bindingDigest: '1'.repeat(64),
+      state: 'reserved',
+      outcome: null,
+      reservedAt: '2026-08-18T12:03:00.000Z',
+      completedAt: null,
+      synthetic: true,
+    } as const;
+
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        state: 'completed',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        state: 'completed',
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
+      }).success,
+    ).toBe(true);
   });
 
   it('requires closed audit kinds and denied reason codes without free-text metadata', () => {

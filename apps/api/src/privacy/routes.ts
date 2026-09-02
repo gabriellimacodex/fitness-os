@@ -19,6 +19,7 @@ import {
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  JournaledSyntheticPrivacyProcessorExecutionCoordinator,
   SyntheticPrivacyProcessorExecutionCoordinator,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
@@ -35,6 +36,7 @@ import {
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
   type PrivacyProcessorExecutionReceiptSource,
+  type PrivacyProcessorExecutionJournal,
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRetentionPreviewRepository,
@@ -108,6 +110,11 @@ export interface PrivacySyntheticOptions {
    * registration.
    */
   processorSteps?: PrivacyProcessorStepRepository;
+  /**
+   * Durable disposable ownership journal. When present with a resolver, the
+   * coordinator refuses ambiguous restart re-execution.
+   */
+  processorExecutionJournal?: PrivacyProcessorExecutionJournal;
   /**
    * Independent read-only evidence for synthetic processor outcomes. Omission,
    * ambiguity, mismatch, or unavailability prevents every step append.
@@ -328,9 +335,15 @@ export function registerPrivacySyntheticRoutes(
   const processorExecutionCoordinator =
     options.processorResolver === undefined
       ? undefined
-      : new SyntheticPrivacyProcessorExecutionCoordinator(
-          options.processorResolver,
-        );
+      : options.processorExecutionJournal === undefined
+        ? new SyntheticPrivacyProcessorExecutionCoordinator(
+            options.processorResolver,
+          )
+        : new JournaledSyntheticPrivacyProcessorExecutionCoordinator({
+            clock,
+            journal: options.processorExecutionJournal,
+            resolver: options.processorResolver,
+          });
   const governanceLifecycle =
     options.governanceLifecycle ??
     new SyntheticPrivacyGovernanceLifecycleLedger();

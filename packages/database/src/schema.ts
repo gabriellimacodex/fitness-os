@@ -28,6 +28,7 @@ export {
   privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
+  privacyProcessorExecutionJournal,
   privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,

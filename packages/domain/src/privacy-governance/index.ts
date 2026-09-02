@@ -33,6 +33,8 @@ export type {
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
   PrivacyProcessorExecutionReceiptSource,
+  PrivacyProcessorExecutionJournal,
+  PrivacyProcessorExecutionJournalReserveResult,
   PrivacyProcessorExecutionCoordinator,
   PrivacyProcessorExecutionCoordinationResult,
   PrivacyProcessorStepRepository,
@@ -52,7 +54,10 @@ export type {
 } from './ports.js';
 export {
   coordinateSyntheticProcessorStep,
+  digestProcessorExecutionInput,
+  JournaledSyntheticPrivacyProcessorExecutionCoordinator,
   SyntheticPrivacyProcessorExecutionCoordinator,
+  type ProcessorExecutionInput,
   type SyntheticProcessorCoordinationResult,
 } from './processor-coordinator.js';
 export {

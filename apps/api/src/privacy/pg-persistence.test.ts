@@ -147,6 +147,13 @@ const processorSteps = {
   listForRequest: async () => [],
 };
 
+const processorExecutionJournal = {
+  complete: async () => 'accepted' as const,
+  getByOperationId: async () => null,
+  markReconciliationRequired: async () => 'accepted' as const,
+  reserve: async () => ({ status: 'reserved' as const }),
+};
+
 const governanceLifecycle = {
   append: async () => 'accepted' as const,
   getByOperationId: async () => null,
@@ -170,6 +177,9 @@ vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyPurposeRegistry: vi.fn(() => purposes),
   createPostgresPrivacyRuntimeProcessorRegistry: vi.fn(() => processors),
   createPostgresPrivacyProcessorStepRepository: vi.fn(() => processorSteps),
+  createPostgresPrivacyProcessorExecutionJournal: vi.fn(
+    () => processorExecutionJournal,
+  ),
   createPostgresPrivacyGovernanceLifecycleLedger: vi.fn(
     () => governanceLifecycle,
   ),
@@ -184,6 +194,7 @@ import {
   createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
+  createPostgresPrivacyProcessorExecutionJournal,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRetentionPreviewRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
@@ -216,6 +227,9 @@ describe('privacy PG persistence bundle', () => {
     expect(createPostgresPrivacyProcessorStepRepository).toHaveBeenCalledWith(
       connection,
     );
+    expect(createPostgresPrivacyProcessorExecutionJournal).toHaveBeenCalledWith(
+      connection,
+    );
     expect(createPostgresPrivacyGovernanceLifecycleLedger).toHaveBeenCalledWith(
       connection,
     );
@@ -229,6 +243,9 @@ describe('privacy PG persistence bundle', () => {
     expect(persistence.purposes).toBe(purposes);
     expect(persistence.processors).toBe(processors);
     expect(persistence.processorSteps).toBe(processorSteps);
+    expect(persistence.processorExecutionJournal).toBe(
+      processorExecutionJournal,
+    );
     expect(persistence.governanceLifecycle).toBe(governanceLifecycle);
     expect(persistence.retentionPreviews).toBe(retentionPreviews);
   });

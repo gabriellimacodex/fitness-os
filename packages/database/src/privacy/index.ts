@@ -4,6 +4,7 @@ export {
   privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
+  privacyProcessorExecutionJournal,
   privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
@@ -33,6 +34,7 @@ export {
   createPostgresPrivacyRetentionRuleRepository,
 } from './retention.js';
 export { createPostgresPrivacyProcessorStepRepository } from './processor-step.js';
+export { createPostgresPrivacyProcessorExecutionJournal } from './processor-execution-journal.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
   createPostgresPrivacyReadinessProbe,

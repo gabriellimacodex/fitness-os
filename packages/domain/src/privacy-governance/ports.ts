@@ -14,6 +14,7 @@ import type {
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
+  PrivacyProcessorExecutionJournalRecord,
   PrivacyProcessorExecutionReceipt,
   PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
@@ -146,11 +147,41 @@ export interface PrivacyProcessorExecutionReceiptSource {
   ): Promise<readonly PrivacyProcessorExecutionReceipt[]>;
 }
 
+export type PrivacyProcessorExecutionJournalReserveResult =
+  | { status: 'reserved' }
+  | {
+      status: 'completed';
+      record: PrivacyProcessorExecutionJournalRecord;
+    }
+  | { status: 'conflict' }
+  | { status: 'reconciliation_required' };
+
+/**
+ * Durable synthetic execution ownership. Reservations are atomic by
+ * operationId; a non-terminal reservation is never authority to re-execute.
+ */
+export interface PrivacyProcessorExecutionJournal {
+  reserve(
+    record: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<PrivacyProcessorExecutionJournalReserveResult>;
+  complete(
+    record: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<'accepted' | 'idempotent_replay' | 'conflict'>;
+  markReconciliationRequired(
+    operationId: string,
+    bindingDigest: string,
+  ): Promise<'accepted' | 'conflict'>;
+  getByOperationId(
+    operationId: string,
+  ): Promise<PrivacyProcessorExecutionJournalRecord | null>;
+}
+
 export type PrivacyProcessorExecutionCoordinationResult =
   | { status: 'executed' }
   | { status: 'conflict' }
   | { status: 'handler_missing' }
   | { status: 'receipt_invalid' }
+  | { status: 'reconciliation_required' }
   | { status: 'unavailable' };
 
 /**
