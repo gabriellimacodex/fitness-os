@@ -559,6 +559,20 @@ export function registerOnboardingRoutes(
       return;
     }
 
+    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+      return operationEnvelope({
+        digest: semanticDigest({
+          authority: context.principalKey,
+          claimStatus: 'throttled',
+          namespace: 'inspect_invitation',
+        }),
+        namespace: 'inspect_invitation',
+        operationId: idFactory.operationId(),
+        result: { outcome: 'invalid_or_unavailable' },
+        state: 'operation_committed',
+      });
+    }
+
     const digest = semanticDigest({
       authority: context.principalKey,
       invitationRef: invitationReference(
@@ -568,16 +582,6 @@ export function registerOnboardingRoutes(
       ),
       namespace: 'inspect_invitation',
     });
-
-    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
-      return operationEnvelope({
-        digest,
-        namespace: 'inspect_invitation',
-        operationId: idFactory.operationId(),
-        result: { outcome: 'invalid_or_unavailable' },
-        state: 'operation_committed',
-      });
-    }
 
     const invitation = await loadInvitationByClaimDigest(
       store,
@@ -626,6 +630,20 @@ export function registerOnboardingRoutes(
     const context = await requireContext(request, reply);
     if (context === null) {
       return;
+    }
+
+    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+      return operationEnvelope({
+        digest: semanticDigest({
+          authority: context.principalKey,
+          claimStatus: 'throttled',
+          namespace: 'create_attempt',
+        }),
+        namespace: 'create_attempt',
+        operationId: idFactory.operationId(),
+        result: { outcome: 'invalid_or_unavailable' },
+        state: 'operation_committed',
+      });
     }
 
     const digest = semanticDigest({
@@ -687,10 +705,6 @@ export function registerOnboardingRoutes(
         state: 'operation_committed',
       });
     };
-
-    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
-      return await commit({ outcome: 'invalid_or_unavailable' });
-    }
 
     const invitation = await loadInvitationByClaimDigest(
       store,

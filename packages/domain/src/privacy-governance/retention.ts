@@ -316,6 +316,10 @@ export function authorizeRetentionExecution(input: {
  * `preview` is the exact row a caller's own repository lookup by
  * `requestedSelectionDigest` returned; `null` means no such preview was
  * found and is treated as a digest mismatch, never as "no preview needed".
+ * The current inventory and processor digests must come from the trusted
+ * execution environment. They are compared independently with the persisted
+ * preview so a once-valid preview cannot authorize execution after either
+ * dependency changes.
  *
  * `previewTtlMs` has no default: the Technical Design states "No duration
  * ... is defaulted. An absent parameter prevents evaluation or execution",
@@ -331,6 +335,8 @@ export function resolveRetentionExecutionAuthorization(input: {
   authoritySynthetic: boolean;
   preview: PrivacyRetentionPreviewRecord | null;
   requestedSelectionDigest: string;
+  currentInventoryVersionDigest: string;
+  currentProcessorDescriptorDigests: readonly string[];
   nowUtcMs: string;
   previewTtlMs: number;
 }): RetentionExecutionAuthorization {
@@ -367,9 +373,25 @@ export function resolveRetentionExecutionAuthorization(input: {
     );
   }
 
+  const currentProcessorDescriptorDigests = sortPrivacySetIdentifiers(
+    input.currentProcessorDescriptorDigests,
+  );
+  const previewProcessorDescriptorDigests = sortPrivacySetIdentifiers(
+    preview.processorDescriptorDigests,
+  );
+  const processorDigestsMatch =
+    currentProcessorDescriptorDigests.length ===
+      previewProcessorDescriptorDigests.length &&
+    currentProcessorDescriptorDigests.every(
+      (digest, index) => digest === previewProcessorDescriptorDigests[index],
+    );
+
   return authorizeRetentionExecution({
     authoritySynthetic: input.authoritySynthetic,
-    digestsMatch: preview.selectionDigest === input.requestedSelectionDigest,
+    digestsMatch:
+      preview.selectionDigest === input.requestedSelectionDigest &&
+      preview.inventoryVersionDigest === input.currentInventoryVersionDigest &&
+      processorDigestsMatch,
     policySynthetic: input.policySynthetic,
     previewExecuted: preview.status === 'executed',
     previewExpired: nowMs - createdAtMs >= input.previewTtlMs,

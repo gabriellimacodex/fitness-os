@@ -2791,6 +2791,8 @@ describe('resolveRetentionExecutionAuthorization', () => {
     policySynthetic: true,
     authoritySynthetic: true,
     requestedSelectionDigest: '4'.repeat(64),
+    currentInventoryVersionDigest: '3'.repeat(64),
+    currentProcessorDescriptorDigests: ['c'.repeat(64)],
     nowUtcMs: '2026-08-18T00:05:00.000Z',
     previewTtlMs: 60 * 60 * 1000,
   };
@@ -2818,6 +2820,26 @@ describe('resolveRetentionExecutionAuthorization', () => {
       resolveRetentionExecutionAuthorization({
         ...baseInput,
         preview: preview({ selectionDigest: '5'.repeat(64) }),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current inventory changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentInventoryVersionDigest: '9'.repeat(64),
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current processor descriptors changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentProcessorDescriptorDigests: ['8'.repeat(64)],
+        preview: preview(),
       }),
     ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
   });

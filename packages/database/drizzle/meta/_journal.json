@@ -134,6 +134,13 @@
       "when": 1788305470006,
       "tag": "0018_prd21_privacy_retention_rule",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788376795774,
+      "tag": "0019_prd21_privacy_retention_rule_guard",
+      "breakpoints": true
     }
   ]
 }

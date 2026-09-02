@@ -118,5 +118,107 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         ),
       ).resolves.toEqual([]);
     });
+
+    it('is append-only and permits only SELECT/INSERT through the ordinary role', async () => {
+      const rule = ruleReference({
+        ruleId: '12121212-1212-4212-8212-121212121212',
+        ruleVersionId: '34343434-3434-4434-8434-343434343434',
+      });
+      await expect(rules.put(rule)).resolves.toBe('accepted');
+
+      const assertRejected = async (statement: ReturnType<typeof sql>) => {
+        try {
+          await connection.db.execute(statement);
+          throw new Error('expected append-only rejection');
+        } catch (error) {
+          const text = [
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify(error),
+          ].join('\n');
+          expect(text).toMatch(
+            /42501|permission denied|privacy_reject_append_only_mutation|fitness_os_privacy_append_only/,
+          );
+        }
+      };
+
+      await assertRejected(sql`
+        UPDATE privacy_retention_rule
+        SET parameters_digest = ${'f'.repeat(64)}
+        WHERE rule_version_id = ${rule.ruleVersionId}::uuid
+      `);
+      await assertRejected(sql`
+        DELETE FROM privacy_retention_rule
+        WHERE rule_version_id = ${rule.ruleVersionId}::uuid
+      `);
+
+      await connection.db.execute(
+        sql`GRANT fitness_os_privacy_ordinary TO CURRENT_USER`,
+      );
+
+      const ordinaryRule = ruleReference({
+        ruleId: '56565656-5656-4656-8656-565656565656',
+        ruleVersionId: '78787878-7878-4878-8878-787878787878',
+      });
+      await connection.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL ROLE fitness_os_privacy_ordinary`);
+        await tx.execute(sql`
+          INSERT INTO privacy_retention_rule (
+            rule_version_id,
+            rule_id,
+            engineering_category_id,
+            purpose_version_id,
+            policy_version_id,
+            action,
+            parameters_digest,
+            canonicalization_version,
+            synthetic
+          ) VALUES (
+            ${ordinaryRule.ruleVersionId}::uuid,
+            ${ordinaryRule.ruleId}::uuid,
+            ${ordinaryRule.engineeringCategoryId}::uuid,
+            ${ordinaryRule.purposeVersionId}::uuid,
+            ${ordinaryRule.policyVersionId}::uuid,
+            ${ordinaryRule.action},
+            ${ordinaryRule.parametersDigest},
+            ${ordinaryRule.canonicalizationVersion},
+            ${ordinaryRule.synthetic}
+          )
+        `);
+        const selected = await tx.execute<{ rule_version_id: string }>(sql`
+          SELECT rule_version_id
+          FROM privacy_retention_rule
+          WHERE rule_version_id = ${ordinaryRule.ruleVersionId}::uuid
+        `);
+        expect(selected[0]?.rule_version_id).toBe(ordinaryRule.ruleVersionId);
+      });
+
+      const assertOrdinaryRejected = async (
+        statement: ReturnType<typeof sql>,
+      ) => {
+        try {
+          await connection.db.transaction(async (tx) => {
+            await tx.execute(sql`SET LOCAL ROLE fitness_os_privacy_ordinary`);
+            await tx.execute(statement);
+          });
+          throw new Error('expected ordinary-role rejection');
+        } catch (error) {
+          const text = [
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify(error),
+          ].join('\n');
+          expect(text).toMatch(/42501|permission denied/);
+        }
+      };
+
+      await assertOrdinaryRejected(sql`
+        UPDATE privacy_retention_rule
+        SET parameters_digest = ${'a'.repeat(64)}
+        WHERE rule_version_id = ${ordinaryRule.ruleVersionId}::uuid
+      `);
+      await assertOrdinaryRejected(sql`
+        DELETE FROM privacy_retention_rule
+        WHERE rule_version_id = ${ordinaryRule.ruleVersionId}::uuid
+      `);
+    });
   },
 );

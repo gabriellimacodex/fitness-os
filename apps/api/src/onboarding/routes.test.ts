@@ -880,10 +880,22 @@ describe('claim-secret brute-force throttle', () => {
       url: '/v1/onboarding/invitations/inspect',
       payload: { claimSecret: CLAIM_SECRET },
     });
-    expect(
-      onboardingOperationResponseSchema.parse(correctWhileThrottled.json())
-        .result,
-    ).toEqual({ outcome: 'invalid_or_unavailable' });
+    const wrongSecretEnvelope = onboardingOperationResponseSchema.parse(
+      third.json(),
+    );
+    const correctSecretEnvelope = onboardingOperationResponseSchema.parse(
+      correctWhileThrottled.json(),
+    );
+    expect(correctSecretEnvelope.result).toEqual({
+      outcome: 'invalid_or_unavailable',
+    });
+    expect({
+      ...correctSecretEnvelope,
+      operation: { ...correctSecretEnvelope.operation, operationId: '<id>' },
+    }).toEqual({
+      ...wrongSecretEnvelope,
+      operation: { ...wrongSecretEnvelope.operation, operationId: '<id>' },
+    });
 
     await app.close();
   });
@@ -985,16 +997,37 @@ describe('claim-secret brute-force throttle', () => {
       });
     }
 
-    const throttled = await app.inject({
+    const wrongWhileThrottled = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: OTHER_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-throttle-wrong'),
+      },
+    });
+    const correctWhileThrottled = await app.inject({
       method: 'POST',
       url: '/v1/onboarding/attempts',
       payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
     });
 
-    expect(throttled.statusCode).toBe(200);
-    expect(
-      onboardingOperationResponseSchema.parse(throttled.json()).result,
-    ).toEqual({ outcome: 'invalid_or_unavailable' });
+    expect(correctWhileThrottled.statusCode).toBe(200);
+    const wrongSecretEnvelope = onboardingOperationResponseSchema.parse(
+      wrongWhileThrottled.json(),
+    );
+    const correctSecretEnvelope = onboardingOperationResponseSchema.parse(
+      correctWhileThrottled.json(),
+    );
+    expect(correctSecretEnvelope.result).toEqual({
+      outcome: 'invalid_or_unavailable',
+    });
+    expect({
+      ...correctSecretEnvelope,
+      operation: { ...correctSecretEnvelope.operation, operationId: '<id>' },
+    }).toEqual({
+      ...wrongSecretEnvelope,
+      operation: { ...wrongSecretEnvelope.operation, operationId: '<id>' },
+    });
     expect(store.attempts.size).toBe(0);
 
     await app.close();
