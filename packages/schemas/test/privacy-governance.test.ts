@@ -1409,7 +1409,7 @@ describe('synthetic processor-step record contracts', () => {
     ).toBe(false);
   });
 
-  it('accepts a strict request pairing a step with its transition envelope', () => {
+  it('accepts a strict request with server-authoritative transition metadata', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse(validRequest)
         .success,
