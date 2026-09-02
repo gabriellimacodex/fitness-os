@@ -51,6 +51,7 @@ export {
   checkPrivacyCoreDatabaseReadiness,
   createPostgresPrivacyAuditSink,
   createPostgresPrivacyAuthorizationEvidenceLedger,
+  createPostgresPrivacyGovernanceLifecycleBindingVerifier,
   createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
