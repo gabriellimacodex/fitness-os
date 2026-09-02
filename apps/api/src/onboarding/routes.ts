@@ -645,7 +645,22 @@ export function registerOnboardingRoutes(
     );
 
     if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+      const digest = semanticDigest({
+        authority: context.principalKey,
+        claimStatus: 'throttled',
+        namespace: 'create_attempt',
+      });
       if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest,
+            namespace: 'create_attempt',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
         return operationEnvelope({
           digest: existingOperation.digest,
           namespace: 'create_attempt',
@@ -655,11 +670,6 @@ export function registerOnboardingRoutes(
         });
       }
 
-      const digest = semanticDigest({
-        authority: context.principalKey,
-        claimStatus: 'throttled',
-        namespace: 'create_attempt',
-      });
       const operationId = idFactory.operationId();
       const result = { outcome: 'invalid_or_unavailable' };
       await rememberOperation(bindingKey, context.principalKey, {

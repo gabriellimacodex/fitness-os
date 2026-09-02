@@ -1045,6 +1045,71 @@ describe('claim-secret brute-force throttle', () => {
 
     await app.close();
   });
+
+  it('does not replay a prior successful attempt when a changed input reuses its token while throttled', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+    const { app } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      store,
+    });
+
+    const successful = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(successful.json()).result,
+    ).toMatchObject({ outcome: 'command_succeeded' });
+
+    for (let i = 0; i < 2; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/onboarding/invitations/inspect',
+        payload: { claimSecret: secretAt(90 + i) },
+      });
+    }
+
+    const changedInput = onboardingOperationResponseSchema.parse(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/onboarding/attempts',
+          payload: { claimSecret: OTHER_SECRET, retryToken: RETRY_TOKEN },
+        })
+      ).json(),
+    );
+    const freshGenericDenial = onboardingOperationResponseSchema.parse(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/onboarding/attempts',
+          payload: {
+            claimSecret: OTHER_SECRET,
+            retryToken: retryTokenSchema.parse(
+              'synthetic-retry-throttle-fresh',
+            ),
+          },
+        })
+      ).json(),
+    );
+
+    expect(changedInput.operation.state).toBe('operation_input_mismatch');
+    expect(changedInput.operation.digest).toBe(
+      freshGenericDenial.operation.digest,
+    );
+    expect(changedInput.result).toBeNull();
+    expect(changedInput.result).not.toEqual(
+      onboardingOperationResponseSchema.parse(successful.json()).result,
+    );
+    expect(store.attempts.size).toBe(1);
+
+    await app.close();
+  });
 });
 
 describe('GET /v1/onboarding/attempts/:attemptId', () => {
