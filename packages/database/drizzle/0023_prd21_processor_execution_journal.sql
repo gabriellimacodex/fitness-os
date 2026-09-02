@@ -30,6 +30,17 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+	IF TG_OP = 'INSERT' THEN
+		IF NEW.state <> 'reserved'
+			OR NEW.outcome IS NOT NULL
+			OR NEW.completed_at IS NOT NULL
+		THEN
+			RAISE EXCEPTION 'fitness_os_privacy_execution_journal: initial state must be reserved'
+				USING ERRCODE = '42501';
+		END IF;
+		RETURN NEW;
+	END IF;
+
 	IF TG_OP = 'DELETE' THEN
 		RAISE EXCEPTION 'fitness_os_privacy_execution_journal: DELETE forbidden'
 			USING ERRCODE = '42501';
@@ -60,7 +71,7 @@ END;
 $$;
 --> statement-breakpoint
 CREATE TRIGGER privacy_processor_execution_journal_mutation_guard
-BEFORE UPDATE OR DELETE ON "privacy_processor_execution_journal"
+BEFORE INSERT OR UPDATE OR DELETE ON "privacy_processor_execution_journal"
 FOR EACH ROW
 EXECUTE FUNCTION privacy_guard_processor_execution_journal_mutation();
 --> statement-breakpoint

@@ -174,5 +174,52 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       `);
       expect(privileges).toEqual([{ can_delete: false, can_update: false }]);
     });
+
+    it('rejects a forged completed or reconciliation row on initial insert', async () => {
+      const assertInitialStateRejected = async (
+        state: 'completed' | 'reconciliation_required',
+      ) => {
+        const outcome = state === 'completed' ? 'completed' : null;
+        const completedAt =
+          state === 'completed' ? '2026-08-18T12:04:00.000Z' : null;
+        await expect(
+          connection.db.transaction(async (transaction) => {
+            await transaction.execute(
+              sql`SET LOCAL ROLE fitness_os_privacy_ordinary`,
+            );
+            await transaction.execute(sql`
+              INSERT INTO privacy_processor_execution_journal (
+                operation_id,
+                request_id,
+                processor_id,
+                capability,
+                correlation_id,
+                binding_digest,
+                state,
+                outcome,
+                reserved_at,
+                completed_at,
+                synthetic
+              ) VALUES (
+                ${state === 'completed' ? '21212121-2121-4121-8121-212121212121' : '23232323-2323-4323-8323-232323232323'}::uuid,
+                ${reservation.requestId}::uuid,
+                ${reservation.processorId}::uuid,
+                ${reservation.capability},
+                ${reservation.correlationId}::uuid,
+                ${reservation.bindingDigest},
+                ${state},
+                ${outcome},
+                ${reservation.reservedAt}::timestamptz,
+                ${completedAt}::timestamptz,
+                true
+              )
+            `);
+          }),
+        ).rejects.toBeTruthy();
+      };
+
+      await assertInitialStateRejected('completed');
+      await assertInitialStateRejected('reconciliation_required');
+    });
   },
 );
