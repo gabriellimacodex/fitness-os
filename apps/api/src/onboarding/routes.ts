@@ -632,16 +632,48 @@ export function registerOnboardingRoutes(
       return;
     }
 
+    const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+    const bindingKey = operationBindingKey(
+      context.principalKey,
+      'create_attempt',
+      retryDigest,
+    );
+    const existingOperation = await loadOperation(
+      store,
+      persistence,
+      bindingKey,
+    );
+
     if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
-      return operationEnvelope({
-        digest: semanticDigest({
-          authority: context.principalKey,
-          claimStatus: 'throttled',
+      if (existingOperation !== undefined) {
+        return operationEnvelope({
+          digest: existingOperation.digest,
           namespace: 'create_attempt',
-        }),
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const digest = semanticDigest({
+        authority: context.principalKey,
+        claimStatus: 'throttled',
         namespace: 'create_attempt',
-        operationId: idFactory.operationId(),
-        result: { outcome: 'invalid_or_unavailable' },
+      });
+      const operationId = idFactory.operationId();
+      const result = { outcome: 'invalid_or_unavailable' };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
         state: 'operation_committed',
       });
     }
@@ -655,17 +687,6 @@ export function registerOnboardingRoutes(
       ),
       namespace: 'create_attempt',
     });
-    const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
-    const bindingKey = operationBindingKey(
-      context.principalKey,
-      'create_attempt',
-      retryDigest,
-    );
-    const existingOperation = await loadOperation(
-      store,
-      persistence,
-      bindingKey,
-    );
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {

@@ -1010,6 +1010,11 @@ describe('claim-secret brute-force throttle', () => {
       url: '/v1/onboarding/attempts',
       payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
     });
+    const replayWhileThrottled = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
 
     expect(correctWhileThrottled.statusCode).toBe(200);
     const wrongSecretEnvelope = onboardingOperationResponseSchema.parse(
@@ -1028,6 +1033,14 @@ describe('claim-secret brute-force throttle', () => {
       ...wrongSecretEnvelope,
       operation: { ...wrongSecretEnvelope.operation, operationId: '<id>' },
     });
+    const replayEnvelope = onboardingOperationResponseSchema.parse(
+      replayWhileThrottled.json(),
+    );
+    expect(replayEnvelope.operation).toEqual({
+      ...correctSecretEnvelope.operation,
+      state: 'operation_replayed',
+    });
+    expect(replayEnvelope.result).toEqual(correctSecretEnvelope.result);
     expect(store.attempts.size).toBe(0);
 
     await app.close();
