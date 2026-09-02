@@ -147,7 +147,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_governance_lifecycle_proof, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_retention_preview, privacy_governance_lifecycle_proof, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -914,6 +914,88 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await expect(
         persistence.governanceLifecycle.getByOperationId(proof.operationId),
       ).resolves.toEqual(proof);
+    });
+
+    it('persists a planned retention preview over disposable Postgres via HTTP write-through', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            retentionPreviews: persistence.retentionPreviews,
+          },
+        },
+      );
+
+      const previewPayload = {
+        policyVersionId: policy.versionId,
+        policySynthetic: true,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        approvedExceptionIds: [
+          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ],
+        productionMode: false,
+      };
+
+      const planned = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/retention-preview',
+        payload: previewPayload,
+      });
+      expect(planned.statusCode).toBe(200);
+      expect(planned.json()).toMatchObject({
+        status: 'planned',
+        preview: { synthetic: true },
+      });
+      const { selectionDigest } = planned.json().preview;
+
+      const rows = await connection.db.execute<{
+        selection_digest: string;
+        status: string;
+        executed_at: string | null;
+      }>(sql`
+        SELECT selection_digest, status, executed_at
+        FROM privacy_retention_preview
+        WHERE selection_digest = ${selectionDigest}
+      `);
+      expect(rows).toEqual([
+        {
+          selection_digest: selectionDigest,
+          status: 'planned',
+          executed_at: null,
+        },
+      ]);
+
+      // Replaying the identical input is an idempotent no-op: the route
+      // treats the resulting 'conflict' from `put` as expected, not an error.
+      const replayed = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/retention-preview',
+        payload: previewPayload,
+      });
+      expect(replayed.statusCode).toBe(200);
+      expect(replayed.json().preview.selectionDigest).toBe(selectionDigest);
+
+      const rowsAfterReplay = await connection.db.execute<{
+        selection_digest: string;
+      }>(sql`
+        SELECT selection_digest
+        FROM privacy_retention_preview
+        WHERE selection_digest = ${selectionDigest}
+      `);
+      expect(rowsAfterReplay).toHaveLength(1);
+
+      await expect(
+        persistence.retentionPreviews.getBySelectionDigest(selectionDigest),
+      ).resolves.toMatchObject({ selectionDigest, status: 'planned' });
+
+      await app.close();
     });
   },
 );
