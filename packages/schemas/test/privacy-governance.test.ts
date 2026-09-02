@@ -1244,13 +1244,21 @@ describe('processor descriptor and readiness contracts', () => {
     expect(
       privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse({
         productionMode: true,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      }).productionMode,
+    ).toBe(true);
+
+    expect(
+      privacySyntheticRetentionExecutionAuthorizeRequestSchema.safeParse({
+        productionMode: false,
         policySynthetic: true,
         authoritySynthetic: true,
         previewExecuted: false,
         previewExpired: false,
         digestsMatch: true,
-      }).productionMode,
-    ).toBe(true);
+      }).success,
+    ).toBe(false);
   });
 });
 
