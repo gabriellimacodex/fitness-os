@@ -3256,6 +3256,22 @@ describe('synthetic retention preview repository', () => {
       }),
     ).resolves.toBe('idempotent_replay');
     await expect(
+      repository.markExecuted({
+        selectionDigest,
+        operationId: privacyOperationIdSchema.parse(
+          '33333333-3333-4333-8333-333333333333',
+        ),
+        executedAt: '2026-08-18T00:00:04.000Z',
+      }),
+    ).resolves.toBe('conflict');
+    await expect(
+      repository.markExecuted({
+        selectionDigest: 'f'.repeat(64),
+        operationId,
+        executedAt: '2026-08-18T00:00:05.000Z',
+      }),
+    ).resolves.toBe('not_found');
+    await expect(
       repository.getBySelectionDigest(selectionDigest),
     ).resolves.toMatchObject({ executedAt: '2026-08-18T00:00:02.000Z' });
   });
