@@ -1548,12 +1548,15 @@ export type PrivacySyntheticRetentionPreviewResponse = z.infer<
 
 /**
  * Disposable synthetic API for retention execution authorization.
- * The caller identifies a persisted preview and supplies its explicit TTL;
+ * The caller identifies a persisted preview and operation and supplies its explicit TTL;
  * preview state and current inventory/processor digests are resolved from
- * trusted server-side ports. Production path remains hard-disabled.
+ * trusted server-side ports. A successful synthetic authorization records only
+ * the exact-once preview transition; production and processor side effects
+ * remain hard-disabled.
  */
 export const privacySyntheticRetentionExecutionAuthorizeRequestSchema = z
   .object({
+    operationId: privacyOperationIdSchema,
     productionMode: z.boolean(),
     requestedSelectionDigest: privacySha256DigestSchema,
     previewTtlMs: z.number().positive().finite(),
@@ -1565,7 +1568,12 @@ export type PrivacySyntheticRetentionExecutionAuthorizeRequest = z.infer<
 
 export const privacySyntheticRetentionExecutionAuthorizeResponseSchema = z
   .object({
-    status: z.enum(['allowed_synthetic_test', 'hard_disabled']),
+    status: z.enum([
+      'executed',
+      'idempotent_replay',
+      'conflict',
+      'hard_disabled',
+    ]),
     reason: z
       .enum([
         'production_path',

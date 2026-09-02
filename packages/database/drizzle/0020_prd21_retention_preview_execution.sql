@@ -1,0 +1,1 @@
+ALTER TABLE "privacy_retention_preview" ADD COLUMN "execution_operation_id" uuid;

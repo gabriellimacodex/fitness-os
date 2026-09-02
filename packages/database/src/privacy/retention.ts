@@ -70,6 +70,9 @@ export function createPostgresPrivacyRetentionPreviewRepository(
     },
 
     put: async (record: PrivacyRetentionPreviewRecord) => {
+      if (record.status !== 'planned') {
+        return 'conflict' as const;
+      }
       try {
         await connection.db.insert(privacyRetentionPreview).values({
           selectionDigest: record.selectionDigest,
@@ -81,6 +84,7 @@ export function createPostgresPrivacyRetentionPreviewRepository(
           status: record.status,
           createdAt: record.createdAt,
           executedAt: record.executedAt,
+          executionOperationId: null,
         });
         return 'accepted' as const;
       } catch (error) {
@@ -89,6 +93,46 @@ export function createPostgresPrivacyRetentionPreviewRepository(
         }
         throw error;
       }
+    },
+
+    markExecuted: async (input) => {
+      const [updated] = await connection.db
+        .update(privacyRetentionPreview)
+        .set({
+          executedAt: input.executedAt,
+          executionOperationId: input.operationId,
+          status: 'executed',
+        })
+        .where(
+          and(
+            eq(privacyRetentionPreview.selectionDigest, input.selectionDigest),
+            eq(privacyRetentionPreview.status, 'planned'),
+          ),
+        )
+        .returning({
+          selectionDigest: privacyRetentionPreview.selectionDigest,
+        });
+      if (updated !== undefined) {
+        return 'executed';
+      }
+
+      const [existing] = await connection.db
+        .select({
+          executionOperationId: privacyRetentionPreview.executionOperationId,
+          status: privacyRetentionPreview.status,
+        })
+        .from(privacyRetentionPreview)
+        .where(
+          eq(privacyRetentionPreview.selectionDigest, input.selectionDigest),
+        )
+        .limit(1);
+      if (existing === undefined) {
+        return 'not_found';
+      }
+      return existing.status === 'executed' &&
+        existing.executionOperationId === input.operationId
+        ? 'idempotent_replay'
+        : 'conflict';
     },
   };
 }

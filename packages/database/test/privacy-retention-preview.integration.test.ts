@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { planRetentionPreview } from '@fitness-os/domain';
-import { privacyPolicyVersionIdSchema } from '@fitness-os/schemas';
+import {
+  privacyOperationIdSchema,
+  privacyPolicyVersionIdSchema,
+} from '@fitness-os/schemas';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPostgresConnection } from '../src/connection.js';
@@ -87,6 +90,73 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ]);
       expect(fetched?.executedAt).toBeNull();
       expect(fetched?.status).toBe('planned');
+    });
+
+    it('marks a preview executed once and replays only the same operation', async () => {
+      const record = plannedRecord('33333333-3333-4333-8333-333333333333');
+      const operationId = privacyOperationIdSchema.parse(
+        '44444444-4444-4444-8444-444444444444',
+      );
+      await repository.put(record);
+
+      await expect(
+        repository.markExecuted({
+          selectionDigest: record.selectionDigest,
+          operationId,
+          executedAt: '2026-08-18T00:00:02.000Z',
+        }),
+      ).resolves.toBe('executed');
+      await expect(
+        repository.markExecuted({
+          selectionDigest: record.selectionDigest,
+          operationId,
+          executedAt: '2026-08-18T00:00:03.000Z',
+        }),
+      ).resolves.toBe('idempotent_replay');
+      await expect(
+        repository.markExecuted({
+          selectionDigest: record.selectionDigest,
+          operationId: privacyOperationIdSchema.parse(
+            '55555555-5555-4555-8555-555555555555',
+          ),
+          executedAt: '2026-08-18T00:00:04.000Z',
+        }),
+      ).resolves.toBe('conflict');
+      await expect(
+        repository.getBySelectionDigest(record.selectionDigest),
+      ).resolves.toMatchObject({
+        status: 'executed',
+        executedAt: '2026-08-18T00:00:02.000Z',
+      });
+    });
+
+    it('allows only one of two concurrent execution operations', async () => {
+      const record = plannedRecord('66666666-6666-4666-8666-666666666666');
+      const operationIds = [
+        privacyOperationIdSchema.parse('77777777-7777-4777-8777-777777777777'),
+        privacyOperationIdSchema.parse('88888888-8888-4888-8888-888888888888'),
+      ] as const;
+      await repository.put(record);
+
+      const results = await Promise.all(
+        operationIds.map((operationId) =>
+          repository.markExecuted({
+            selectionDigest: record.selectionDigest,
+            operationId,
+            executedAt: '2026-08-18T00:00:02.000Z',
+          }),
+        ),
+      );
+
+      expect([...results].sort()).toEqual(['conflict', 'executed']);
+      const winningOperationId = operationIds[results.indexOf('executed')]!;
+      await expect(
+        repository.markExecuted({
+          selectionDigest: record.selectionDigest,
+          operationId: winningOperationId,
+          executedAt: '2026-08-18T00:00:03.000Z',
+        }),
+      ).resolves.toBe('idempotent_replay');
     });
   },
 );

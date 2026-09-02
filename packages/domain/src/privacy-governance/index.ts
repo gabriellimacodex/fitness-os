@@ -31,6 +31,7 @@ export type {
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
+  PrivacyRetentionPreviewExecutionResult,
   PrivacyRetentionPreviewRepository,
   PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,

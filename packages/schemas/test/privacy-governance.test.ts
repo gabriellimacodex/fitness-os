@@ -1243,6 +1243,7 @@ describe('processor descriptor and readiness contracts', () => {
 
     expect(
       privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse({
+        operationId: '11111111-1111-4111-8111-111111111111',
         productionMode: true,
         requestedSelectionDigest: 'f'.repeat(64),
         previewTtlMs: 60 * 60 * 1000,

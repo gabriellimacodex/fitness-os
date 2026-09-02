@@ -3183,6 +3183,82 @@ describe('synthetic retention preview repository', () => {
       repository.getBySelectionDigest('0'.repeat(64)),
     ).resolves.toBeNull();
   });
+
+  it('marks a planned preview executed for one operation', async () => {
+    const plan = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['b'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      productionMode: false,
+    });
+    if (plan.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    await repository.put({
+      ...plan.preview,
+      status: 'planned',
+      createdAt: '2026-08-18T00:00:01.000Z',
+      executedAt: null,
+    });
+
+    await expect(
+      repository.markExecuted({
+        selectionDigest: plan.preview.selectionDigest,
+        operationId: privacyOperationIdSchema.parse(
+          '11111111-1111-4111-8111-111111111111',
+        ),
+        executedAt: '2026-08-18T00:00:02.000Z',
+      }),
+    ).resolves.toBe('executed');
+    await expect(
+      repository.getBySelectionDigest(plan.preview.selectionDigest),
+    ).resolves.toMatchObject({
+      status: 'executed',
+      executedAt: '2026-08-18T00:00:02.000Z',
+    });
+  });
+
+  it('returns an idempotent replay for the same execution operation', async () => {
+    const selectionDigest = 'a'.repeat(64);
+    const operationId = privacyOperationIdSchema.parse(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    await repository.put(
+      privacyRetentionPreviewRecordSchema.parse({
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        selectionDigest,
+        approvedExceptionIds: [],
+        synthetic: true,
+        status: 'planned',
+        createdAt: '2026-08-18T00:00:01.000Z',
+        executedAt: null,
+      }),
+    );
+
+    await repository.markExecuted({
+      selectionDigest,
+      operationId,
+      executedAt: '2026-08-18T00:00:02.000Z',
+    });
+    await expect(
+      repository.markExecuted({
+        selectionDigest,
+        operationId,
+        executedAt: '2026-08-18T00:00:03.000Z',
+      }),
+    ).resolves.toBe('idempotent_replay');
+    await expect(
+      repository.getBySelectionDigest(selectionDigest),
+    ).resolves.toMatchObject({ executedAt: '2026-08-18T00:00:02.000Z' });
+  });
 });
 
 describe('governance lifecycle proof ledger', () => {

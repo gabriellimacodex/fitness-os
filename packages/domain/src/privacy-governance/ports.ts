@@ -304,8 +304,9 @@ export interface PrivacySubjectRequestRepository {
 /**
  * Persisted retention preview evidence, keyed by the deterministic
  * `selectionDigest` computed by `planRetentionPreview`. A preview is
- * accepted at most once per digest; consuming/marking it `executed` is a
- * separate, later composition step.
+ * accepted at most once per digest. `markExecuted` performs the atomic
+ * synthetic/disposable `planned` -> `executed` transition and binds the winner
+ * to one operation ID so only that operation can replay idempotently.
  */
 export interface PrivacyRetentionPreviewRepository {
   getBySelectionDigest(
@@ -314,7 +315,15 @@ export interface PrivacyRetentionPreviewRepository {
   put(
     record: PrivacyRetentionPreviewRecord,
   ): Promise<PrivacyReferencePutResult>;
+  markExecuted(input: {
+    selectionDigest: string;
+    operationId: PrivacyOperationId;
+    executedAt: string;
+  }): Promise<PrivacyRetentionPreviewExecutionResult>;
 }
+
+export type PrivacyRetentionPreviewExecutionResult =
+  'executed' | 'idempotent_replay' | 'conflict' | 'not_found';
 
 /**
  * Append-only per-processor execution attempts for a subject request.

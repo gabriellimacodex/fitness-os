@@ -634,6 +634,7 @@ export class SyntheticPrivacyAttributionVerifier implements PrivacyAttributionVe
  */
 export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetentionPreviewRepository {
   private readonly previews = new Map<string, PrivacyRetentionPreviewRecord>();
+  private readonly executionOperations = new Map<string, string>();
 
   async getBySelectionDigest(
     selectionDigest: string,
@@ -644,11 +645,39 @@ export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetent
   async put(
     record: PrivacyRetentionPreviewRecord,
   ): Promise<'accepted' | 'conflict'> {
-    if (this.previews.has(record.selectionDigest)) {
+    if (
+      record.status !== 'planned' ||
+      this.previews.has(record.selectionDigest)
+    ) {
       return 'conflict';
     }
     this.previews.set(record.selectionDigest, record);
     return 'accepted';
+  }
+
+  async markExecuted(input: {
+    selectionDigest: string;
+    operationId: string;
+    executedAt: string;
+  }): Promise<'executed' | 'idempotent_replay' | 'conflict' | 'not_found'> {
+    const preview = this.previews.get(input.selectionDigest);
+    if (preview === undefined) {
+      return 'not_found';
+    }
+    if (preview.status !== 'planned') {
+      return this.executionOperations.get(input.selectionDigest) ===
+        input.operationId
+        ? 'idempotent_replay'
+        : 'conflict';
+    }
+
+    this.previews.set(input.selectionDigest, {
+      ...preview,
+      status: 'executed',
+      executedAt: input.executedAt,
+    });
+    this.executionOperations.set(input.selectionDigest, input.operationId);
+    return 'executed';
   }
 }
 
