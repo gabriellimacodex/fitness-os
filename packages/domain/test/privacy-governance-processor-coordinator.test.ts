@@ -283,6 +283,97 @@ describe('synthetic processor coordinator', () => {
     expect(executions).toBe(0);
   });
 
+  it('rejects runtime or inventory subject-lookup incompatibility before execute', async () => {
+    let executions = 0;
+    const executeForLookup = async (
+      supportsSubjectLookup: boolean,
+      subjectLookupStrategy: 'none' | 'synthetic_scope_id',
+      operationId: string,
+    ) => {
+      const descriptor = privacyProcessorDescriptorReferenceSchema.parse({
+        processorId: '99999999-9999-4999-8999-999999999999',
+        inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        descriptorDigest: '2'.repeat(64),
+        inventoryVersionDigest: '1'.repeat(64),
+        allowedPurposeIds: [],
+        allowedCategoryIds: [],
+        capabilities: ['export'],
+        supportsSubjectLookup,
+        codeOwner: 'packages.domain.privacy',
+        synthetic: true,
+      });
+      const expected = privacyExpectedProcessorInventorySchema.parse({
+        schemaVersion: 'privacy.processor-inventory.v1',
+        inventoryId: descriptor.inventoryId,
+        inventoryVersionDigest: descriptor.inventoryVersionDigest,
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        sourceCommit: '2a59a47',
+        processors: [
+          {
+            processorId: descriptor.processorId,
+            registrationVersion: 1,
+            inventoryId: descriptor.inventoryId,
+            descriptorDigest: descriptor.descriptorDigest,
+            codeOwner: descriptor.codeOwner,
+            adapterPackage: '@fitness-os/domain',
+            storageKind: 'in_memory_synthetic',
+            allowedPurposeIds: [],
+            allowedCategoryIds: [],
+            subjectLookupStrategy,
+            supportedCapabilities: ['export'],
+            unsupportedCapabilities: [],
+            recordFamilies: [
+              {
+                family: 'privacy_export_metadata',
+                lifecycleAction: 'retain_until_reviewed',
+              },
+            ],
+            environmentApplicability: 'synthetic_only',
+            requiredReadiness: 'mechanism_only',
+            synthetic: true,
+          },
+        ],
+      }).processors[0]!;
+      const coordinator = new SyntheticPrivacyProcessorExecutionCoordinator({
+        resolve: async () => ({
+          descriptorReference: () => descriptor,
+          execute: async () => {
+            executions += 1;
+            throw new Error('must not execute');
+          },
+        }),
+      });
+
+      return coordinator.execute({
+        requestId: '66666666-6666-4666-8666-666666666666',
+        expected: {
+          inventoryVersionDigest: descriptor.inventoryVersionDigest,
+          processor: expected,
+        },
+        command: {
+          processorId: descriptor.processorId,
+          capability: 'export',
+          subjectScopeId: '22222222-2222-4222-8222-222222222222' as never,
+          correlationId: '55555555-5555-4555-8555-555555555555' as never,
+          operationId: operationId as never,
+          productionMode: false,
+        },
+      });
+    };
+
+    await expect(
+      executeForLookup(
+        false,
+        'synthetic_scope_id',
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      ),
+    ).resolves.toEqual({ status: 'handler_missing' });
+    await expect(
+      executeForLookup(true, 'none', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'),
+    ).resolves.toEqual({ status: 'handler_missing' });
+    expect(executions).toBe(0);
+  });
+
   it('never invokes a destructive capability', async () => {
     let executions = 0;
     const result = await coordinateSyntheticProcessorStep({

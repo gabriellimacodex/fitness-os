@@ -119,7 +119,9 @@ export class SyntheticPrivacyProcessorExecutionCoordinator implements PrivacyPro
         input.expected.processor.descriptorDigest ||
       descriptor.codeOwner !== input.expected.processor.codeOwner ||
       descriptor.synthetic !== true ||
+      descriptor.supportsSubjectLookup !== true ||
       input.expected.processor.synthetic !== true ||
+      input.expected.processor.subjectLookupStrategy !== 'synthetic_scope_id' ||
       input.expected.processor.requiredReadiness !== 'mechanism_only' ||
       !['synthetic_only', 'disposable_test'].includes(
         input.expected.processor.environmentApplicability,
