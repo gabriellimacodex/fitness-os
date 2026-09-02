@@ -85,7 +85,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Retention-preview PG bundle composition   | `#218` (PG repository included in the API privacy persistence bundle)                                                            |
 | Retention execution deny coverage         | `#219` (remaining synthetic authorization deny branches)                                                                         |
 | Governance-lifecycle readiness            | `#220` (real migration/table evidence for the lifecycle component)                                                               |
-| PG lifecycle binding verifier             | `#221` (exact persisted proof lookup; available for injection, not yet API/bootstrap default)                                    |
+| PG lifecycle binding verifier             | `#221` (exact post-persistence proof lookup; not a pre-append authority when pointed at the same target lifecycle ledger)        |
 | Rule-aware preview API composition        | `#222` (optional explicit rule selection; unseeded default remains fail-closed)                                                  |
 | Persisted-preview execution authorization | `#225`, `#227` (persisted state/TTL plus trusted current inventory and processor digests; route composition remains open)        |
 
@@ -151,9 +151,11 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   lifecycle-proof recording (#198), retention-rule PG persistence (#217/#227),
   preview-bundle/rule-aware API composition (#218/#222), the PG lifecycle
   binding verifier (#221), and persisted-preview/current-runtime authorization
-  (#225/#227) landed. API/bootstrap composition of the PG verifier,
-  route-level persisted-preview execution transition, and full coordinator
-  semantics across these pieces remain open; H4 is not closed.
+  (#225/#227) landed. A trusted execution/coordinator-backed verifier (or an
+  explicitly separate evidence source) remains required for pre-append route
+  authorization; the target PG lifecycle ledger cannot verify a new row before
+  that row exists. Route-level persisted-preview execution transition and full
+  coordinator semantics across these pieces remain open; H4 is not closed.
 - Privacy DB readiness now replaces the migration/repository components with
   real journal/table evidence (#191); the other readiness components remain
   independently unverified/synthetic and Gate A remains `PENDING`.
