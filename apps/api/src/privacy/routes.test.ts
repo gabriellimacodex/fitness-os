@@ -11,6 +11,7 @@ import {
   privacyPurposeVersionReferenceSchema,
   privacyExpectedProcessorInventorySchema,
   privacyReadinessResultSchema,
+  privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
@@ -30,6 +31,7 @@ import {
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRetentionPreviewRepository,
+  SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -56,6 +58,18 @@ const purpose = privacyPurposeVersionReferenceSchema.parse({
   evidenceRequired: true,
   activationState: 'active',
   contentDigest: 'b'.repeat(64),
+});
+
+const retentionRule = privacyRetentionRuleReferenceSchema.parse({
+  ruleId: '55555555-5555-4555-8555-555555555555',
+  ruleVersionId: '66666666-6666-4666-8666-666666666666',
+  engineeringCategoryId: purpose.allowedCategoryIds[0],
+  purposeVersionId: purpose.purposeVersionId,
+  policyVersionId: policy.versionId,
+  action: 'delete',
+  parametersDigest: 'e'.repeat(64),
+  canonicalizationVersion: 'privacy-governance.canonical.v1',
+  synthetic: true,
 });
 
 const processor = privacyProcessorDescriptorReferenceSchema.parse({
@@ -1205,6 +1219,192 @@ describe('POST /v1/privacy/synthetic/retention-preview', () => {
     });
     expect(replay.statusCode).toBe(200);
     expect(replay.json().preview.selectionDigest).toBe(selectionDigest);
+
+    await app.close();
+  });
+
+  it('plans a rule-aware preview and binds the active rule version and digest when retentionRuleSelection is provided', async () => {
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(retentionRule);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'planned',
+      preview: { retentionRuleVersionId: retentionRule.ruleVersionId },
+    });
+    expect(typeof response.json().preview.retentionRuleDigest).toBe('string');
+    // Binding the rule into the selection digest changes it from the
+    // unconditional plan for otherwise identical input.
+    const unconditional = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+    expect(response.json().preview.selectionDigest).not.toBe(
+      unconditional.json().preview.selectionDigest,
+    );
+
+    await app.close();
+  });
+
+  it('omitting retentionRuleSelection preserves the unconditional plan exactly, with no rule fields in the response', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().preview).not.toHaveProperty('retentionRuleDigest');
+    expect(response.json().preview).not.toHaveProperty(
+      'retentionRuleVersionId',
+    );
+
+    await app.close();
+  });
+
+  it('fails closed as no_active_retention_rule when retentionRuleSelection is provided but no rule is seeded or injected', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: 'invalid',
+      reason: 'no_active_retention_rule',
+    });
+
+    await app.close();
+  });
+
+  it('fails closed as retention_rule_policy_mismatch when the active rule carries a different policy version', async () => {
+    const mismatchedRule = privacyRetentionRuleReferenceSchema.parse({
+      ...retentionRule,
+      policyVersionId: '11111111-1111-4111-8111-111111111111',
+    });
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(mismatchedRule);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: mismatchedRule.engineeringCategoryId,
+          purposeVersionId: mismatchedRule.purposeVersionId,
+          ruleVersionId: mismatchedRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: 'invalid',
+      reason: 'retention_rule_policy_mismatch',
+    });
+
+    await app.close();
+  });
+
+  it('does not persist rule-aware retentionRuleDigest/retentionRuleVersionId into the retentionPreviews write-through', async () => {
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(retentionRule);
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+          retentionPreviews,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const selectionDigest = response.json().preview.selectionDigest;
+
+    const stored =
+      await retentionPreviews.getBySelectionDigest(selectionDigest);
+    expect(stored).not.toHaveProperty('retentionRuleDigest');
+    expect(stored).not.toHaveProperty('retentionRuleVersionId');
+    expect(stored).toMatchObject({ selectionDigest, status: 'planned' });
 
     await app.close();
   });
