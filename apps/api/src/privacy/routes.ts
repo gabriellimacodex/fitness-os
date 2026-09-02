@@ -3,6 +3,7 @@ import {
   compareExpectedInventoryToRuntime,
   createPrivacyGovernanceExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
+  digestRetentionExecutionInput,
   evaluateDataUse,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
@@ -69,6 +70,7 @@ import {
   type ApiErrorCode,
   type PrivacyGovernanceLifecycleBinding,
   type PrivacyReadinessResult,
+  type PrivacyRetentionPreviewRecord,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -163,8 +165,9 @@ export interface PrivacySyntheticOptions {
   /**
    * Optional disposable retention preview repository (e.g. Postgres). When
    * set, a successfully planned retention preview is additionally persisted
-   * keyed by its deterministic `selectionDigest` and execution authorization
-   * reads the stored record back. Marking it executed remains a later step.
+   * keyed by its deterministic `selectionDigest`; execution authorization reads
+   * it back and atomically binds the `planned` -> `executed` transition to one
+   * operation ID. No processor deletion/transformation occurs on this route.
    */
   retentionPreviews?: PrivacyRetentionPreviewRepository;
   /**
@@ -751,7 +754,67 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      if (retentionPreviews === undefined) {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'preview_mismatch',
+          status: 'hard_disabled',
+        });
+      }
+
+      const executionInputDigest = digestRetentionExecutionInput({
+        previewTtlMs: body.data.previewTtlMs,
+        requestedSelectionDigest: body.data.requestedSelectionDigest,
+      });
+
+      let preview: PrivacyRetentionPreviewRecord | null;
+      try {
+        preview = await retentionPreviews.getBySelectionDigest(
+          body.data.requestedSelectionDigest,
+        );
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention authorization evidence unavailable',
+        );
+      }
+
+      if (preview?.status === 'executed') {
+        try {
+          const replay = await retentionPreviews.markExecuted({
+            executedAt: preview.executedAt ?? preview.createdAt,
+            inputDigest: executionInputDigest,
+            operationId: body.data.operationId,
+            selectionDigest: body.data.requestedSelectionDigest,
+          });
+
+          if (replay === 'not_found') {
+            return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse(
+              {
+                reason: 'preview_mismatch',
+                status: 'hard_disabled',
+              },
+            );
+          }
+
+          return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse(
+            { status: replay },
+          );
+        } catch {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Retention execution transition unavailable',
+          );
+        }
+      }
+
       let result: ReturnType<typeof resolveRetentionExecutionAuthorization>;
+      let nowUtcMs: string;
       try {
         const currentInventoryVersionDigest =
           expectedInventory === undefined
@@ -763,18 +826,13 @@ export function registerPrivacySyntheticRoutes(
             : (await processors.listDescriptors()).map(
                 (descriptor) => descriptor.descriptorDigest,
               );
-        const preview =
-          retentionPreviews === undefined
-            ? null
-            : await retentionPreviews.getBySelectionDigest(
-                body.data.requestedSelectionDigest,
-              );
+        nowUtcMs = clock.nowUtcMs();
 
         result = resolveRetentionExecutionAuthorization({
           authoritySynthetic: true,
           currentInventoryVersionDigest,
           currentProcessorDescriptorDigests,
-          nowUtcMs: clock.nowUtcMs(),
+          nowUtcMs,
           policySynthetic: true,
           preview,
           previewTtlMs: body.data.previewTtlMs,
@@ -798,8 +856,34 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      let transition:
+        'executed' | 'idempotent_replay' | 'conflict' | 'not_found';
+      try {
+        transition = await retentionPreviews.markExecuted({
+          executedAt: nowUtcMs,
+          inputDigest: executionInputDigest,
+          operationId: body.data.operationId,
+          selectionDigest: body.data.requestedSelectionDigest,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention execution transition unavailable',
+        );
+      }
+
+      if (transition === 'not_found') {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'preview_mismatch',
+          status: 'hard_disabled',
+        });
+      }
+
       return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
-        status: 'allowed_synthetic_test',
+        status: transition,
       });
     },
   );

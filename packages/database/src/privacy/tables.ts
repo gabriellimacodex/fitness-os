@@ -485,6 +485,8 @@ export const privacyRetentionPreview = pgTable(
       mode: 'string',
       withTimezone: true,
     }),
+    executionOperationId: uuid('execution_operation_id'),
+    executionInputDigest: text('execution_input_digest'),
   },
   (table) => [
     check(
@@ -505,6 +507,23 @@ export const privacyRetentionPreview = pgTable(
         (${table.status} = 'executed' AND ${table.executedAt} IS NOT NULL) OR
         (${table.status} = 'planned' AND ${table.executedAt} IS NULL)
       )`,
+    ),
+    check(
+      'privacy_retention_preview_status_operation_pair_check',
+      sql`(
+        (${table.status} = 'executed' AND ${table.executionOperationId} IS NOT NULL) OR
+        (${table.status} = 'planned' AND ${table.executionOperationId} IS NULL)
+      )`,
+    ),
+    check(
+      'privacy_retention_preview_status_input_digest_pair_check',
+      sql`(
+        (${table.status} = 'executed' AND ${table.executionInputDigest} ~ '^[a-f0-9]{64}$') OR
+        (${table.status} = 'planned' AND ${table.executionInputDigest} IS NULL)
+      )`,
+    ),
+    uniqueIndex('privacy_retention_preview_execution_operation_id_unique').on(
+      table.executionOperationId,
     ),
     index('privacy_retention_preview_created_at_idx').on(table.createdAt),
     index('privacy_retention_preview_policy_version_id_idx').on(

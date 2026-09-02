@@ -31,6 +31,7 @@ export type {
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
+  PrivacyRetentionPreviewExecutionResult,
   PrivacyRetentionPreviewRepository,
   PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
@@ -69,6 +70,7 @@ export {
 } from './request.js';
 export {
   authorizeRetentionExecution,
+  digestRetentionExecutionInput,
   digestRetentionRuleReference,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
