@@ -2666,6 +2666,76 @@ describe('POST /v1/privacy/synthetic/processor-coordinate', () => {
     await expect(processorSteps.listForRequest(requestId)).resolves.toEqual([]);
     await app.close();
   });
+
+  it('does not resolve, execute, timestamp, or append a fresh operation after completion', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'completed',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let resolverReads = 0;
+    let clockReads = 0;
+    let appends = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              clockReads += 1;
+              return '2026-08-18T12:03:00.000Z';
+            },
+          },
+          expectedInventory: expectedInventoryPort,
+          processorResolver: {
+            resolve: async () => {
+              resolverReads += 1;
+              throw new Error('must not resolve');
+            },
+          },
+          processorSteps: {
+            append: async () => {
+              appends += 1;
+              return 'accepted';
+            },
+            listForRequest: async () => [],
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'request_not_executable' });
+    expect({ appends, clockReads, resolverReads }).toEqual({
+      appends: 0,
+      clockReads: 0,
+      resolverReads: 0,
+    });
+    await app.close();
+  });
 });
 
 describe('POST /v1/privacy/synthetic/processor-step-record', () => {
