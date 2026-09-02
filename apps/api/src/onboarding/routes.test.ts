@@ -65,6 +65,18 @@ function secretAt(index: number) {
   );
 }
 
+function extractAttemptId(json: unknown) {
+  const body = onboardingOperationResponseSchema.parse(json);
+  if (
+    !body.result ||
+    body.result.outcome !== 'command_succeeded' ||
+    !('attempt' in body.result)
+  ) {
+    throw new Error('expected attempt');
+  }
+  return body.result.attempt.attemptId;
+}
+
 describe('onboarding routes without trusted context', () => {
   it('returns 401 for every protected route when no context is injected', async () => {
     const app = buildApp({ logger: false });
@@ -1273,6 +1285,75 @@ describe('student invitation list/issue/revoke', () => {
 
     await app.close();
   });
+
+  it('returns operation_input_mismatch when a revoke retry token targets a different invitation', async () => {
+    const store = createOnboardingStore();
+    const { app } = buildSyntheticApp({ mappedRoles: ['coach'], store });
+
+    const firstIssued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue-one'),
+      },
+    });
+    const secondIssued = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-issue-two'),
+      },
+    });
+    const firstIssuedBody = onboardingOperationResponseSchema.parse(
+      firstIssued.json(),
+    );
+    const secondIssuedBody = onboardingOperationResponseSchema.parse(
+      secondIssued.json(),
+    );
+    if (
+      !firstIssuedBody.result ||
+      firstIssuedBody.result.outcome !== 'command_succeeded' ||
+      !('issued' in firstIssuedBody.result) ||
+      !secondIssuedBody.result ||
+      secondIssuedBody.result.outcome !== 'command_succeeded' ||
+      !('issued' in secondIssuedBody.result)
+    ) {
+      throw new Error('expected issued invitations');
+    }
+    const firstInvitationId = firstIssuedBody.result.issued.invitationId;
+    const secondInvitationId = secondIssuedBody.result.issued.invitationId;
+
+    const sharedRevokeToken = retryTokenSchema.parse(
+      'synthetic-retry-revoke-shared',
+    );
+    const firstRevoke = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${firstInvitationId}/revoke`,
+      payload: { retryToken: sharedRevokeToken },
+    });
+    const mismatchedRevoke = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${secondInvitationId}/revoke`,
+      payload: { retryToken: sharedRevokeToken },
+    });
+    const firstRevokeBody = onboardingOperationResponseSchema.parse(
+      firstRevoke.json(),
+    );
+    const mismatchedRevokeBody = onboardingOperationResponseSchema.parse(
+      mismatchedRevoke.json(),
+    );
+
+    expect(firstRevokeBody.operation.state).toBe('operation_committed');
+    expect(mismatchedRevokeBody.operation.state).toBe(
+      'operation_input_mismatch',
+    );
+    expect(mismatchedRevokeBody.operation.operationId).toBe(
+      firstRevokeBody.operation.operationId,
+    );
+    expect(mismatchedRevokeBody.result).toBeNull();
+
+    await app.close();
+  });
 });
 
 describe('resume and abandon', () => {
@@ -1350,6 +1431,114 @@ describe('resume and abandon', () => {
         attempt: { lifecycle: 'terminal', terminalReason: 'abandoned' },
       },
     });
+
+    await app.close();
+  });
+
+  it('returns operation_input_mismatch when a resume retry token targets a different attempt', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: OTHER_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-second-attempt'),
+      },
+    });
+    const firstAttemptId = extractAttemptId(first.json());
+    const secondAttemptId = extractAttemptId(second.json());
+
+    const sharedResumeToken = retryTokenSchema.parse(
+      'synthetic-retry-resume-shared',
+    );
+    const firstResume = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${firstAttemptId}/resume`,
+      payload: { retryToken: sharedResumeToken },
+    });
+    const mismatchedResume = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${secondAttemptId}/resume`,
+      payload: { retryToken: sharedResumeToken },
+    });
+    const firstResumeBody = onboardingOperationResponseSchema.parse(
+      firstResume.json(),
+    );
+    const mismatchedResumeBody = onboardingOperationResponseSchema.parse(
+      mismatchedResume.json(),
+    );
+
+    expect(firstResumeBody.operation.state).toBe('operation_committed');
+    expect(mismatchedResumeBody.operation.state).toBe(
+      'operation_input_mismatch',
+    );
+    expect(mismatchedResumeBody.operation.operationId).toBe(
+      firstResumeBody.operation.operationId,
+    );
+    expect(mismatchedResumeBody.result).toBeNull();
+
+    await app.close();
+  });
+
+  it('returns operation_input_mismatch when an abandon retry token targets a different attempt', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: OTHER_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-second-attempt'),
+      },
+    });
+    const firstAttemptId = extractAttemptId(first.json());
+    const secondAttemptId = extractAttemptId(second.json());
+
+    const sharedAbandonToken = retryTokenSchema.parse(
+      'synthetic-retry-abandon-shared',
+    );
+    const firstAbandon = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${firstAttemptId}/abandon`,
+      payload: { retryToken: sharedAbandonToken },
+    });
+    const mismatchedAbandon = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${secondAttemptId}/abandon`,
+      payload: { retryToken: sharedAbandonToken },
+    });
+    const firstAbandonBody = onboardingOperationResponseSchema.parse(
+      firstAbandon.json(),
+    );
+    const mismatchedAbandonBody = onboardingOperationResponseSchema.parse(
+      mismatchedAbandon.json(),
+    );
+
+    expect(firstAbandonBody.operation.state).toBe('operation_committed');
+    expect(mismatchedAbandonBody.operation.state).toBe(
+      'operation_input_mismatch',
+    );
+    expect(mismatchedAbandonBody.operation.operationId).toBe(
+      firstAbandonBody.operation.operationId,
+    );
+    expect(mismatchedAbandonBody.result).toBeNull();
 
     await app.close();
   });
@@ -1526,6 +1715,112 @@ describe('policy-refresh and claim', () => {
       outcome: 'invalid_or_unavailable',
     });
     expect(store.mappings.get('principal-a') ?? []).toEqual([]);
+
+    await app.close();
+  });
+
+  it('returns operation_input_mismatch when a policy-refresh retry token targets a different attempt', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: OTHER_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-second-attempt'),
+      },
+    });
+    const firstAttemptId = extractAttemptId(first.json());
+    const secondAttemptId = extractAttemptId(second.json());
+
+    const sharedPolicyToken = retryTokenSchema.parse(
+      'synthetic-retry-policy-shared',
+    );
+    const firstRefresh = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${firstAttemptId}/policy-refresh`,
+      payload: { retryToken: sharedPolicyToken },
+    });
+    const mismatchedRefresh = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${secondAttemptId}/policy-refresh`,
+      payload: { retryToken: sharedPolicyToken },
+    });
+    const firstRefreshBody = onboardingOperationResponseSchema.parse(
+      firstRefresh.json(),
+    );
+    const mismatchedRefreshBody = onboardingOperationResponseSchema.parse(
+      mismatchedRefresh.json(),
+    );
+
+    expect(firstRefreshBody.operation.state).toBe('operation_committed');
+    expect(mismatchedRefreshBody.operation.state).toBe(
+      'operation_input_mismatch',
+    );
+    expect(mismatchedRefreshBody.operation.operationId).toBe(
+      firstRefreshBody.operation.operationId,
+    );
+    expect(mismatchedRefreshBody.result).toBeNull();
+
+    await app.close();
+  });
+
+  it('returns operation_input_mismatch when a claim retry token is reused with a different claim secret', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-policy-claim'),
+      },
+    });
+
+    const sharedClaimToken = retryTokenSchema.parse(
+      'synthetic-retry-claim-shared',
+    );
+    const firstClaim = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: { claimSecret: CLAIM_SECRET, retryToken: sharedClaimToken },
+    });
+    const mismatchedClaim = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: { claimSecret: OTHER_SECRET, retryToken: sharedClaimToken },
+    });
+    const firstClaimBody = onboardingOperationResponseSchema.parse(
+      firstClaim.json(),
+    );
+    const mismatchedClaimBody = onboardingOperationResponseSchema.parse(
+      mismatchedClaim.json(),
+    );
+
+    expect(firstClaimBody.operation.state).toBe('operation_committed');
+    expect(mismatchedClaimBody.operation.state).toBe(
+      'operation_input_mismatch',
+    );
+    expect(mismatchedClaimBody.operation.operationId).toBe(
+      firstClaimBody.operation.operationId,
+    );
+    expect(mismatchedClaimBody.result).toBeNull();
+    expect(mismatchedClaim.body).not.toContain(OTHER_SECRET);
 
     await app.close();
   });
