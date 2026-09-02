@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { movementDetailSchema } from '@fitness-os/schemas';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -66,5 +70,17 @@ describe('loadMovement', () => {
         },
       } as never),
     ).resolves.toEqual({ status: 'not_found' });
+  });
+});
+
+describe('web movement boundary', () => {
+  it('does not import domain or database packages', () => {
+    const pageSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'page.tsx'),
+      'utf8',
+    );
+
+    expect(pageSource).not.toContain('@fitness-os/domain');
+    expect(pageSource).not.toContain('@fitness-os/database');
   });
 });
