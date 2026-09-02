@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `1ec1c835e8cb630b1c053cd7242683b58a754297` (integrated progress refresh through #234; disposition unchanged)
-- Prior recorded heads: `5733c3375d71edab713b57045d4447a42bab9518`, `c4d4d77033748d5a82b915dd34fece024d78f049`, `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `f6de54e2ac6f1d7f7127c87e46bad4902b48e21d` (integrated progress refresh through #236; disposition unchanged)
+- Prior recorded heads: `1ec1c835e8cb630b1c053cd7242683b58a754297`, `5733c3375d71edab713b57045d4447a42bab9518`, `c4d4d77033748d5a82b915dd34fece024d78f049`, `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-09-02` (landed-evidence refresh only; includes #209/#217–#234)
+- Record timestamp: `2026-09-02` (landed-evidence refresh only; includes #209/#217–#234/#236)
 
 ## Explicit non-claims
 
@@ -88,8 +88,9 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | PG lifecycle binding verifier             | `#221` (exact post-persistence proof lookup; not a pre-append authority when pointed at the same target lifecycle ledger)                                                           |
 | Rule-aware preview API composition        | `#222` (optional explicit rule selection; unseeded default remains fail-closed)                                                                                                     |
 | Persisted-preview execution authorization | `#225`, `#227`, `#232` (domain guard plus route composition using persisted state/TTL and trusted current inventory, processor digests, and clock)                                  |
-| Exact-once preview consumption            | `#234` (canonical selection/TTL operation binding; PG CAS/uniqueness/concurrency; staged legacy-safe migrations; replay without mutable evidence rereads; no processor side effect) |
 | Independent execution-receipt source      | `#230` (optional read-only source and fail-closed verifier composition before append to a separate lifecycle ledger)                                                                |
+| Exact-once preview consumption            | `#234` (canonical selection/TTL operation binding; PG CAS/uniqueness/concurrency; staged legacy-safe migrations; replay without mutable evidence rereads; no processor side effect) |
+| Server-authoritative processor-step path  | `#236` (pinned-inventory plan, trusted timestamp, deterministic transition identity, exact immutable replay match; production hard-disabled before evidence reads)                  |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -156,9 +157,12 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   (#225/#227/#232), an independent read-only execution/coordinator receipt source
   for fail-closed pre-append verification (#230), and exact-once preview
   consumption with canonical operation/input binding and legacy-safe migrations
-  (#234) landed. The target PG lifecycle ledger remains the separate append target
-  and cannot authorize its own new row. Full coordinator semantics across these
-  pieces remain open; H4 is not closed.
+  (#234), and server-authoritative processor-step plan/timestamp/transition
+  identity plus exact immutable replay matching (#236) landed. The target PG
+  lifecycle ledger remains the separate append target and cannot authorize its
+  own new row. Processor outcome remains caller-supplied synthetic evidence;
+  binding it to the independent execution receipt and full coordinator semantics
+  across these pieces remain open. H4 is not closed.
 - Privacy DB readiness now replaces the migration/repository components with
   real journal/table evidence (#191); the other readiness components remain
   independently unverified/synthetic and Gate A remains `PENDING`.
