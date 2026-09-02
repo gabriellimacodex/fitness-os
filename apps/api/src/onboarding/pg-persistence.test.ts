@@ -81,6 +81,9 @@ function createRecordingPersistence(): OnboardingPgPersistence & {
         return { operation: record, status: 'accepted' as const };
       },
     },
+    transitions: {
+      append: async () => 'accepted' as const,
+    },
   };
 }
 
