@@ -930,17 +930,109 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = await recordProcessorStepAndAdvanceRequest({
-        requests: subjectRequests,
-        steps: processorSteps,
-        step: body.data.step,
-        expected: body.data.expected,
-        updatedAt: clock.nowUtcMs(),
-        transitionId: body.data.transitionId,
-        operationId: body.data.operationId,
-        correlationId: body.data.correlationId,
-        productionMode: body.data.productionMode,
+      if (body.data.productionMode) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          reason: 'production_path',
+          status: 'hard_disabled',
+        });
+      }
+
+      let subjectRequest;
+      try {
+        subjectRequest = await subjectRequests.get(body.data.step.requestId);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor plan evidence unavailable',
+        );
+      }
+
+      if (subjectRequest === null) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'request_not_found',
+        });
+      }
+
+      if (body.data.step.correlationId !== subjectRequest.correlationId) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'binding_mismatch',
+        });
+      }
+
+      if (expectedInventory === undefined) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'plan_unavailable',
+        });
+      }
+
+      let inventory;
+      try {
+        inventory = await expectedInventory.getInventory();
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor plan evidence unavailable',
+        );
+      }
+
+      if (
+        inventory.inventoryVersionDigest !==
+        subjectRequest.inventoryVersionDigest
+      ) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'inventory_mismatch',
+        });
+      }
+
+      const plan = buildRequestProcessorPlan({
+        expected: inventory,
+        requestType: subjectRequest.requestType,
       });
+      if (plan.status !== 'planned') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'plan_incomplete',
+        });
+      }
+      if (
+        !plan.steps.some(
+          (planned) =>
+            planned.processorId === body.data.step.processorId &&
+            planned.capability === body.data.step.capability,
+        )
+      ) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'step_not_planned',
+        });
+      }
+
+      let result: Awaited<
+        ReturnType<typeof recordProcessorStepAndAdvanceRequest>
+      >;
+      try {
+        const recordedAt = clock.nowUtcMs();
+        result = await recordProcessorStepAndAdvanceRequest({
+          requests: subjectRequests,
+          steps: processorSteps,
+          step: { ...body.data.step, recordedAt },
+          expected: plan.steps,
+          updatedAt: recordedAt,
+          productionMode: false,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor-step coordination unavailable',
+        );
+      }
 
       if (result.status === 'invalid_transition') {
         return privacySyntheticProcessorStepRecordResponseSchema.parse({

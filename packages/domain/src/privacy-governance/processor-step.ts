@@ -1,11 +1,9 @@
 import {
-  type PrivacyCorrelationId,
-  type PrivacyOperationId,
   type PrivacyProcessorCapability,
   type PrivacyProcessorStepReference,
   type PrivacySubjectRequestReference,
-  type PrivacySubjectRequestTransitionId,
   type PrivacySubjectRequestTransitionReference,
+  privacySubjectRequestTransitionIdSchema,
 } from '@fitness-os/schemas';
 
 import { isTerminalSubjectRequestState } from './request.js';
@@ -29,6 +27,18 @@ export interface ExpectedProcessorStep {
 
 const pairKey = (processorId: string, capability: string): string =>
   `${processorId}:${capability}`;
+
+const sameProcessorStepReplay = (
+  stored: PrivacyProcessorStepReference,
+  replayed: PrivacyProcessorStepReference,
+): boolean =>
+  stored.stepId === replayed.stepId &&
+  stored.requestId === replayed.requestId &&
+  stored.processorId === replayed.processorId &&
+  stored.capability === replayed.capability &&
+  stored.outcome === replayed.outcome &&
+  stored.operationId === replayed.operationId &&
+  stored.correlationId === replayed.correlationId;
 
 /**
  * Derives request completion from the full append-only step history plus the
@@ -149,9 +159,6 @@ export async function recordProcessorStepAndAdvanceRequest(input: {
   step: PrivacyProcessorStepReference;
   expected: readonly ExpectedProcessorStep[];
   updatedAt: string;
-  transitionId: PrivacySubjectRequestTransitionId;
-  operationId: PrivacyOperationId;
-  correlationId: PrivacyCorrelationId;
   productionMode?: boolean;
 }): Promise<ProcessorStepAdvanceResult> {
   const request = await input.requests.get(input.step.requestId);
@@ -166,14 +173,20 @@ export async function recordProcessorStepAndAdvanceRequest(input: {
     steps: history,
   });
 
-  // A `conflict` means this exact stepId was already recorded — but it does
-  // NOT mean the transition that should have followed it ever ran. A crash
-  // (or thrown `applyTransition`) between a successful append and its
-  // transition attempt leaves the step durably recorded with the request
-  // still `in_progress`/`partially_failed`. Falling through to the same
-  // terminal/completion/transition evaluation below (instead of returning
-  // early) lets a replay of that exact step recover the dropped transition,
-  // rather than reporting `step_conflict` forever with no way to advance.
+  if (appendResult === 'conflict') {
+    const stored = history.find((step) => step.stepId === input.step.stepId);
+    if (stored === undefined || !sameProcessorStepReplay(stored, input.step)) {
+      return { completion, request, status: 'step_conflict' };
+    }
+  }
+
+  // A matching replay does NOT mean the transition that should have followed
+  // it ever ran. A crash (or thrown `applyTransition`) between a successful
+  // append and its transition attempt leaves the step durably recorded with
+  // the request still `in_progress`/`partially_failed`. Falling through to
+  // the same evaluation lets only that exact immutable replay recover the
+  // dropped transition. `recordedAt` is excluded because the API assigns a
+  // fresh trusted timestamp before discovering the persisted conflict.
   const recordedStatus: 'recorded' | 'step_conflict' =
     appendResult === 'conflict' ? 'step_conflict' : 'recorded';
 
@@ -190,13 +203,15 @@ export async function recordProcessorStepAndAdvanceRequest(input: {
   }
 
   const applied = await input.requests.applyTransition({
-    correlationId: input.correlationId,
+    correlationId: request.correlationId,
     next: completion,
-    operationId: input.operationId,
+    operationId: input.step.operationId,
     productionMode: input.productionMode,
     reasonCode: 'forward',
     requestId: request.requestId,
-    transitionId: input.transitionId,
+    transitionId: privacySubjectRequestTransitionIdSchema.parse(
+      input.step.stepId,
+    ),
     updatedAt: input.updatedAt,
   });
 

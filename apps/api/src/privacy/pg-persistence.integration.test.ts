@@ -612,11 +612,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         }),
       ).resolves.toMatchObject({ status: 'advanced' });
 
+      const inventory = await expectedInventory.getInventory();
+      const processorStepInventory =
+        new SyntheticPrivacyExpectedProcessorInventory(
+          privacyExpectedProcessorInventorySchema.parse({
+            ...inventory,
+            inventoryVersionDigest: '1'.repeat(64),
+            processors: inventory.processors.map((entry) => ({
+              ...entry,
+              supportedCapabilities: [...entry.supportedCapabilities, 'export'],
+            })),
+          }),
+        );
+
       const app = buildApp(
         { logger: false },
         {
           allowSyntheticPrivacy: true,
           privacy: {
+            expectedInventory: processorStepInventory,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
             subjectRequests: persistence.subjectRequests,
             processorSteps: persistence.processorSteps,
@@ -637,16 +651,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             outcome: 'completed',
             operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
             correlationId,
-            recordedAt: '2026-08-18T12:02:00.000Z',
           },
-          expected: [{ processorId, capability: 'export' }],
-          transitionId: privacySubjectRequestTransitionIdSchema.parse(
-            'a5555555-5555-4555-8555-555555555555',
-          ),
-          operationId: privacyOperationIdSchema.parse(
-            'b6666666-6666-4666-8666-666666666666',
-          ),
-          correlationId,
           productionMode: false,
         },
       });
@@ -659,6 +664,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         status: 'advanced',
         completion: 'completed',
         request: { state: 'completed' },
+        transition: {
+          correlationId,
+          operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          transitionId: 'e2222222-2222-4222-8222-222222222222',
+        },
       });
 
       const stepRows = await connection.db.execute<{
