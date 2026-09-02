@@ -1468,8 +1468,30 @@ export type PrivacySyntheticWithdrawalPlanResponse = z.infer<
 >;
 
 /**
+ * Optional caller-identified retention-rule selection. When present, the
+ * route plans the preview through the fail-closed rule-aware path instead of
+ * the unconditional one — the caller never picks "latest" or "default"; the
+ * exact `ruleVersionId` must already be active for the identified
+ * category/purpose pair.
+ */
+export const privacySyntheticRetentionRuleSelectionSchema = z
+  .object({
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema,
+    purposeVersionId: privacyPurposeVersionIdSchema,
+    ruleVersionId: privacyRetentionRuleVersionIdSchema,
+  })
+  .strict();
+export type PrivacySyntheticRetentionRuleSelection = z.infer<
+  typeof privacySyntheticRetentionRuleSelectionSchema
+>;
+
+/**
  * Disposable synthetic API for retention preview planning. Read-only; never
  * deletes or transforms data. Not a production public privacy route.
+ * `retentionRuleSelection` is optional and additive: omitting it preserves
+ * the unconditional `planRetentionPreview` behavior exactly; providing it
+ * routes through `planRetentionPreviewWithRetentionRule`'s fail-closed rule
+ * binding instead.
  */
 export const privacySyntheticRetentionPreviewRequestSchema = z
   .object({
@@ -1480,6 +1502,8 @@ export const privacySyntheticRetentionPreviewRequestSchema = z
     watermark: privacyTrustedUtcMsSchema,
     approvedExceptionIds: privacyApprovedExceptionIdsSchema,
     productionMode: z.boolean(),
+    retentionRuleSelection:
+      privacySyntheticRetentionRuleSelectionSchema.optional(),
   })
   .strict();
 export type PrivacySyntheticRetentionPreviewRequest = z.infer<
@@ -1495,6 +1519,11 @@ export const privacySyntheticRetentionPreviewResponseSchema = z
         'missing_inventory_digest',
         'missing_processor_descriptors',
         'missing_watermark',
+        'no_active_retention_rule',
+        'retention_rule_not_active_for_scope',
+        'retention_rule_ambiguous',
+        'retention_rule_policy_mismatch',
+        'retention_rule_synthetic_mismatch',
       ])
       .optional(),
     preview: z
@@ -1506,6 +1535,8 @@ export const privacySyntheticRetentionPreviewResponseSchema = z
         selectionDigest: privacySha256DigestSchema,
         approvedExceptionIds: privacyApprovedExceptionIdsSchema,
         synthetic: z.literal(true),
+        retentionRuleDigest: privacySha256DigestSchema.optional(),
+        retentionRuleVersionId: privacyRetentionRuleVersionIdSchema.optional(),
       })
       .strict()
       .optional(),

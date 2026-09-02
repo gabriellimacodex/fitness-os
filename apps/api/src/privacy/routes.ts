@@ -5,6 +5,7 @@ import {
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
   planRetentionPreview,
+  planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
   SyntheticPrivacyAuthorizationEvidenceLedger,
@@ -14,6 +15,7 @@ import {
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
@@ -29,6 +31,7 @@ import {
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRetentionPreviewRepository,
+  type PrivacyRetentionRuleRepository,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacySubjectDataProcessorResolver,
@@ -157,6 +160,15 @@ export interface PrivacySyntheticOptions {
    * remains a later composition step.
    */
   retentionPreviews?: PrivacyRetentionPreviewRepository;
+  /**
+   * Optional retention-rule registry (e.g. Postgres). Defaults to an
+   * in-memory synthetic registry shared for the lifetime of this route
+   * registration, seeded with no rules — an unrecognized request keeps
+   * failing closed as `no_active_retention_rule` until a rule is seeded or
+   * injected. Only consulted when a request includes
+   * `retentionRuleSelection`.
+   */
+  retentionRules?: PrivacyRetentionRuleRepository;
 }
 
 function sendError(
@@ -300,6 +312,8 @@ export function registerPrivacySyntheticRoutes(
   const processors = options.processors;
   const readiness = options.readiness;
   const retentionPreviews = options.retentionPreviews;
+  const retentionRules =
+    options.retentionRules ?? new SyntheticPrivacyRetentionRuleRepository();
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -656,7 +670,19 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = planRetentionPreview(body.data);
+      const { retentionRuleSelection, ...previewInput } = body.data;
+
+      const result =
+        retentionRuleSelection === undefined
+          ? planRetentionPreview(previewInput)
+          : await planRetentionPreviewWithRetentionRule({
+              ...previewInput,
+              retentionRules,
+              engineeringCategoryId:
+                retentionRuleSelection.engineeringCategoryId,
+              purposeVersionId: retentionRuleSelection.purposeVersionId,
+              ruleVersionId: retentionRuleSelection.ruleVersionId,
+            });
 
       if (result.status === 'invalid') {
         return privacySyntheticRetentionPreviewResponseSchema.parse({
@@ -668,9 +694,20 @@ export function registerPrivacySyntheticRoutes(
       if (retentionPreviews !== undefined) {
         // Idempotent write-through: replanning the identical input yields the
         // identical selectionDigest, so a 'conflict' here is an expected
-        // no-op, not an error to surface to the caller.
+        // no-op, not an error to surface to the caller. The persisted record
+        // keeps the frozen `privacyRetentionPreviewRecordSchema` shape as-is;
+        // a rule-aware plan's `retentionRuleDigest`/`retentionRuleVersionId`
+        // stay response-only until that record contract is separately
+        // extended.
+        const preview = result.preview;
         await retentionPreviews.put({
-          ...result.preview,
+          policyVersionId: preview.policyVersionId,
+          inventoryVersionDigest: preview.inventoryVersionDigest,
+          processorDescriptorDigests: preview.processorDescriptorDigests,
+          watermark: preview.watermark,
+          selectionDigest: preview.selectionDigest,
+          approvedExceptionIds: preview.approvedExceptionIds,
+          synthetic: preview.synthetic,
           status: 'planned',
           createdAt: clock.nowUtcMs(),
           executedAt: null,
