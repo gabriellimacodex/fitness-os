@@ -7,6 +7,7 @@ import type {
   PrivacyEngineeringCategoryId,
   PrivacyEvidenceReference,
   PrivacyExpectedProcessorInventory,
+  PrivacyExpectedProcessorInventoryEntry,
   PrivacyGovernanceLifecycleProofReference,
   PrivacyGovernanceLifecycleBinding,
   PrivacyOperationId,
@@ -143,6 +144,30 @@ export interface PrivacyProcessorExecutionReceiptSource {
   listByOperationId(
     operationId: string,
   ): Promise<readonly PrivacyProcessorExecutionReceipt[]>;
+}
+
+export type PrivacyProcessorExecutionCoordinationResult =
+  | { status: 'executed' }
+  | { status: 'conflict' }
+  | { status: 'handler_missing' }
+  | { status: 'receipt_invalid' }
+  | { status: 'unavailable' };
+
+/**
+ * Executes one internally selected synthetic processor command and makes its
+ * immutable outcome receipt available through a separate receipt source.
+ * Implementations own operation-id replay; callers never submit a processor
+ * outcome through this port.
+ */
+export interface PrivacyProcessorExecutionCoordinator {
+  execute(input: {
+    requestId: string;
+    command: PrivacySyntheticProcessorCommand;
+    expected: {
+      inventoryVersionDigest: string;
+      processor: PrivacyExpectedProcessorInventoryEntry;
+    };
+  }): Promise<PrivacyProcessorExecutionCoordinationResult>;
 }
 
 /**

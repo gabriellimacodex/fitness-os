@@ -1693,6 +1693,64 @@ export type PrivacySyntheticProcessorPlanResponse = z.infer<
 >;
 
 /**
+ * Starts one coordinator-owned synthetic processor attempt. The caller owns
+ * only request and idempotency identity; the pinned plan selects processor and
+ * capability, while outcome, receipt, step, timestamp, and transition remain
+ * server-authoritative.
+ */
+export const privacySyntheticProcessorCoordinateRequestSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    operationId: privacyOperationIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorCoordinateRequest = z.infer<
+  typeof privacySyntheticProcessorCoordinateRequestSchema
+>;
+
+export const privacySyntheticProcessorCoordinateResponseSchema = z
+  .object({
+    status: z.enum([
+      'recorded',
+      'step_conflict',
+      'advanced',
+      'already_terminal',
+      'invalid_transition',
+      'transition_conflict',
+      'request_not_found',
+      'request_not_executable',
+      'inventory_mismatch',
+      'plan_incomplete',
+      'no_pending_step',
+      'handler_missing',
+      'execution_unavailable',
+      'execution_conflict',
+      'receipt_invalid',
+      'hard_disabled',
+    ]),
+    completion: z
+      .enum(['incomplete', 'completed', 'partially_failed'])
+      .optional(),
+    request: privacySubjectRequestReferenceSchema.optional(),
+    transition: privacySubjectRequestTransitionReferenceSchema.optional(),
+    reason: z
+      .enum([
+        'illegal_transition',
+        'verification_required',
+        'synthetic_verification_in_production',
+        'terminal_state',
+        'not_found',
+        'production_path',
+      ])
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorCoordinateResponse = z.infer<
+  typeof privacySyntheticProcessorCoordinateResponseSchema
+>;
+
+/**
  * Disposable synthetic API to append one append-only processor-step attempt
  * and, only when the server-derived expected (processorId, capability) plan
  * is now terminal, advance the subject request through its own state machine.
