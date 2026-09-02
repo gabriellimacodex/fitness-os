@@ -8,6 +8,7 @@ import {
 import {
   ATTEMPT_ACTIVE_CAP,
   canAllocateAttempt,
+  evaluateAttemptTimeout,
   evaluateClaimEligibility,
   inspectInvitationState,
   revokeInvitation,
@@ -76,6 +77,122 @@ describe('attempt selection', () => {
   it('enforces the fixed active cap', () => {
     expect(canAllocateAttempt(ATTEMPT_ACTIVE_CAP - 1)).toBe(true);
     expect(canAllocateAttempt(ATTEMPT_ACTIVE_CAP)).toBe(false);
+  });
+});
+
+describe('attempt timeout evaluation', () => {
+  const bounds = { absoluteTtlMs: 100, inactivityTtlMs: 30 };
+
+  it('is active before either bound is reached', () => {
+    expect(
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 80,
+        nowUtcMs: 90,
+      }),
+    ).toBe('active');
+  });
+
+  it('expires once the absolute TTL elapses, at the exact boundary', () => {
+    expect(
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 100,
+        nowUtcMs: 100,
+      }),
+    ).toBe('expired');
+  });
+
+  it('goes inactive once the inactivity TTL elapses without reaching absolute expiry', () => {
+    expect(
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 40,
+      }),
+    ).toBe('inactive');
+  });
+
+  it('prefers expired over inactive when both bounds are exceeded', () => {
+    expect(
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 0,
+        nowUtcMs: 150,
+      }),
+    ).toBe('expired');
+  });
+
+  it('resets on every recorded activity, never accumulating past inactivity', () => {
+    expect(
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 95,
+        nowUtcMs: 99,
+      }),
+    ).toBe('active');
+  });
+
+  it('fails closed on a non-finite timestamp or bound instead of reporting active', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: Number.NaN,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: Number.NaN, inactivityTtlMs: 30 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('rejects a zero or negative TTL bound', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: 0, inactivityTtlMs: 30 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: { absoluteTtlMs: 100, inactivityTtlMs: -1 },
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 20,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('rejects a clock that runs backward relative to createdAtMs', () => {
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 50,
+        lastActivityAtMs: 10,
+        nowUtcMs: 60,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds,
+        createdAtMs: 0,
+        lastActivityAtMs: 10,
+        nowUtcMs: 5,
+      }),
+    ).toThrow(RangeError);
   });
 });
 
