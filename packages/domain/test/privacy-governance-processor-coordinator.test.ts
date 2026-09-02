@@ -126,7 +126,7 @@ describe('synthetic processor coordinator', () => {
     });
   });
 
-  it('replays the same operation receipt without executing the handler twice', async () => {
+  it('serializes concurrent replay and rejects changed input for the same operation', async () => {
     const descriptor = privacyProcessorDescriptorReferenceSchema.parse({
       processorId: '99999999-9999-4999-8999-999999999999',
       inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -196,10 +196,17 @@ describe('synthetic processor coordinator', () => {
       },
     };
 
-    const first = await coordinator.execute(input);
-    const replay = await coordinator.execute(input);
+    const [first, replay] = await Promise.all([
+      coordinator.execute(input),
+      coordinator.execute(input),
+    ]);
+    const changedInput = await coordinator.execute({
+      ...input,
+      requestId: '77777777-7777-4777-8777-777777777777',
+    });
 
     expect(first).toEqual(replay);
+    expect(changedInput).toEqual({ status: 'conflict' });
     expect(first).toEqual({ status: 'executed' });
     await expect(
       coordinator.listByOperationId(input.command.operationId),
