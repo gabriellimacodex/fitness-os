@@ -306,7 +306,8 @@ export interface PrivacySubjectRequestRepository {
  * `selectionDigest` computed by `planRetentionPreview`. A preview is
  * accepted at most once per digest. `markExecuted` performs the atomic
  * synthetic/disposable `planned` -> `executed` transition and binds the winner
- * to one operation ID so only that operation can replay idempotently.
+ * to one operation ID plus canonical input digest so only an identical request
+ * can replay idempotently and one operation cannot own multiple previews.
  */
 export interface PrivacyRetentionPreviewRepository {
   getBySelectionDigest(
@@ -318,6 +319,7 @@ export interface PrivacyRetentionPreviewRepository {
   markExecuted(input: {
     selectionDigest: string;
     operationId: PrivacyOperationId;
+    inputDigest: string;
     executedAt: string;
   }): Promise<PrivacyRetentionPreviewExecutionResult>;
 }

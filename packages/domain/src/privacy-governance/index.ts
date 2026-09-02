@@ -70,6 +70,7 @@ export {
 } from './request.js';
 export {
   authorizeRetentionExecution,
+  digestRetentionExecutionInput,
   digestRetentionRuleReference,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,

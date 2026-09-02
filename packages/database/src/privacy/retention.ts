@@ -84,6 +84,7 @@ export function createPostgresPrivacyRetentionPreviewRepository(
           status: record.status,
           createdAt: record.createdAt,
           executedAt: record.executedAt,
+          executionInputDigest: null,
           executionOperationId: null,
         });
         return 'accepted' as const;
@@ -96,28 +97,46 @@ export function createPostgresPrivacyRetentionPreviewRepository(
     },
 
     markExecuted: async (input) => {
-      const [updated] = await connection.db
-        .update(privacyRetentionPreview)
-        .set({
-          executedAt: input.executedAt,
-          executionOperationId: input.operationId,
-          status: 'executed',
-        })
-        .where(
-          and(
-            eq(privacyRetentionPreview.selectionDigest, input.selectionDigest),
-            eq(privacyRetentionPreview.status, 'planned'),
-          ),
-        )
-        .returning({
-          selectionDigest: privacyRetentionPreview.selectionDigest,
-        });
+      let updated: { selectionDigest: string } | undefined;
+      try {
+        [updated] = await connection.db
+          .update(privacyRetentionPreview)
+          .set({
+            executedAt: input.executedAt,
+            executionInputDigest: input.inputDigest,
+            executionOperationId: input.operationId,
+            status: 'executed',
+          })
+          .where(
+            and(
+              eq(
+                privacyRetentionPreview.selectionDigest,
+                input.selectionDigest,
+              ),
+              eq(privacyRetentionPreview.status, 'planned'),
+            ),
+          )
+          .returning({
+            selectionDigest: privacyRetentionPreview.selectionDigest,
+          });
+      } catch (error) {
+        if (
+          isUniqueViolation(
+            error,
+            'privacy_retention_preview_execution_operation_id_unique',
+          )
+        ) {
+          return 'conflict';
+        }
+        throw error;
+      }
       if (updated !== undefined) {
         return 'executed';
       }
 
       const [existing] = await connection.db
         .select({
+          executionInputDigest: privacyRetentionPreview.executionInputDigest,
           executionOperationId: privacyRetentionPreview.executionOperationId,
           status: privacyRetentionPreview.status,
         })
@@ -130,7 +149,8 @@ export function createPostgresPrivacyRetentionPreviewRepository(
         return 'not_found';
       }
       return existing.status === 'executed' &&
-        existing.executionOperationId === input.operationId
+        existing.executionOperationId === input.operationId &&
+        existing.executionInputDigest === input.inputDigest
         ? 'idempotent_replay'
         : 'conflict';
     },

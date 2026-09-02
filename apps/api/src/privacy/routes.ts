@@ -3,6 +3,7 @@ import {
   compareExpectedInventoryToRuntime,
   createPrivacyGovernanceExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
+  digestRetentionExecutionInput,
   evaluateDataUse,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
@@ -760,6 +761,11 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      const executionInputDigest = digestRetentionExecutionInput({
+        previewTtlMs: body.data.previewTtlMs,
+        requestedSelectionDigest: body.data.requestedSelectionDigest,
+      });
+
       let preview: PrivacyRetentionPreviewRecord | null;
       try {
         preview = await retentionPreviews.getBySelectionDigest(
@@ -779,6 +785,7 @@ export function registerPrivacySyntheticRoutes(
         try {
           const replay = await retentionPreviews.markExecuted({
             executedAt: preview.executedAt ?? preview.createdAt,
+            inputDigest: executionInputDigest,
             operationId: body.data.operationId,
             selectionDigest: body.data.requestedSelectionDigest,
           });
@@ -854,6 +861,7 @@ export function registerPrivacySyntheticRoutes(
       try {
         transition = await retentionPreviews.markExecuted({
           executedAt: nowUtcMs,
+          inputDigest: executionInputDigest,
           operationId: body.data.operationId,
           selectionDigest: body.data.requestedSelectionDigest,
         });

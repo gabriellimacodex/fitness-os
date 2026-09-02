@@ -13,6 +13,29 @@ import {
 
 import type { PrivacyRetentionRuleRepository } from './ports.js';
 
+/** Stable digest for exact-operation replay on the synthetic execution seam. */
+export function digestRetentionExecutionInput(input: {
+  requestedSelectionDigest: string;
+  previewTtlMs: number;
+}): string {
+  if (!Number.isFinite(input.previewTtlMs) || input.previewTtlMs <= 0) {
+    throw new RangeError(
+      'digestRetentionExecutionInput requires a positive, finite previewTtlMs.',
+    );
+  }
+
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        canonicalizationVersion: 'retention-execution-input.v1',
+        previewTtlMs: input.previewTtlMs,
+        requestedSelectionDigest: input.requestedSelectionDigest,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}
+
 export type RetentionPreviewPlan =
   | {
       status: 'planned';

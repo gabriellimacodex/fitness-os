@@ -634,7 +634,14 @@ export class SyntheticPrivacyAttributionVerifier implements PrivacyAttributionVe
  */
 export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetentionPreviewRepository {
   private readonly previews = new Map<string, PrivacyRetentionPreviewRecord>();
-  private readonly executionOperations = new Map<string, string>();
+  private readonly executionOperations = new Map<
+    string,
+    { inputDigest: string; operationId: string }
+  >();
+  private readonly operationInputs = new Map<
+    string,
+    { inputDigest: string; selectionDigest: string }
+  >();
 
   async getBySelectionDigest(
     selectionDigest: string,
@@ -658,6 +665,7 @@ export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetent
   async markExecuted(input: {
     selectionDigest: string;
     operationId: string;
+    inputDigest: string;
     executedAt: string;
   }): Promise<'executed' | 'idempotent_replay' | 'conflict' | 'not_found'> {
     const preview = this.previews.get(input.selectionDigest);
@@ -665,10 +673,20 @@ export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetent
       return 'not_found';
     }
     if (preview.status !== 'planned') {
-      return this.executionOperations.get(input.selectionDigest) ===
-        input.operationId
+      const binding = this.executionOperations.get(input.selectionDigest);
+      return binding?.operationId === input.operationId &&
+        binding.inputDigest === input.inputDigest
         ? 'idempotent_replay'
         : 'conflict';
+    }
+
+    const operationBinding = this.operationInputs.get(input.operationId);
+    if (
+      operationBinding !== undefined &&
+      (operationBinding.selectionDigest !== input.selectionDigest ||
+        operationBinding.inputDigest !== input.inputDigest)
+    ) {
+      return 'conflict';
     }
 
     this.previews.set(input.selectionDigest, {
@@ -676,7 +694,14 @@ export class SyntheticPrivacyRetentionPreviewRepository implements PrivacyRetent
       status: 'executed',
       executedAt: input.executedAt,
     });
-    this.executionOperations.set(input.selectionDigest, input.operationId);
+    this.executionOperations.set(input.selectionDigest, {
+      inputDigest: input.inputDigest,
+      operationId: input.operationId,
+    });
+    this.operationInputs.set(input.operationId, {
+      inputDigest: input.inputDigest,
+      selectionDigest: input.selectionDigest,
+    });
     return 'executed';
   }
 }

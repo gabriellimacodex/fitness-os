@@ -36,6 +36,7 @@ import {
   composeSyntheticProcessorSimulation,
   createSyntheticPrivacyDataUsePorts,
   deriveRequestCompletionFromSteps,
+  digestRetentionExecutionInput,
   evaluateDataUse,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
@@ -3208,6 +3209,7 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.markExecuted({
         selectionDigest: plan.preview.selectionDigest,
+        inputDigest: 'a'.repeat(64),
         operationId: privacyOperationIdSchema.parse(
           '11111111-1111-4111-8111-111111111111',
         ),
@@ -3228,6 +3230,10 @@ describe('synthetic retention preview repository', () => {
       '22222222-2222-4222-8222-222222222222',
     );
     const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    const inputDigest = digestRetentionExecutionInput({
+      previewTtlMs: 60 * 60 * 1000,
+      requestedSelectionDigest: selectionDigest,
+    });
     await repository.put(
       privacyRetentionPreviewRecordSchema.parse({
         policyVersionId: policy.versionId,
@@ -3245,12 +3251,14 @@ describe('synthetic retention preview repository', () => {
 
     await repository.markExecuted({
       selectionDigest,
+      inputDigest,
       operationId,
       executedAt: '2026-08-18T00:00:02.000Z',
     });
     await expect(
       repository.markExecuted({
         selectionDigest,
+        inputDigest,
         operationId,
         executedAt: '2026-08-18T00:00:03.000Z',
       }),
@@ -3258,6 +3266,18 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.markExecuted({
         selectionDigest,
+        inputDigest: digestRetentionExecutionInput({
+          previewTtlMs: 30 * 60 * 1000,
+          requestedSelectionDigest: selectionDigest,
+        }),
+        operationId,
+        executedAt: '2026-08-18T00:00:04.000Z',
+      }),
+    ).resolves.toBe('conflict');
+    await expect(
+      repository.markExecuted({
+        selectionDigest,
+        inputDigest,
         operationId: privacyOperationIdSchema.parse(
           '33333333-3333-4333-8333-333333333333',
         ),
@@ -3267,6 +3287,7 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.markExecuted({
         selectionDigest: 'f'.repeat(64),
+        inputDigest: 'f'.repeat(64),
         operationId,
         executedAt: '2026-08-18T00:00:05.000Z',
       }),
@@ -3274,6 +3295,33 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.getBySelectionDigest(selectionDigest),
     ).resolves.toMatchObject({ executedAt: '2026-08-18T00:00:02.000Z' });
+
+    const otherSelectionDigest = 'e'.repeat(64);
+    await repository.put(
+      privacyRetentionPreviewRecordSchema.parse({
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        selectionDigest: otherSelectionDigest,
+        approvedExceptionIds: [],
+        synthetic: true,
+        status: 'planned',
+        createdAt: '2026-08-18T00:00:01.000Z',
+        executedAt: null,
+      }),
+    );
+    await expect(
+      repository.markExecuted({
+        selectionDigest: otherSelectionDigest,
+        inputDigest: digestRetentionExecutionInput({
+          previewTtlMs: 60 * 60 * 1000,
+          requestedSelectionDigest: otherSelectionDigest,
+        }),
+        operationId,
+        executedAt: '2026-08-18T00:00:05.000Z',
+      }),
+    ).resolves.toBe('conflict');
   });
 });
 

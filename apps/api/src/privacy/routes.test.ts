@@ -27,6 +27,7 @@ import {
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import {
+  digestRetentionExecutionInput,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyGovernanceLifecycleLedger,
@@ -1468,6 +1469,18 @@ describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
     });
     expect(replay.json()).toEqual({ status: 'idempotent_replay' });
 
+    const changedTtl = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 30 * 60 * 1000,
+      },
+    });
+    expect(changedTtl.json()).toEqual({ status: 'conflict' });
+
     const conflict = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/retention-execution-authorize',
@@ -1664,6 +1677,10 @@ describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
     });
     await retentionPreviews.markExecuted({
       selectionDigest,
+      inputDigest: digestRetentionExecutionInput({
+        previewTtlMs: 60 * 60 * 1000,
+        requestedSelectionDigest: selectionDigest,
+      }),
       operationId,
       executedAt: '2026-08-18T12:00:00.000Z',
     });
