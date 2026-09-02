@@ -1548,16 +1548,15 @@ export type PrivacySyntheticRetentionPreviewResponse = z.infer<
 
 /**
  * Disposable synthetic API for retention execution authorization.
- * Production path remains hard-disabled.
+ * The caller identifies a persisted preview and supplies its explicit TTL;
+ * preview state and current inventory/processor digests are resolved from
+ * trusted server-side ports. Production path remains hard-disabled.
  */
 export const privacySyntheticRetentionExecutionAuthorizeRequestSchema = z
   .object({
     productionMode: z.boolean(),
-    policySynthetic: z.boolean(),
-    authoritySynthetic: z.boolean(),
-    previewExecuted: z.boolean(),
-    previewExpired: z.boolean(),
-    digestsMatch: z.boolean(),
+    requestedSelectionDigest: privacySha256DigestSchema,
+    previewTtlMs: z.number().positive().finite(),
   })
   .strict();
 export type PrivacySyntheticRetentionExecutionAuthorizeRequest = z.infer<

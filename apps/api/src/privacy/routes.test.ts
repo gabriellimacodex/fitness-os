@@ -1412,27 +1412,56 @@ describe('POST /v1/privacy/synthetic/retention-preview', () => {
 });
 
 describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
-  it('hard-disables production execution and allows disposable synthetic tests', async () => {
-    const app = buildSyntheticPrivacyApp();
+  it('authorizes from the persisted preview and trusted current runtime evidence', async () => {
+    const selectionDigest = 'f'.repeat(64);
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    await retentionPreviews.put({
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: expectedInventoryArtifact.inventoryVersionDigest,
+      processorDescriptorDigests: [processor.descriptorDigest],
+      watermark: '2026-08-18T11:00:00.000Z',
+      selectionDigest,
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T11:30:00.000Z',
+      executedAt: null,
+    });
+    const processors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    processors.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: expectedInventoryPort,
+          processors,
+          retentionPreviews,
+        },
+      },
+    );
 
-    const production = await app.inject({
+    const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {
-        productionMode: true,
-        policySynthetic: true,
-        authoritySynthetic: true,
-        previewExecuted: false,
-        previewExpired: false,
-        digestsMatch: true,
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
       },
     });
-    expect(production.json()).toMatchObject({
-      status: 'hard_disabled',
-      reason: 'production_path',
-    });
 
-    const synthetic = await app.inject({
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'allowed_synthetic_test' });
+
+    await app.close();
+  });
+
+  it('rejects caller-supplied preview state and digest booleans', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {
@@ -1444,7 +1473,147 @@ describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
         digestsMatch: true,
       },
     });
-    expect(synthetic.json()).toEqual({ status: 'allowed_synthetic_test' });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+
+  it('returns 503 when persisted preview evidence is unavailable', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
+          retentionPreviews: {
+            getBySelectionDigest: async () => {
+              throw new Error('preview store unavailable');
+            },
+            put: async () => 'accepted' as const,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+
+    await app.close();
+  });
+
+  it('returns 503 when the trusted clock is unavailable', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              throw new Error('trusted clock unavailable');
+            },
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+
+    await app.close();
+  });
+
+  it('fails closed when trusted preview or current-runtime ports are absent', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      reason: 'preview_mismatch',
+      status: 'hard_disabled',
+    });
+
+    await app.close();
+  });
+
+  it('hard-disables production execution before considering synthetic evidence', async () => {
+    let evidenceReads = 0;
+    const unavailable = () => {
+      evidenceReads += 1;
+      throw new Error('must not read evidence for production');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: { nowUtcMs: unavailable },
+          expectedInventory: { getInventory: async () => unavailable() },
+          processors: {
+            getDescriptor: async () => unavailable(),
+            listDescriptors: async () => unavailable(),
+            put: async () => unavailable(),
+          },
+          retentionPreviews: {
+            getBySelectionDigest: async () => unavailable(),
+            put: async () => unavailable(),
+          },
+        },
+      },
+    );
+
+    const production = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        productionMode: true,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+    expect(production.statusCode).toBe(200);
+    expect(production.json()).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+    expect(evidenceReads).toBe(0);
 
     await app.close();
   });

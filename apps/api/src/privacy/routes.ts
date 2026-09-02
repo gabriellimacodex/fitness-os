@@ -1,5 +1,4 @@
 import {
-  authorizeRetentionExecution,
   buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
   createPrivacyGovernanceExecutionReceiptVerifier,
@@ -9,6 +8,7 @@ import {
   planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
+  resolveRetentionExecutionAuthorization,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyGovernanceLifecycleBindingVerifier,
@@ -163,9 +163,8 @@ export interface PrivacySyntheticOptions {
   /**
    * Optional disposable retention preview repository (e.g. Postgres). When
    * set, a successfully planned retention preview is additionally persisted
-   * keyed by its deterministic `selectionDigest`. The public response shape
-   * is unchanged; consuming the persisted record at execution-authorize time
-   * remains a later composition step.
+   * keyed by its deterministic `selectionDigest` and execution authorization
+   * reads the stored record back. Marking it executed remains a later step.
    */
   retentionPreviews?: PrivacyRetentionPreviewRepository;
   /**
@@ -745,7 +744,52 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = authorizeRetentionExecution(body.data);
+      if (body.data.productionMode) {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'production_path',
+          status: 'hard_disabled',
+        });
+      }
+
+      let result: ReturnType<typeof resolveRetentionExecutionAuthorization>;
+      try {
+        const currentInventoryVersionDigest =
+          expectedInventory === undefined
+            ? ''
+            : (await expectedInventory.getInventory()).inventoryVersionDigest;
+        const currentProcessorDescriptorDigests =
+          processors === undefined
+            ? []
+            : (await processors.listDescriptors()).map(
+                (descriptor) => descriptor.descriptorDigest,
+              );
+        const preview =
+          retentionPreviews === undefined
+            ? null
+            : await retentionPreviews.getBySelectionDigest(
+                body.data.requestedSelectionDigest,
+              );
+
+        result = resolveRetentionExecutionAuthorization({
+          authoritySynthetic: true,
+          currentInventoryVersionDigest,
+          currentProcessorDescriptorDigests,
+          nowUtcMs: clock.nowUtcMs(),
+          policySynthetic: true,
+          preview,
+          previewTtlMs: body.data.previewTtlMs,
+          productionMode: false,
+          requestedSelectionDigest: body.data.requestedSelectionDigest,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention authorization evidence unavailable',
+        );
+      }
 
       if (result.status === 'hard_disabled') {
         return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
