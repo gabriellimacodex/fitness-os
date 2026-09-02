@@ -242,6 +242,9 @@ export async function coordinateSyntheticProcessorStep(input: {
     return { status: 'execution_conflict' };
   }
   const replay = operationHistory[0];
+  if (request.state === 'completed' && replay === undefined) {
+    return { status: 'request_not_executable' };
+  }
   const latest = new Map(
     history.map((step) => [`${step.processorId}:${step.capability}`, step]),
   );
