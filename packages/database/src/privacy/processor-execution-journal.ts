@@ -93,7 +93,7 @@ export function createPostgresPrivacyProcessorExecutionJournal(
         return { status: 'completed', record: prior };
       }
       if (prior.state === 'reserved') {
-        await connection.db
+        const reconciled = await connection.db
           .update(privacyProcessorExecutionJournal)
           .set({ state: 'reconciliation_required' })
           .where(
@@ -108,7 +108,19 @@ export function createPostgresPrivacyProcessorExecutionJournal(
               ),
               eq(privacyProcessorExecutionJournal.state, 'reserved'),
             ),
-          );
+          )
+          .returning();
+        if (reconciled.length === 1) {
+          return { status: 'reconciliation_required' };
+        }
+
+        const raced = await getByOperationId(valid.operationId);
+        if (raced === null || !sameBinding(raced, valid)) {
+          return { status: 'conflict' };
+        }
+        if (raced.state === 'completed') {
+          return { status: 'completed', record: raced };
+        }
       }
       return { status: 'reconciliation_required' };
     },

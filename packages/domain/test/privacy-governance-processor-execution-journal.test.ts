@@ -162,7 +162,7 @@ describe('journaled synthetic processor execution coordinator', () => {
     ).resolves.toMatchObject([{ outcome: 'completed' }]);
   });
 
-  it('refuses an unfinished reservation after restart without executing', async () => {
+  it('refuses an unfinished reservation and observes later reconciliation', async () => {
     const journal = new MemoryJournal();
     let executions = 0;
     const dependencies = {
@@ -187,29 +187,38 @@ describe('journaled synthetic processor execution coordinator', () => {
       },
     };
     const bindingDigest = digestProcessorExecutionInput(input);
+    const reserved = privacyProcessorExecutionJournalRecordSchema.parse({
+      operationId: command.operationId,
+      requestId: input.requestId,
+      processorId: command.processorId,
+      capability: command.capability,
+      correlationId: command.correlationId,
+      bindingDigest,
+      state: 'reserved',
+      outcome: null,
+      reservedAt: '2026-08-18T12:03:00.000Z',
+      completedAt: null,
+      synthetic: true,
+    });
+    journal.records.set(command.operationId, reserved);
+
+    const coordinator =
+      new JournaledSyntheticPrivacyProcessorExecutionCoordinator(dependencies);
+    const result = await coordinator.execute(input);
+
+    expect(result).toEqual({ status: 'reconciliation_required' });
     journal.records.set(
       command.operationId,
       privacyProcessorExecutionJournalRecordSchema.parse({
-        operationId: command.operationId,
-        requestId: input.requestId,
-        processorId: command.processorId,
-        capability: command.capability,
-        correlationId: command.correlationId,
-        bindingDigest,
-        state: 'reserved',
-        outcome: null,
-        reservedAt: '2026-08-18T12:03:00.000Z',
-        completedAt: null,
-        synthetic: true,
+        ...reserved,
+        state: 'completed',
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
       }),
     );
-
-    const result =
-      await new JournaledSyntheticPrivacyProcessorExecutionCoordinator(
-        dependencies,
-      ).execute(input);
-
-    expect(result).toEqual({ status: 'reconciliation_required' });
+    await expect(coordinator.execute(input)).resolves.toEqual({
+      status: 'executed',
+    });
     expect(executions).toBe(0);
   });
 

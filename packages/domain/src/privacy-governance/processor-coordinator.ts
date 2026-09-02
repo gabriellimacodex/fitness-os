@@ -117,6 +117,14 @@ export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
 
     const result = this.executeOnce(input);
     this.operations.set(input.command.operationId, { input, result });
+    void result.then(
+      (outcome) => {
+        if (outcome.status !== 'executed') {
+          this.forgetOperation(input.command.operationId, result);
+        }
+      },
+      () => this.forgetOperation(input.command.operationId, result),
+    );
     return result;
   }
 
@@ -247,6 +255,15 @@ export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
       );
     } catch {
       // The reservation remains fail-closed even if this best-effort marker fails.
+    }
+  }
+
+  private forgetOperation(
+    operationId: string,
+    result: Promise<PrivacyProcessorExecutionCoordinationResult>,
+  ) {
+    if (this.operations.get(operationId)?.result === result) {
+      this.operations.delete(operationId);
     }
   }
 }
