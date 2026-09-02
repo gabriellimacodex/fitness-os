@@ -89,6 +89,70 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ).resolves.toMatchObject({ status: 'already_terminal' });
     });
 
+    it('reads a stored invitation by its claim digest and returns null for an unknown digest', async () => {
+      const invitationId = onboardingInvitationIdSchema.parse(
+        '33333333-3333-4333-8333-333333333333',
+      );
+      const record = {
+        invitationId,
+        claimDigest: `hmac-sha256.v1:${'c'.repeat(64)}`,
+        proposedRole: 'student' as const,
+        purpose: 'student_onboarding' as const,
+        state: 'issued' as const,
+        targetCoachPrincipalKey: 'coach-principal-3',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+      };
+      await expect(invitations.put(record)).resolves.toBe('accepted');
+
+      await expect(
+        invitations.getByClaimDigest(record.claimDigest),
+      ).resolves.toEqual(record);
+      await expect(
+        invitations.getByClaimDigest(`hmac-sha256.v1:${'d'.repeat(64)}`),
+      ).resolves.toBeNull();
+    });
+
+    it('revokes an issued invitation and rejects a later claim as already terminal', async () => {
+      const invitationId = onboardingInvitationIdSchema.parse(
+        '44444444-4444-4444-8444-444444444444',
+      );
+      await invitations.put({
+        invitationId,
+        claimDigest: `hmac-sha256.v1:${'e'.repeat(64)}`,
+        proposedRole: 'coach',
+        purpose: 'coach_bootstrap',
+        state: 'issued',
+        targetCoachPrincipalKey: null,
+        updatedAt: '2026-08-19T12:00:00.000Z',
+      });
+
+      const revoked = await invitations.applyRevoke({
+        invitationId,
+        updatedAt: '2026-08-19T12:05:00.000Z',
+      });
+      expect(revoked.status).toBe('advanced');
+      if (revoked.status !== 'advanced') {
+        throw new Error('expected advanced');
+      }
+      expect(revoked.invitation.state).toBe('revoked');
+      await expect(invitations.get(invitationId)).resolves.toMatchObject({
+        state: 'revoked',
+      });
+
+      await expect(
+        invitations.applyClaim({
+          invitationId,
+          updatedAt: '2026-08-19T12:06:00.000Z',
+        }),
+      ).resolves.toMatchObject({ status: 'already_terminal' });
+      await expect(
+        invitations.applyRevoke({
+          invitationId,
+          updatedAt: '2026-08-19T12:07:00.000Z',
+        }),
+      ).resolves.toMatchObject({ status: 'already_terminal' });
+    });
+
     it('serializes concurrent claims so only one advances', async () => {
       const invitationId = onboardingInvitationIdSchema.parse(
         '22222222-2222-4222-8222-222222222222',

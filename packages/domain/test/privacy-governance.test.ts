@@ -14,6 +14,7 @@ import {
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyRetentionExceptionIdSchema,
+  privacyRetentionPreviewRecordSchema,
   privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
@@ -23,6 +24,7 @@ import {
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
   type PrivacyProcessorStepReference,
+  type PrivacyRetentionPreviewRecord,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -39,6 +41,7 @@ import {
   planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
+  resolveRetentionExecutionAuthorization,
   selectActiveRetentionRule,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
@@ -2701,6 +2704,237 @@ describe('retention preview and execution gates', () => {
       status: 'hard_disabled',
       reason: 'synthetic_fixtures_required',
     });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: false,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'synthetic_fixtures_required',
+    });
+  });
+
+  it('hard-disables execution against an already-executed or expired preview', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: true,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: true,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+  });
+
+  it('hard-disables execution when the reviewed preview digest no longer matches', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: false,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_mismatch',
+    });
+  });
+});
+
+describe('resolveRetentionExecutionAuthorization', () => {
+  function preview(
+    overrides: Partial<PrivacyRetentionPreviewRecord> = {},
+  ): PrivacyRetentionPreviewRecord {
+    return privacyRetentionPreviewRecordSchema.parse({
+      selectionDigest: '4'.repeat(64),
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T00:00:00.000Z',
+      executedAt: null,
+      ...overrides,
+    });
+  }
+
+  const baseInput = {
+    productionMode: false,
+    policySynthetic: true,
+    authoritySynthetic: true,
+    requestedSelectionDigest: '4'.repeat(64),
+    currentInventoryVersionDigest: '3'.repeat(64),
+    currentProcessorDescriptorDigests: ['c'.repeat(64)],
+    nowUtcMs: '2026-08-18T00:05:00.000Z',
+    previewTtlMs: 60 * 60 * 1000,
+  };
+
+  it('allows synthetic execution against a fresh, unexecuted, digest-matching preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+      }),
+    ).toEqual({ status: 'allowed_synthetic_test' });
+  });
+
+  it('denies as preview_mismatch when no preview was found', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: null,
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the persisted digest differs from the requested one', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview({ selectionDigest: '5'.repeat(64) }),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current inventory changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentInventoryVersionDigest: '9'.repeat(64),
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current processor descriptors changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentProcessorDescriptorDigests: ['8'.repeat(64)],
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_expired_or_executed when the persisted preview is already executed', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview({
+          status: 'executed',
+          executedAt: '2026-08-18T00:01:00.000Z',
+        }),
+      }),
+    ).toEqual({
+      reason: 'preview_expired_or_executed',
+      status: 'hard_disabled',
+    });
+  });
+
+  it('denies as preview_expired_or_executed once the caller-supplied TTL has elapsed, at the exact boundary', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: '2026-08-18T01:00:00.000Z',
+        preview: preview(),
+      }),
+    ).toEqual({
+      reason: 'preview_expired_or_executed',
+      status: 'hard_disabled',
+    });
+  });
+
+  it('remains allowed just before the TTL boundary', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: '2026-08-18T00:59:59.999Z',
+        preview: preview(),
+      }),
+    ).toEqual({ status: 'allowed_synthetic_test' });
+  });
+
+  it('still hard-disables production regardless of a valid persisted preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        productionMode: true,
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'production_path', status: 'hard_disabled' });
+  });
+
+  it('fails closed on a non-finite or non-positive previewTtlMs instead of reporting allowed', () => {
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+        previewTtlMs: 0,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+        previewTtlMs: Number.NaN,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('fails closed on an unparseable nowUtcMs', () => {
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: 'not-a-timestamp',
+        preview: preview(),
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('fails closed on an unparseable preview.createdAt even though the frozen schema would normally reject one first', () => {
+    // Exercises the function's own defensive guard directly, independent of
+    // `privacyRetentionPreviewRecordSchema` — a caller with a raw repository
+    // row that bypassed schema validation must still fail closed here rather
+    // than silently treating a malformed timestamp as "not yet expired".
+    const malformed = {
+      ...preview(),
+      createdAt: 'not-a-timestamp',
+    } as unknown as ReturnType<typeof preview>;
+
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: malformed,
+      }),
+    ).toThrow(RangeError);
   });
 });
 

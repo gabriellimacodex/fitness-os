@@ -1,9 +1,12 @@
 export {
   ATTEMPT_ACTIVE_CAP,
   canAllocateAttempt,
+  evaluateAttemptTimeout,
   isNonterminal,
   selectAttempt,
   transitionAttempt,
+  type AttemptTimeoutBounds,
+  type AttemptTimeoutStatus,
   type AttemptTransitionResult,
 } from './attempt.js';
 export {
@@ -11,6 +14,15 @@ export {
   type ClaimDenial,
   type ProposedRole,
 } from './claim.js';
+export {
+  checkClaimThrottle,
+  DEFAULT_CLAIM_THROTTLE_WINDOW,
+  evaluateClaimThrottle,
+  SyntheticClaimFailureTracker,
+  type ClaimFailureTracker,
+  type ClaimThrottleStatus,
+  type ClaimThrottleWindow,
+} from './claim-throttle.js';
 export {
   claimInvitation,
   inspectInvitationState,

@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import {
   canAllocateAttempt,
+  checkClaimThrottle,
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
+  DEFAULT_CLAIM_THROTTLE_WINDOW,
   evaluateClaimEligibility,
   HmacInvitationSecretVerifier,
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
+  SyntheticClaimFailureTracker,
   SyntheticIdentitySessionPort,
   SyntheticIdentitySessionStore,
   SyntheticOnboardingClaimRepository,
@@ -19,6 +22,8 @@ import {
   SyntheticPrincipalReferenceDeriver,
   SystemTrustedClock,
   transitionAttempt,
+  type ClaimFailureTracker,
+  type ClaimThrottleWindow,
   type IdentitySessionPort,
   type IdentitySessionStore,
   type InvitationSecretVerifier,
@@ -210,7 +215,9 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    claimFailureTracker?: ClaimFailureTracker;
     claimRepository?: OnboardingClaimRepository;
+    claimThrottleWindow?: ClaimThrottleWindow;
     clock?: TrustedClock;
     idFactory?: OnboardingIdFactory;
     identitySession?: IdentitySessionPort;
@@ -257,6 +264,32 @@ export function registerOnboardingRoutes(
     new SyntheticOnboardingReadinessProbe({
       evaluatedAt: '2026-08-19T12:00:00.000Z',
     });
+  const claimFailureTracker =
+    options.claimFailureTracker ?? new SyntheticClaimFailureTracker();
+  const claimThrottleWindow =
+    options.claimThrottleWindow ?? DEFAULT_CLAIM_THROTTLE_WINDOW;
+
+  /**
+   * PRD 07's claim-secret brute-force control: throttle before the invitation
+   * lookup rather than after, and never distinguish a throttled response from
+   * an ordinary invalid/unavailable invitation result.
+   */
+  const claimThrottleGuard = async (
+    principalKey: string,
+  ): Promise<'allowed' | 'throttled'> =>
+    checkClaimThrottle({
+      key: principalKey,
+      nowUtcMs: Date.parse(clock.nowUtcMs()),
+      tracker: claimFailureTracker,
+      window: claimThrottleWindow,
+    });
+
+  const recordClaimFailure = async (principalKey: string): Promise<void> => {
+    await claimFailureTracker.recordFailure(
+      principalKey,
+      Date.parse(clock.nowUtcMs()),
+    );
+  };
 
   const rememberOperation = async (
     bindingKey: string,
@@ -526,11 +559,20 @@ export function registerOnboardingRoutes(
       return;
     }
 
-    const invitation = await loadInvitationByClaimDigest(
-      store,
-      persistence,
-      digestSecret(body.data.claimSecret),
-    );
+    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+      return operationEnvelope({
+        digest: semanticDigest({
+          authority: context.principalKey,
+          claimStatus: 'throttled',
+          namespace: 'inspect_invitation',
+        }),
+        namespace: 'inspect_invitation',
+        operationId: idFactory.operationId(),
+        result: { outcome: 'invalid_or_unavailable' },
+        state: 'operation_committed',
+      });
+    }
+
     const digest = semanticDigest({
       authority: context.principalKey,
       invitationRef: invitationReference(
@@ -540,11 +582,18 @@ export function registerOnboardingRoutes(
       ),
       namespace: 'inspect_invitation',
     });
+
+    const invitation = await loadInvitationByClaimDigest(
+      store,
+      persistence,
+      digestSecret(body.data.claimSecret),
+    );
     const inspection = invitation
       ? inspectInvitationState(invitation.state)
       : 'invalid_or_unavailable';
 
     if (inspection !== 'issued' || invitation === undefined) {
+      await recordClaimFailure(context.principalKey);
       return operationEnvelope({
         digest,
         namespace: 'inspect_invitation',
@@ -583,15 +632,6 @@ export function registerOnboardingRoutes(
       return;
     }
 
-    const digest = semanticDigest({
-      authority: context.principalKey,
-      invitationRef: invitationReference(
-        store,
-        body.data.claimSecret,
-        digestSecret,
-      ),
-      namespace: 'create_attempt',
-    });
     const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
     const bindingKey = operationBindingKey(
       context.principalKey,
@@ -603,6 +643,60 @@ export function registerOnboardingRoutes(
       persistence,
       bindingKey,
     );
+
+    if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+      const digest = semanticDigest({
+        authority: context.principalKey,
+        claimStatus: 'throttled',
+        namespace: 'create_attempt',
+      });
+      if (existingOperation !== undefined) {
+        if (existingOperation.digest !== digest) {
+          return operationEnvelope({
+            digest,
+            namespace: 'create_attempt',
+            operationId: existingOperation.operationId,
+            result: null,
+            state: 'operation_input_mismatch',
+          });
+        }
+
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'create_attempt',
+          operationId: existingOperation.operationId,
+          result: existingOperation.result,
+          state: 'operation_replayed',
+        });
+      }
+
+      const operationId = idFactory.operationId();
+      const result = { outcome: 'invalid_or_unavailable' };
+      await rememberOperation(bindingKey, context.principalKey, {
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
+        retryDigest,
+      });
+      return operationEnvelope({
+        digest,
+        namespace: 'create_attempt',
+        operationId,
+        result,
+        state: 'operation_committed',
+      });
+    }
+
+    const digest = semanticDigest({
+      authority: context.principalKey,
+      invitationRef: invitationReference(
+        store,
+        body.data.claimSecret,
+        digestSecret,
+      ),
+      namespace: 'create_attempt',
+    });
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {
@@ -624,12 +718,6 @@ export function registerOnboardingRoutes(
       });
     }
 
-    const invitation = await loadInvitationByClaimDigest(
-      store,
-      persistence,
-      digestSecret(body.data.claimSecret),
-    );
-
     const commit = async (result: unknown) => {
       const operationId = idFactory.operationId();
       await rememberOperation(bindingKey, context.principalKey, {
@@ -649,10 +737,17 @@ export function registerOnboardingRoutes(
       });
     };
 
+    const invitation = await loadInvitationByClaimDigest(
+      store,
+      persistence,
+      digestSecret(body.data.claimSecret),
+    );
+
     if (
       invitation === undefined ||
       inspectInvitationState(invitation.state) !== 'issued'
     ) {
+      await recordClaimFailure(context.principalKey);
       return await commit({ outcome: 'invalid_or_unavailable' });
     }
 

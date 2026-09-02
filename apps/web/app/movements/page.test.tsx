@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { movementSummarySchema } from '@fitness-os/schemas';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -83,7 +87,13 @@ describe('web movement boundary', () => {
     const source = await vi.importActual<typeof import('./page')>('./page');
 
     expect(source.default).toEqual(expect.any(Function));
-    expect(JSON.stringify(source)).not.toContain('@fitness-os/domain');
-    expect(JSON.stringify(source)).not.toContain('@fitness-os/database');
+
+    const pageSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'page.tsx'),
+      'utf8',
+    );
+
+    expect(pageSource).not.toContain('@fitness-os/domain');
+    expect(pageSource).not.toContain('@fitness-os/database');
   });
 });

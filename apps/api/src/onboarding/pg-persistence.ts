@@ -6,6 +6,8 @@ import {
   asOnboardingOperationRepository,
   createPostgresOnboardingOperationRepository,
   asOnboardingInvitationRepository,
+  asOnboardingTransitionSink,
+  createPostgresOnboardingTransitionSink,
   asPrincipalBindingRepository,
   createPostgresPrincipalBindingRepository,
   asPrincipalRoleMappingRepository,
@@ -19,6 +21,7 @@ import type {
   OnboardingAttemptRepository,
   OnboardingInvitationRepository,
   OnboardingOperationRepository,
+  OnboardingTransitionSink,
   PrincipalBindingRepository,
   PrincipalRoleMappingRepository,
   ProposedRole,
@@ -42,6 +45,7 @@ export type OnboardingPgPersistence = {
   nowUtcMs: () => string;
   operations: OnboardingOperationRepository;
   principalBinding: PrincipalBindingRepository;
+  transitions: OnboardingTransitionSink;
 };
 
 export function createOnboardingPgPersistence(
@@ -65,6 +69,9 @@ export function createOnboardingPgPersistence(
     ),
     principalBinding: asPrincipalBindingRepository(
       createPostgresPrincipalBindingRepository(connection),
+    ),
+    transitions: asOnboardingTransitionSink(
+      createPostgresOnboardingTransitionSink(connection),
     ),
   };
 }

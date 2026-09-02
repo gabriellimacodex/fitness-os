@@ -417,6 +417,45 @@ export const privacySubjectRequestTransition = pgTable(
 );
 
 /**
+ * Versioned retention-rule reference binding a data category and purpose
+ * version to a mechanical action and policy provenance. Immutable once
+ * accepted — a change is a new `ruleVersionId` row, never an UPDATE.
+ */
+export const privacyRetentionRule = pgTable(
+  'privacy_retention_rule',
+  {
+    ruleVersionId: uuid('rule_version_id').primaryKey(),
+    ruleId: uuid('rule_id').notNull(),
+    engineeringCategoryId: uuid('engineering_category_id').notNull(),
+    purposeVersionId: uuid('purpose_version_id').notNull(),
+    policyVersionId: uuid('policy_version_id').notNull(),
+    action: text('action').notNull(),
+    parametersDigest: text('parameters_digest').notNull(),
+    canonicalizationVersion: text('canonicalization_version').notNull(),
+    synthetic: boolean('synthetic').notNull(),
+  },
+  (table) => [
+    check(
+      'privacy_retention_rule_action_check',
+      sql`${table.action} IN ('delete', 'irreversibly_transform', 'retain_under_exception')`,
+    ),
+    check(
+      'privacy_retention_rule_parameters_digest_check',
+      sql`${table.parametersDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      'privacy_retention_rule_canonicalization_check',
+      sql`${table.canonicalizationVersion} = 'privacy-governance.canonical.v1'`,
+    ),
+    index('privacy_retention_rule_category_purpose_idx').on(
+      table.engineeringCategoryId,
+      table.purposeVersionId,
+    ),
+    index('privacy_retention_rule_rule_id_idx').on(table.ruleId),
+  ],
+);
+
+/**
  * Persisted retention preview evidence, keyed by the deterministic
  * `selectionDigest` computed by `planRetentionPreview`. Immutable once
  * accepted; `status` moves `planned` -> `executed` exactly once.

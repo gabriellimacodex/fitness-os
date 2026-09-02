@@ -40,7 +40,9 @@ export interface PlatformOptions {
     isStorageUnavailable?: ExerciseCatalogRouteDependencies['isStorageUnavailable'];
   };
   onboarding?: {
+    claimFailureTracker?: import('@fitness-os/domain').ClaimFailureTracker;
     claimRepository?: import('@fitness-os/domain').OnboardingClaimRepository;
+    claimThrottleWindow?: import('@fitness-os/domain').ClaimThrottleWindow;
     clock?: import('@fitness-os/domain').TrustedClock;
     idFactory?: import('@fitness-os/domain').OnboardingIdFactory;
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;

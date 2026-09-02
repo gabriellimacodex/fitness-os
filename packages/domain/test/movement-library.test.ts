@@ -4,6 +4,7 @@ import { movementDetailSchema } from '@fitness-os/schemas';
 
 import {
   createMovementCatalog,
+  deriveManifestState,
   digestMovementDetail,
   getMovementById,
   listMovements,
@@ -182,5 +183,36 @@ describe('createMovementCatalog', () => {
         published: [revised],
       }),
     ).toThrow(/increment by one/);
+  });
+});
+
+describe('deriveManifestState', () => {
+  it('rejects a sparse manifest array', () => {
+    const publish: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v1.md`,
+      sequence: 1,
+    };
+    const sparse: MovementManifestRecord[] = [];
+    sparse[1] = publish;
+
+    expect(sparse).toHaveLength(2);
+    expect(() => deriveManifestState(sparse)).toThrow(/sparse/);
+  });
+
+  it('accepts a dense manifest array with no holes', () => {
+    const publish: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v1.md`,
+      sequence: 1,
+    };
+
+    expect(() => deriveManifestState([publish])).not.toThrow();
   });
 });

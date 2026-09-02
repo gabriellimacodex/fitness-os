@@ -70,6 +70,7 @@ export {
   digestRetentionRuleReference,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
+  resolveRetentionExecutionAuthorization,
   selectActiveRetentionRule,
   type RetentionExecutionAuthorization,
   type RetentionPreviewPlan,

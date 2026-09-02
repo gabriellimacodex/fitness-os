@@ -1,12 +1,17 @@
-import { eq } from 'drizzle-orm';
-import type { PrivacyRetentionPreviewRepository } from '@fitness-os/domain';
+import { and, eq } from 'drizzle-orm';
+import type {
+  PrivacyRetentionPreviewRepository,
+  PrivacyRetentionRuleRepository,
+} from '@fitness-os/domain';
 import {
   privacyRetentionPreviewRecordSchema,
+  privacyRetentionRuleReferenceSchema,
   type PrivacyRetentionPreviewRecord,
+  type PrivacyRetentionRuleReference,
 } from '@fitness-os/schemas';
 
 import type { PostgresConnection } from '../connection.js';
-import { privacyRetentionPreview } from './tables.js';
+import { privacyRetentionPreview, privacyRetentionRule } from './tables.js';
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {
   if (
@@ -80,6 +85,85 @@ export function createPostgresPrivacyRetentionPreviewRepository(
         return 'accepted' as const;
       } catch (error) {
         if (isUniqueViolation(error, 'privacy_retention_preview_pkey')) {
+          return 'conflict' as const;
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+function toRuleReference(
+  row: typeof privacyRetentionRule.$inferSelect,
+): PrivacyRetentionRuleReference {
+  return privacyRetentionRuleReferenceSchema.parse({
+    ruleId: row.ruleId,
+    ruleVersionId: row.ruleVersionId,
+    engineeringCategoryId: row.engineeringCategoryId,
+    purposeVersionId: row.purposeVersionId,
+    policyVersionId: row.policyVersionId,
+    action: row.action,
+    parametersDigest: row.parametersDigest,
+    canonicalizationVersion: row.canonicalizationVersion,
+    synthetic: row.synthetic,
+  });
+}
+
+/**
+ * Disposable PG-backed retention-rule reference registry. A `put` for an
+ * already-accepted `ruleVersionId` is a conflict, never a silent overwrite —
+ * a rule version is immutable once accepted, matching
+ * `PrivacyRetentionRuleReferenceSchema`'s own documented invariant.
+ */
+export function createPostgresPrivacyRetentionRuleRepository(
+  connection: PostgresConnection,
+): PrivacyRetentionRuleRepository {
+  return {
+    getActiveVersion: async (ruleVersionId: string) => {
+      const [row] = await connection.db
+        .select()
+        .from(privacyRetentionRule)
+        .where(eq(privacyRetentionRule.ruleVersionId, ruleVersionId))
+        .limit(1);
+      return row ? toRuleReference(row) : null;
+    },
+
+    listActiveForCategoryAndPurpose: async (
+      engineeringCategoryId: string,
+      purposeVersionId: string,
+    ) => {
+      const rows = await connection.db
+        .select()
+        .from(privacyRetentionRule)
+        .where(
+          and(
+            eq(
+              privacyRetentionRule.engineeringCategoryId,
+              engineeringCategoryId,
+            ),
+            eq(privacyRetentionRule.purposeVersionId, purposeVersionId),
+          ),
+        );
+      return rows.map((row) => toRuleReference(row));
+    },
+
+    put: async (record: PrivacyRetentionRuleReference) => {
+      const valid = privacyRetentionRuleReferenceSchema.parse(record);
+      try {
+        await connection.db.insert(privacyRetentionRule).values({
+          ruleVersionId: valid.ruleVersionId,
+          ruleId: valid.ruleId,
+          engineeringCategoryId: valid.engineeringCategoryId,
+          purposeVersionId: valid.purposeVersionId,
+          policyVersionId: valid.policyVersionId,
+          action: valid.action,
+          parametersDigest: valid.parametersDigest,
+          canonicalizationVersion: valid.canonicalizationVersion,
+          synthetic: valid.synthetic,
+        });
+        return 'accepted' as const;
+      } catch (error) {
+        if (isUniqueViolation(error, 'privacy_retention_rule_pkey')) {
           return 'conflict' as const;
         }
         throw error;
