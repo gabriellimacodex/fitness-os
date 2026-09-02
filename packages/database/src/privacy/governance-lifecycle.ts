@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
 import type {
   PrivacyGovernanceLifecycleAppendResult,
+  PrivacyGovernanceLifecycleBindingVerifier,
   PrivacyGovernanceLifecycleLedger,
 } from '@fitness-os/domain';
 import {
   privacyGovernanceLifecycleProofReferenceSchema,
+  type PrivacyGovernanceLifecycleBinding,
   type PrivacyGovernanceLifecycleProofReference,
 } from '@fitness-os/schemas';
 
@@ -91,6 +93,59 @@ export function createPostgresPrivacyGovernanceLifecycleLedger(
         }
         throw error;
       }
+    },
+  };
+}
+
+function sealedBindingOf(
+  reference: PrivacyGovernanceLifecycleProofReference,
+): PrivacyGovernanceLifecycleBinding {
+  return {
+    requestId: reference.requestId,
+    processorId: reference.processorId,
+    operationId: reference.operationId,
+    result: reference.result,
+  };
+}
+
+function sameLifecycleBinding(
+  sealed: PrivacyGovernanceLifecycleProofReference,
+  presented: PrivacyGovernanceLifecycleBinding,
+): boolean {
+  return (
+    sealed.requestId === presented.requestId &&
+    sealed.processorId === presented.processorId &&
+    sealed.operationId === presented.operationId &&
+    sealed.result.outcome === presented.result.outcome &&
+    (sealed.result.outcome === 'denied' ||
+      (presented.result.outcome !== 'denied' &&
+        sealed.result.proofId === presented.result.proofId))
+  );
+}
+
+/**
+ * Resolves a caller-presented lifecycle binding against the real append-only
+ * ledger rather than an in-process seal. `privacy_governance_lifecycle_proof`
+ * carries a unique `operation_id`, so at most one sealed row can ever exist
+ * for a given operation — the ambiguity case the synthetic verifier guards
+ * against cannot occur here. A missing row or a field mismatch is `invalid`;
+ * a database failure propagates so the caller can fail closed as
+ * `unavailable`, matching `PrivacyGovernanceLifecycleBindingVerifier`'s
+ * contract.
+ */
+export function createPostgresPrivacyGovernanceLifecycleBindingVerifier(
+  connection: PostgresConnection,
+): PrivacyGovernanceLifecycleBindingVerifier {
+  const ledger = createPostgresPrivacyGovernanceLifecycleLedger(connection);
+
+  return {
+    verify: async (input) => {
+      const sealed = await ledger.getByOperationId(input.operationId);
+      if (sealed === null || !sameLifecycleBinding(sealed, input)) {
+        return { status: 'invalid' as const };
+      }
+
+      return { status: 'verified' as const, binding: sealedBindingOf(sealed) };
     },
   };
 }

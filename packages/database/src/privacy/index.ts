@@ -17,6 +17,7 @@ export {
   type PostgresPrivacyAuthorizationEvidenceLedger,
 } from './ledger.js';
 export {
+  createPostgresPrivacyGovernanceLifecycleBindingVerifier,
   createPostgresPrivacyGovernanceLifecycleLedger,
   type PostgresPrivacyGovernanceLifecycleLedger,
 } from './governance-lifecycle.js';
