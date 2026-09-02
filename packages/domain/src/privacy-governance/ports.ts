@@ -123,6 +123,17 @@ export interface PrivacyGovernanceLifecycleBindingVerifier {
 }
 
 /**
+ * Read-only execution/coordinator evidence source. Its plural lookup is
+ * intentionally distinct from the append target ledger: zero or multiple
+ * receipts fail authorization, and this port cannot append lifecycle proofs.
+ */
+export interface PrivacyGovernanceExecutionReceiptSource {
+  listByOperationId(
+    operationId: string,
+  ): Promise<readonly PrivacyGovernanceLifecycleBinding[]>;
+}
+
+/**
  * Versioned retention-rule registry. A rule version is immutable once
  * accepted; a later change is a new `ruleVersionId`, never an overwrite.
  */

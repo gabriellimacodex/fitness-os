@@ -2,6 +2,7 @@ import {
   authorizeRetentionExecution,
   buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
+  createPrivacyGovernanceExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
   evaluateDataUse,
   planRetentionPreview,
@@ -23,6 +24,7 @@ import {
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
+  type PrivacyGovernanceExecutionReceiptSource,
   type PrivacyGovernanceLifecycleLedger,
   type PrivacyGovernanceLifecycleBindingVerifier,
   type PrivacyIdFactory,
@@ -105,6 +107,12 @@ export interface PrivacySyntheticOptions {
    * execute a governance-lifecycle command.
    */
   governanceLifecycle?: PrivacyGovernanceLifecycleLedger;
+  /**
+   * Read-only receipts from an execution/coordinator authority that is
+   * independent from `governanceLifecycle`, the append target. Used only when
+   * an explicit `governanceLifecycleVerifier` is not supplied.
+   */
+  governanceExecutionReceipts?: PrivacyGovernanceExecutionReceiptSource;
   /**
    * Composition-owned verifier for the exact request/processor/operation/result
    * tuple. Defaults to an empty fail-closed verifier.
@@ -303,7 +311,11 @@ export function registerPrivacySyntheticRoutes(
     new SyntheticPrivacyGovernanceLifecycleLedger();
   const governanceLifecycleVerifier =
     options.governanceLifecycleVerifier ??
-    new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    (options.governanceExecutionReceipts === undefined
+      ? new SyntheticPrivacyGovernanceLifecycleBindingVerifier()
+      : createPrivacyGovernanceExecutionReceiptVerifier(
+          options.governanceExecutionReceipts,
+        ));
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;

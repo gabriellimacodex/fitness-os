@@ -1,4 +1,5 @@
 export { evaluateDataUse } from './data-use.js';
+export { createPrivacyGovernanceExecutionReceiptVerifier } from './execution-receipt.js';
 export {
   compareExpectedInventoryToRuntime,
   type InventoryCoverageMismatch,
@@ -16,6 +17,7 @@ export type {
   PrivacyDataUsePorts,
   PrivacyEvidenceAppendResult,
   PrivacyExpectedProcessorInventoryPort,
+  PrivacyGovernanceExecutionReceiptSource,
   PrivacyGovernanceLifecycleAppendResult,
   PrivacyGovernanceLifecycleBindingVerificationResult,
   PrivacyGovernanceLifecycleBindingVerifier,

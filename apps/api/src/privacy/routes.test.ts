@@ -10,6 +10,7 @@ import {
   privacyProcessorDescriptorReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleBindingSchema,
   privacyReadinessResultSchema,
   privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdSchema,
@@ -2378,6 +2379,38 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
         synthetic: true,
       },
     });
+
+    await app.close();
+  });
+
+  it('records only after an independent execution-receipt source verifies the binding', async () => {
+    const governanceLifecycle = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const receipt =
+      privacyGovernanceLifecycleBindingSchema.parse(basePayload());
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          governanceExecutionReceipts: {
+            listByOperationId: async () => [receipt],
+          },
+          governanceLifecycle,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    await expect(
+      governanceLifecycle.getByOperationId(receipt.operationId),
+    ).resolves.toMatchObject(receipt);
 
     await app.close();
   });
