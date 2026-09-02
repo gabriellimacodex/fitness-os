@@ -22,6 +22,7 @@ import {
   privacySyntheticGovernanceLifecycleRecordResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorPlanResponseSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorStepRecordResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
@@ -2463,6 +2464,276 @@ describe('POST /v1/privacy/synthetic/processor-plan', () => {
       'BAD_REQUEST',
     );
 
+    await app.close();
+  });
+});
+
+describe('POST /v1/privacy/synthetic/processor-coordinate', () => {
+  it('executes the server-selected synthetic step and advances the request', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    const boundProcessor = new SyntheticPrivacySubjectDataProcessor(
+      processor,
+      [],
+    );
+    let executions = 0;
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          fixedUtcMs: '2026-08-18T12:03:00.000Z',
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => boundProcessor.descriptorReference(),
+              execute: async (command) => {
+                executions += 1;
+                return boundProcessor.execute(command);
+              },
+            }),
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+    const body = privacySyntheticProcessorCoordinateResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'advanced',
+      completion: 'completed',
+      request: { state: 'completed' },
+    });
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+    expect(replay.json()).toMatchObject({ status: 'already_terminal' });
+    expect(executions).toBe(1);
+    await app.close();
+  });
+
+  it('hard-disables production before reading request, plan, or processor ports', async () => {
+    let reads = 0;
+    const unavailable = () => {
+      reads += 1;
+      throw new Error('must not read');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: { getInventory: async () => unavailable() },
+          processorResolver: { resolve: async () => unavailable() },
+          processorSteps: {
+            append: async () => unavailable(),
+            listForRequest: async () => unavailable(),
+          } as never,
+          subjectRequests: {
+            applyTransition: async () => unavailable(),
+            createReceived: async () => unavailable(),
+            get: async () => unavailable(),
+            listTransitions: async () => unavailable(),
+          } as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId: '66666666-6666-4666-8666-666666666666',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: true,
+      },
+    });
+
+    expect(response.json()).toEqual({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+    expect(reads).toBe(0);
+    await app.close();
+  });
+
+  it('rejects caller-selected processor, capability, outcome, and step identity', async () => {
+    const app = buildSyntheticPrivacyApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId: '66666666-6666-4666-8666-666666666666',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+        processorId: processor.processorId,
+        capability: 'access',
+        outcome: 'completed',
+        stepId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+    await app.close();
+  });
+
+  it('rejects a malformed processor result before appending a step', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => ({ raw: 'untrusted output' }) as never,
+            }),
+          },
+          processorSteps,
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'receipt_invalid' });
+    await expect(processorSteps.listForRequest(requestId)).resolves.toEqual([]);
+    await app.close();
+  });
+
+  it('does not resolve, execute, timestamp, or append a fresh operation after completion', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'completed',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let resolverReads = 0;
+    let clockReads = 0;
+    let appends = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              clockReads += 1;
+              return '2026-08-18T12:03:00.000Z';
+            },
+          },
+          expectedInventory: expectedInventoryPort,
+          processorResolver: {
+            resolve: async () => {
+              resolverReads += 1;
+              throw new Error('must not resolve');
+            },
+          },
+          processorSteps: {
+            append: async () => {
+              appends += 1;
+              return 'accepted';
+            },
+            listForRequest: async () => [],
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'request_not_executable' });
+    expect({ appends, clockReads, resolverReads }).toEqual({
+      appends: 0,
+      clockReads: 0,
+      resolverReads: 0,
+    });
     await app.close();
   });
 });

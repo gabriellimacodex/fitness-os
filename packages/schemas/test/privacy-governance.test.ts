@@ -47,6 +47,8 @@ import {
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticProcessorCommandSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorResultSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticSubjectRequestTransitionResponseSchema,
@@ -69,6 +71,39 @@ const exceptionB = privacyRetentionExceptionIdSchema.parse(
 const exceptionC = privacyRetentionExceptionIdSchema.parse(
   'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
 );
+
+describe('synthetic processor coordinator contract', () => {
+  it('accepts only request and operation identity plus the production guard', () => {
+    const input = {
+      requestId: '66666666-6666-4666-8666-666666666666',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      productionMode: false,
+    };
+
+    expect(
+      privacySyntheticProcessorCoordinateRequestSchema.parse(input),
+    ).toEqual(input);
+    expect(
+      privacySyntheticProcessorCoordinateRequestSchema.safeParse({
+        ...input,
+        processorId: '99999999-9999-4999-8999-999999999999',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a closed fail-closed coordinator response', () => {
+    expect(
+      privacySyntheticProcessorCoordinateResponseSchema.parse({
+        status: 'execution_unavailable',
+      }),
+    ).toEqual({ status: 'execution_unavailable' });
+    expect(
+      privacySyntheticProcessorCoordinateResponseSchema.safeParse({
+        status: 'executed_anyway',
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe('privacy operation kinds and canonical profiles', () => {
   it('pins the Option A canonicalization version', () => {

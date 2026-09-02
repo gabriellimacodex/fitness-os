@@ -1,6 +1,7 @@
 import {
   buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
+  coordinateSyntheticProcessorStep,
   createPrivacyGovernanceExecutionReceiptVerifier,
   createPrivacyProcessorExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
@@ -18,6 +19,7 @@ import {
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  SyntheticPrivacyProcessorExecutionCoordinator,
   SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -56,6 +58,8 @@ import {
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
   privacySyntheticProcessorExecuteResponseSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorPlanRequestSchema,
   privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticProcessorStepRecordRequestSchema,
@@ -320,6 +324,12 @@ export function registerPrivacySyntheticRoutes(
       ? undefined
       : createPrivacyProcessorExecutionReceiptVerifier(
           options.processorExecutionReceipts,
+        );
+  const processorExecutionCoordinator =
+    options.processorResolver === undefined
+      ? undefined
+      : new SyntheticPrivacyProcessorExecutionCoordinator(
+          options.processorResolver,
         );
   const governanceLifecycle =
     options.governanceLifecycle ??
@@ -931,6 +941,67 @@ export function registerPrivacySyntheticRoutes(
       excluded: result.excluded,
     });
   });
+
+  app.post(
+    '/v1/privacy/synthetic/processor-coordinate',
+    async (request, reply) => {
+      const body = privacySyntheticProcessorCoordinateRequestSchema.safeParse(
+        request.body,
+      );
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+      if (body.data.productionMode) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'hard_disabled',
+          reason: 'production_path',
+        });
+      }
+      if (expectedInventory === undefined) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'plan_incomplete',
+        });
+      }
+      if (processorExecutionCoordinator === undefined) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'handler_missing',
+        });
+      }
+
+      let result;
+      try {
+        result = await coordinateSyntheticProcessorStep({
+          clock,
+          execution: processorExecutionCoordinator,
+          expectedInventory,
+          operationId: body.data.operationId,
+          productionMode: false,
+          requestId: body.data.requestId,
+          receipts: processorExecutionCoordinator,
+          requests: subjectRequests,
+          steps: processorSteps,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor coordination unavailable',
+        );
+      }
+
+      const response = privacySyntheticProcessorCoordinateResponseSchema.parse(
+        result.status === 'invalid_transition'
+          ? { status: result.status, reason: result.reason }
+          : result,
+      );
+      if (result.status === 'execution_unavailable') {
+        return reply.code(503).send(response);
+      }
+      return response;
+    },
+  );
 
   app.post(
     '/v1/privacy/synthetic/processor-step-record',
