@@ -6,6 +6,7 @@ import {
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
   createPostgresPrivacyPurposeRegistry,
+  createPostgresPrivacyRetentionPreviewRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
 } from '@fitness-os/database';
@@ -16,6 +17,7 @@ import type {
   PrivacyPolicyPackageRepository,
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
+  PrivacyRetentionPreviewRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
@@ -33,6 +35,7 @@ export type PrivacyPgPersistence = {
   processors: PrivacyRuntimeProcessorRegistry;
   processorSteps: PrivacyProcessorStepRepository;
   governanceLifecycle: PrivacyGovernanceLifecycleLedger;
+  retentionPreviews: PrivacyRetentionPreviewRepository;
 };
 
 export function createPrivacyPgPersistence(
@@ -48,5 +51,7 @@ export function createPrivacyPgPersistence(
     processorSteps: createPostgresPrivacyProcessorStepRepository(connection),
     governanceLifecycle:
       createPostgresPrivacyGovernanceLifecycleLedger(connection),
+    retentionPreviews:
+      createPostgresPrivacyRetentionPreviewRepository(connection),
   };
 }
