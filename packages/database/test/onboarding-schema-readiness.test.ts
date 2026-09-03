@@ -4,7 +4,14 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import type { OnboardingReadinessProbe } from '@fitness-os/domain';
+import {
+  CryptoOnboardingIdFactory,
+  CryptoOnboardingSecretFactory,
+  FixedTrustedClock,
+  HmacInvitationSecretVerifier,
+  SystemTrustedClock,
+  type OnboardingReadinessProbe,
+} from '@fitness-os/domain';
 
 import type { PostgresConnection } from '../src/connection.js';
 import {
@@ -306,5 +313,105 @@ describe('onboarding schema readiness', () => {
       diagnosticCode: null,
       state: 'ready',
     });
+  });
+});
+
+function realMechanismComponents() {
+  return {
+    clock: new SystemTrustedClock(),
+    idFactory: new CryptoOnboardingIdFactory(),
+    secretFactory: new CryptoOnboardingSecretFactory(),
+    secretVerifier: new HmacInvitationSecretVerifier(
+      Buffer.from('self-test-pepper-not-a-real-secret'),
+    ),
+  };
+}
+
+describe('createPostgresOnboardingReadinessProbe with mechanismComponents', () => {
+  it('leaves clock/id_factory/secret_factory/secret_verifier exactly as the base probe reports them when mechanismComponents is omitted', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      { requiredHashes: [] },
+    ).evaluate();
+
+    for (const componentId of [
+      'clock',
+      'id_factory',
+      'secret_factory',
+      'secret_verifier',
+    ] as const) {
+      expect(
+        result.components.find((c) => c.componentId === componentId),
+      ).toEqual({ componentId, diagnosticCode: null, state: 'ready' });
+    }
+  });
+
+  it('additionally reports clock/id_factory/secret_factory/secret_verifier ready from a real self-test alongside real schema/repository evidence', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      { requiredHashes: [], mechanismComponents: realMechanismComponents() },
+    ).evaluate();
+
+    for (const componentId of [
+      'schema',
+      ...REPOSITORY_COMPONENT_IDS,
+      'clock',
+      'id_factory',
+      'secret_factory',
+      'secret_verifier',
+    ] as const) {
+      expect(
+        result.components.find((c) => c.componentId === componentId),
+      ).toEqual({ componentId, diagnosticCode: null, state: 'ready' });
+    }
+    expect(result.mechanismReady).toBe(true);
+    expect(result.productionReady).toBe(false);
+  });
+
+  it('flips mechanismReady false from a real mechanism self-test failure while schema/repository evidence stays ready', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      {
+        requiredHashes: [],
+        mechanismComponents: {
+          ...realMechanismComponents(),
+          clock: new FixedTrustedClock('not-a-real-timestamp'),
+        },
+      },
+    ).evaluate();
+
+    expect(result.components.find((c) => c.componentId === 'clock')).toEqual({
+      componentId: 'clock',
+      diagnosticCode: 'configuration_mismatch',
+      state: 'not_ready',
+    });
+    for (const componentId of REPOSITORY_COMPONENT_IDS) {
+      expect(
+        result.components.find((c) => c.componentId === componentId),
+      ).toEqual({ componentId, diagnosticCode: null, state: 'ready' });
+    }
+    expect(result.mechanismReady).toBe(false);
+  });
+
+  it('flips mechanismReady false from a real schema gap while a passing mechanism self-test stays ready', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      {
+        requiredHashes: ['0'.repeat(64)],
+        mechanismComponents: realMechanismComponents(),
+      },
+    ).evaluate();
+
+    expect(result.components.find((c) => c.componentId === 'schema')).toEqual({
+      componentId: 'schema',
+      diagnosticCode: 'migration_missing',
+      state: 'not_ready',
+    });
+    expect(result.components.find((c) => c.componentId === 'clock')).toEqual({
+      componentId: 'clock',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.mechanismReady).toBe(false);
   });
 });
