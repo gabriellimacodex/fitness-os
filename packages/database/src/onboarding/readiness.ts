@@ -32,6 +32,7 @@ const REQUIRED_ONBOARDING_MIGRATION_FILES = [
   '0008_prd07_onboarding_attempt.sql',
   '0009_prd07_onboarding_operation.sql',
   '0010_prd07_onboarding_role_mapping.sql',
+  '0024_prd07_onboarding_claim_failure.sql',
 ] as const;
 
 function hashMigrationFile(relativePath: string): string {
@@ -63,6 +64,7 @@ const REQUIRED_TABLES = [
   'onboarding_attempt',
   'onboarding_operation',
   'onboarding_role_mapping',
+  'onboarding_claim_failure',
 ] as const;
 
 /**
@@ -73,6 +75,15 @@ const REQUIRED_TABLES = [
  * `attempt_repository` → `onboarding_attempt`,
  * `operation_repository` → `onboarding_operation`,
  * `role_mapping_repository` → `onboarding_role_mapping`.
+ *
+ * `onboarding_claim_failure` (backing `createPostgresClaimFailureTracker`,
+ * used by production claim throttling) has no dedicated readiness component
+ * id of its own, but is still required here: `checkOnboardingSchemaReadiness`
+ * is a single combined, fail-closed check across every table this package
+ * requires (see the `schema`/repository binding note below), so omitting a
+ * real, landed onboarding table from `REQUIRED_TABLES` would let the
+ * aggregate `schema` component report `ready` while a production table is
+ * actually missing.
  */
 const REPOSITORY_COMPONENT_IDS = [
   'invitation_repository',
