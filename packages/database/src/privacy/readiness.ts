@@ -206,7 +206,73 @@ const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
   'repositories',
   'audit_sink',
   'governance_lifecycle',
+  'recovery',
 ] as const;
+
+/**
+ * The append-only guard triggers migration `0006` installs on every
+ * immutable/append-only privacy ledger table. These enforce the destructive-
+ * recovery safety net independently verified by the `privacy-migration-
+ * recovery.integration.test.ts` evidence: a table can carry the right
+ * migration hash and still lack real DML protection if a trigger was
+ * manually dropped or its creation silently failed outside the migration
+ * path, so this checks live `pg_trigger` state rather than re-deriving the
+ * answer from the `migrations` component's journal evidence.
+ */
+const RECOVERY_REQUIRED_TRIGGERS = [
+  'privacy_authorization_evidence_append_only_guard',
+  'privacy_withdrawal_append_only_guard',
+  'privacy_audit_event_append_only_guard',
+  'privacy_subject_request_transition_append_only_guard',
+  'privacy_policy_package_version_append_only_guard',
+  'privacy_purpose_version_append_only_guard',
+  'privacy_processor_registration_append_only_guard',
+] as const;
+
+export type PrivacyRecoveryReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'missing_required_trigger' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Verifies every append-only guard trigger migration `0006` installs is
+ * actually present in the connected database, independent of whether the
+ * migration journal recorded `0006` as applied.
+ */
+export async function checkPrivacyRecoveryReadiness(
+  connection: PostgresConnection,
+): Promise<PrivacyRecoveryReadinessResult> {
+  try {
+    const rows = await connection.db.execute<{ tgname: string }>(sql`
+      SELECT tgname
+      FROM pg_trigger
+      WHERE NOT tgisinternal
+    `);
+    const present = new Set(rows.map((row) => row.tgname));
+    const missing = RECOVERY_REQUIRED_TRIGGERS.filter(
+      (trigger) => !present.has(trigger),
+    );
+
+    if (missing.length > 0) {
+      return {
+        ready: false,
+        reason: 'missing_required_trigger',
+        detail: missing.join(','),
+      };
+    }
+
+    return { ready: true };
+  } catch (error) {
+    return {
+      ready: false,
+      reason: 'database_error',
+      detail: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+}
 
 const INVENTORY_COVERAGE_COMPONENT_IDS = [
   'expected_inventory',
@@ -273,23 +339,25 @@ async function evaluateInventoryCoverageComponents(
 /**
  * Wraps a base `PrivacyReadinessProbe` (defaults to
  * `SyntheticPrivacyReadinessProbe`) and replaces its `migrations`,
- * `repositories`, `audit_sink`, and `governance_lifecycle` components with a
- * real evaluation of `checkPrivacyCoreDatabaseReadiness` and
- * `checkPrivacyGovernanceLifecycleDatabaseReadiness` against `connection`.
- * `audit_sink` reuses the core schema result: `privacy_audit_event` is
- * already one of `REQUIRED_TABLES`, so the same migration/table evidence
- * that backs `repositories` also backs the audit ledger's own table —
- * mirroring the exact override pattern already used for the other bound
- * components, not a functional round-trip through
- * `createPostgresPrivacyAuditSink`. When both `expectedInventory` and
- * `runtimeProcessors` are supplied, this also replaces `expected_inventory`
- * and `runtime_processors` with a real `compareExpectedInventoryToRuntime`
- * evaluation; when either is omitted, both stay exactly as the base probe
- * reports them, matching prior behavior. Every remaining component
- * (identity_boundary, policy_package, recovery) is left exactly as the base
- * probe reports it — this does not verify those. `mechanismReady` is
- * recomputed as the conjunction of all components so a real gap flips it
- * `false`; `productionReady` stays `false`, unaffected by
+ * `repositories`, `audit_sink`, `governance_lifecycle`, and `recovery`
+ * components with a real evaluation of `checkPrivacyCoreDatabaseReadiness`,
+ * `checkPrivacyGovernanceLifecycleDatabaseReadiness`, and
+ * `checkPrivacyRecoveryReadiness` against `connection`. `audit_sink` reuses
+ * the core schema result: `privacy_audit_event` is already one of
+ * `REQUIRED_TABLES`, so the same migration/table evidence that backs
+ * `repositories` also backs the audit ledger's own table — mirroring the
+ * exact override pattern already used for the other bound components, not a
+ * functional round-trip through `createPostgresPrivacyAuditSink`. When both
+ * `expectedInventory` and `runtimeProcessors` are supplied, this also
+ * replaces `expected_inventory` and `runtime_processors` with a real
+ * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
+ * both stay exactly as the base probe reports them, matching prior behavior.
+ * Every remaining component (identity_boundary, policy_package) is left
+ * exactly as the base probe reports it — this does not verify those, since
+ * both wait on an unresolved identity/legal-policy decision this probe
+ * cannot and should not make. `mechanismReady` is recomputed as the
+ * conjunction of all components so a real gap flips it `false`;
+ * `productionReady` stays `false`, unaffected by
  * `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export function createPostgresPrivacyReadinessProbe(
@@ -320,6 +388,7 @@ export function createPostgresPrivacyReadinessProbe(
         await checkPrivacyGovernanceLifecycleDatabaseReadiness(connection, {
           requiredHashes: options.governanceLifecycleRequiredHashes,
         });
+      const recoveryResult = await checkPrivacyRecoveryReadiness(connection);
       const inventoryCoverage =
         expectedInventory !== undefined && runtimeProcessors !== undefined
           ? await evaluateInventoryCoverageComponents(
@@ -370,6 +439,13 @@ export function createPostgresPrivacyReadinessProbe(
               state: 'not_ready',
               diagnosticCode: 'governance_table_lifecycle_missing',
             };
+      const recoveryComponent: PrivacyReadinessComponent = recoveryResult.ready
+        ? { componentId: 'recovery', state: 'ready', diagnosticCode: null }
+        : {
+            componentId: 'recovery',
+            state: 'not_ready',
+            diagnosticCode: 'recovery_unverified',
+          };
 
       const activeOverriddenComponentIds = new Set<PrivacyReadinessComponentId>(
         [
@@ -388,6 +464,7 @@ export function createPostgresPrivacyReadinessProbe(
         repositoriesComponent,
         auditSinkComponent,
         governanceLifecycleComponent,
+        recoveryComponent,
         ...(inventoryCoverage !== null
           ? [
               inventoryCoverage.expectedInventoryComponent,
