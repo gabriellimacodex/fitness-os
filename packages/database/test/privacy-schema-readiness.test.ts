@@ -1,9 +1,72 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PrivacyReadinessProbe } from '@fitness-os/domain';
+import {
+  SyntheticPrivacyExpectedProcessorInventory,
+  SyntheticPrivacyRuntimeProcessorRegistry,
+  type PrivacyReadinessProbe,
+} from '@fitness-os/domain';
+import {
+  privacyExpectedProcessorInventorySchema,
+  privacyProcessorDescriptorReferenceSchema,
+} from '@fitness-os/schemas';
 
 import type { PostgresConnection } from '../src/connection.js';
 import { createPostgresPrivacyReadinessProbe } from '../src/privacy/readiness.js';
+
+const processor = privacyProcessorDescriptorReferenceSchema.parse({
+  processorId: '99999999-9999-4999-8999-999999999999',
+  inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  descriptorDigest: 'c'.repeat(64),
+  inventoryVersionDigest: 'd'.repeat(64),
+  allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+  allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+  capabilities: ['access', 'inventory'],
+  supportsSubjectLookup: true,
+  codeOwner: 'packages.domain.privacy',
+  synthetic: true,
+});
+
+const expectedInventoryArtifact = privacyExpectedProcessorInventorySchema.parse(
+  {
+    schemaVersion: 'privacy.processor-inventory.v1',
+    inventoryId: processor.inventoryId,
+    inventoryVersionDigest: processor.inventoryVersionDigest,
+    canonicalizationVersion: 'privacy-governance.canonical.v1',
+    sourceCommit: '579b735',
+    processors: [
+      {
+        processorId: processor.processorId,
+        registrationVersion: 1,
+        inventoryId: processor.inventoryId,
+        descriptorDigest: processor.descriptorDigest,
+        codeOwner: processor.codeOwner,
+        adapterPackage: '@fitness-os/domain',
+        storageKind: 'in_memory_synthetic',
+        allowedPurposeIds: processor.allowedPurposeIds,
+        allowedCategoryIds: processor.allowedCategoryIds,
+        subjectLookupStrategy: 'synthetic_scope_id',
+        supportedCapabilities: processor.capabilities,
+        unsupportedCapabilities: [
+          { capability: 'delete', rationale: 'deferred_to_later_prd21_slice' },
+        ],
+        recordFamilies: [
+          {
+            family: 'privacy_audit_event',
+            lifecycleAction: 'retain_until_reviewed',
+          },
+        ],
+        environmentApplicability: 'synthetic_only',
+        requiredReadiness: 'mechanism_only',
+        synthetic: true,
+      },
+    ],
+  },
+);
+
+const connectionStub = {
+  close: async () => undefined,
+  db: { execute: async () => [] },
+} as unknown as PostgresConnection;
 
 describe('privacy schema readiness', () => {
   it('fails closed when the base probe omits migrations and repositories', async () => {
@@ -158,5 +221,182 @@ describe('privacy schema readiness', () => {
 
     expect(result.diagnosticCodes).toContain('repository_unavailable');
     expect(result.diagnosticCodes).not.toContain('migration_missing');
+  });
+});
+
+describe('privacy readiness inventory coverage override', () => {
+  it('leaves expected_inventory and runtime_processors exactly as the base probe reports them when the ports are omitted', async () => {
+    const result =
+      await createPostgresPrivacyReadinessProbe(connectionStub).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'processor_missing',
+    });
+  });
+
+  it('reports expected_inventory and runtime_processors ready when the runtime registry exactly matches the reviewed inventory', async () => {
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    runtimeProcessors.seed(processor);
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.diagnosticCodes).not.toContain('inventory_mismatch');
+    expect(result.diagnosticCodes).not.toContain('processor_missing');
+  });
+
+  it('reports both components not_ready with processor_missing when an expected processor is absent from the runtime registry', async () => {
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'processor_missing',
+    });
+    expect(result.diagnosticCodes).toContain('processor_missing');
+    expect(result.diagnosticCodes).toContain('inventory_mismatch');
+  });
+
+  it('reports both components not_ready with inventory_mismatch when the runtime descriptor is present but its content diverges', async () => {
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    runtimeProcessors.seed({ ...processor, descriptorDigest: 'f'.repeat(64) });
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    });
+  });
+
+  it('drops the base probe stale codes and re-adds only what the real coverage check reports', async () => {
+    const baseProbe: PrivacyReadinessProbe = {
+      evaluate: async () => ({
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        components: [
+          { componentId: 'contracts', diagnosticCode: null, state: 'ready' },
+          {
+            componentId: 'migrations',
+            diagnosticCode: 'migration_missing',
+            state: 'not_ready',
+          },
+          {
+            componentId: 'repositories',
+            diagnosticCode: 'repository_unavailable',
+            state: 'unavailable',
+          },
+          { componentId: 'audit_sink', diagnosticCode: null, state: 'ready' },
+          {
+            componentId: 'expected_inventory',
+            diagnosticCode: 'inventory_mismatch',
+            state: 'not_ready',
+          },
+          {
+            componentId: 'runtime_processors',
+            diagnosticCode: 'processor_missing',
+            state: 'not_ready',
+          },
+          {
+            componentId: 'governance_lifecycle',
+            diagnosticCode: null,
+            state: 'ready',
+          },
+          {
+            componentId: 'identity_boundary',
+            diagnosticCode: null,
+            state: 'ready',
+          },
+          {
+            componentId: 'policy_package',
+            diagnosticCode: null,
+            state: 'ready',
+          },
+          { componentId: 'recovery', diagnosticCode: null, state: 'ready' },
+        ],
+        diagnosticCodes: [
+          'legal_privacy_decision_required',
+          'inventory_mismatch',
+          'processor_missing',
+        ],
+        evaluatedAt: '2026-08-31T00:00:00.000Z',
+        inventoryVersionDigest: 'b'.repeat(64),
+        mechanismReady: false,
+        productionReady: false,
+        schemaDigest: 'a'.repeat(64),
+      }),
+    };
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    runtimeProcessors.seed(processor);
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      baseProbe,
+      requiredHashes: [],
+      expectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'ready',
+      diagnosticCode: null,
+    });
+    expect(result.diagnosticCodes).not.toContain('inventory_mismatch');
+    expect(result.diagnosticCodes).not.toContain('processor_missing');
   });
 });
