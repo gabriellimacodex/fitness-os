@@ -84,16 +84,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await connection.close();
     });
 
-    it('reports migrations, repositories, and governance_lifecycle ready and leaves every other component as the base probe reports it', async () => {
+    it('reports migrations, repositories, audit_sink, and governance_lifecycle ready and leaves every other component as the base probe reports it', async () => {
       const probe = createPostgresPrivacyReadinessProbe(connection, {
         evaluatedAt: '2026-08-27T00:00:00.000Z',
       });
 
       const result = await probe.evaluate();
 
-      // Only migrations/repositories/governance_lifecycle are DB-verified by
-      // this probe; the synthetic base probe's other components stay
-      // not_ready/unavailable, so mechanismReady correctly remains false.
+      // Only migrations/repositories/audit_sink/governance_lifecycle are
+      // DB-verified by this probe; the synthetic base probe's other
+      // components stay not_ready/unavailable, so mechanismReady correctly
+      // remains false.
       expect(result.mechanismReady).toBe(false);
       expect(result.productionReady).toBe(false);
       expect(result.evaluatedAt).toBe('2026-08-27T00:00:00.000Z');
@@ -108,17 +109,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         diagnosticCode: null,
       });
       expect(result.components).toContainEqual({
-        componentId: 'governance_lifecycle',
+        componentId: 'audit_sink',
         state: 'ready',
         diagnosticCode: null,
       });
       expect(result.components).toContainEqual({
-        componentId: 'audit_sink',
-        state: 'unavailable',
-        diagnosticCode: 'audit_unavailable',
+        componentId: 'governance_lifecycle',
+        state: 'ready',
+        diagnosticCode: null,
       });
       expect(result.diagnosticCodes).not.toContain('migration_missing');
       expect(result.diagnosticCodes).not.toContain('repository_unavailable');
+      expect(result.diagnosticCodes).not.toContain('audit_unavailable');
       expect(result.diagnosticCodes).not.toContain(
         'governance_table_lifecycle_missing',
       );
@@ -147,8 +149,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         state: 'not_ready',
         diagnosticCode: 'repository_unavailable',
       });
+      expect(result.components).toContainEqual({
+        componentId: 'audit_sink',
+        state: 'not_ready',
+        diagnosticCode: 'audit_unavailable',
+      });
       expect(result.diagnosticCodes).toContain('migration_missing');
       expect(result.diagnosticCodes).toContain('repository_unavailable');
+      expect(result.diagnosticCodes).toContain('audit_unavailable');
     });
 
     it('reports governance_lifecycle not_ready with governance_table_lifecycle_missing and flips mechanismReady false on a missing required migration, independent of the core migrations/repositories result', async () => {
@@ -176,11 +184,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         state: 'not_ready',
         diagnosticCode: 'governance_table_lifecycle_missing',
       });
+      expect(result.components).toContainEqual({
+        componentId: 'audit_sink',
+        state: 'ready',
+        diagnosticCode: null,
+      });
       expect(result.diagnosticCodes).toContain(
         'governance_table_lifecycle_missing',
       );
       expect(result.diagnosticCodes).not.toContain('migration_missing');
       expect(result.diagnosticCodes).not.toContain('repository_unavailable');
+      expect(result.diagnosticCodes).not.toContain('audit_unavailable');
     });
 
     // Runs before the following test seeds `privacy_processor_registration`,
