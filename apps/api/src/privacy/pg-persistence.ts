@@ -8,6 +8,7 @@ import {
   createPostgresPrivacyProcessorExecutionJournal,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRetentionPreviewRepository,
+  createPostgresPrivacyRetentionRuleRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
 } from '@fitness-os/database';
@@ -20,6 +21,7 @@ import type {
   PrivacyProcessorExecutionJournal,
   PrivacyPurposeRegistry,
   PrivacyRetentionPreviewRepository,
+  PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
   PrivacySubjectRequestRepository,
 } from '@fitness-os/domain';
@@ -39,6 +41,7 @@ export type PrivacyPgPersistence = {
   processorExecutionJournal: PrivacyProcessorExecutionJournal;
   governanceLifecycle: PrivacyGovernanceLifecycleLedger;
   retentionPreviews: PrivacyRetentionPreviewRepository;
+  retentionRules: PrivacyRetentionRuleRepository;
 };
 
 export function createPrivacyPgPersistence(
@@ -58,5 +61,6 @@ export function createPrivacyPgPersistence(
       createPostgresPrivacyGovernanceLifecycleLedger(connection),
     retentionPreviews:
       createPostgresPrivacyRetentionPreviewRepository(connection),
+    retentionRules: createPostgresPrivacyRetentionRuleRepository(connection),
   };
 }
