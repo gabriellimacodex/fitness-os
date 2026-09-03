@@ -204,6 +204,7 @@ export async function checkPrivacyGovernanceLifecycleDatabaseReadiness(
 const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
   'migrations',
   'repositories',
+  'audit_sink',
   'governance_lifecycle',
 ] as const;
 
@@ -272,18 +273,24 @@ async function evaluateInventoryCoverageComponents(
 /**
  * Wraps a base `PrivacyReadinessProbe` (defaults to
  * `SyntheticPrivacyReadinessProbe`) and replaces its `migrations`,
- * `repositories`, and `governance_lifecycle` components with a real
- * evaluation of `checkPrivacyCoreDatabaseReadiness` and
+ * `repositories`, `audit_sink`, and `governance_lifecycle` components with a
+ * real evaluation of `checkPrivacyCoreDatabaseReadiness` and
  * `checkPrivacyGovernanceLifecycleDatabaseReadiness` against `connection`.
- * When both `expectedInventory` and `runtimeProcessors` are supplied, this
- * also replaces `expected_inventory` and `runtime_processors` with a real
- * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
- * both stay exactly as the base probe reports them, matching prior behavior.
- * Every remaining component (audit_sink, identity_boundary, policy_package,
- * recovery) is left exactly as the base probe reports it — this does not
- * verify those. `mechanismReady` is recomputed as the conjunction of all
- * components so a real gap flips it `false`; `productionReady` stays
- * `false`, unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ * `audit_sink` reuses the core schema result: `privacy_audit_event` is
+ * already one of `REQUIRED_TABLES`, so the same migration/table evidence
+ * that backs `repositories` also backs the audit ledger's own table —
+ * mirroring the exact override pattern already used for the other bound
+ * components, not a functional round-trip through
+ * `createPostgresPrivacyAuditSink`. When both `expectedInventory` and
+ * `runtimeProcessors` are supplied, this also replaces `expected_inventory`
+ * and `runtime_processors` with a real `compareExpectedInventoryToRuntime`
+ * evaluation; when either is omitted, both stay exactly as the base probe
+ * reports them, matching prior behavior. Every remaining component
+ * (identity_boundary, policy_package, recovery) is left exactly as the base
+ * probe reports it — this does not verify those. `mechanismReady` is
+ * recomputed as the conjunction of all components so a real gap flips it
+ * `false`; `productionReady` stays `false`, unaffected by
+ * `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export function createPostgresPrivacyReadinessProbe(
   connection: PostgresConnection,
@@ -344,6 +351,13 @@ export function createPostgresPrivacyReadinessProbe(
               state: 'not_ready',
               diagnosticCode: 'repository_unavailable',
             };
+      const auditSinkComponent: PrivacyReadinessComponent = schemaResult.ready
+        ? { componentId: 'audit_sink', state: 'ready', diagnosticCode: null }
+        : {
+            componentId: 'audit_sink',
+            state: 'not_ready',
+            diagnosticCode: 'audit_unavailable',
+          };
       const governanceLifecycleComponent: PrivacyReadinessComponent =
         governanceLifecycleResult.ready
           ? {
@@ -372,6 +386,7 @@ export function createPostgresPrivacyReadinessProbe(
       const overriddenComponents = [
         migrationsComponent,
         repositoriesComponent,
+        auditSinkComponent,
         governanceLifecycleComponent,
         ...(inventoryCoverage !== null
           ? [

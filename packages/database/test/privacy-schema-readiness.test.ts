@@ -97,7 +97,9 @@ describe('privacy schema readiness', () => {
     expect(result.mechanismReady).toBe(false);
     expect(
       result.components.filter((component) =>
-        ['migrations', 'repositories'].includes(component.componentId),
+        ['migrations', 'repositories', 'audit_sink'].includes(
+          component.componentId,
+        ),
       ),
     ).toEqual([
       {
@@ -108,6 +110,11 @@ describe('privacy schema readiness', () => {
       {
         componentId: 'repositories',
         diagnosticCode: 'repository_unavailable',
+        state: 'not_ready',
+      },
+      {
+        componentId: 'audit_sink',
+        diagnosticCode: 'audit_unavailable',
         state: 'not_ready',
       },
     ]);
@@ -132,6 +139,11 @@ describe('privacy schema readiness', () => {
     expect(result.components).toContainEqual({
       componentId: 'repositories',
       diagnosticCode: 'repository_unavailable',
+      state: 'not_ready',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'audit_sink',
+      diagnosticCode: 'audit_unavailable',
       state: 'not_ready',
     });
   });
@@ -221,6 +233,42 @@ describe('privacy schema readiness', () => {
 
     expect(result.diagnosticCodes).toContain('repository_unavailable');
     expect(result.diagnosticCodes).not.toContain('migration_missing');
+  });
+
+  it('flips audit_sink ready once the core schema is ready, reusing the same evidence as repositories', async () => {
+    let executeCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : [
+                { tablename: 'privacy_policy_package_version' },
+                { tablename: 'privacy_purpose_version' },
+                { tablename: 'privacy_processor_registration' },
+                { tablename: 'privacy_authorization_evidence' },
+                { tablename: 'privacy_withdrawal' },
+                { tablename: 'privacy_audit_event' },
+                { tablename: 'privacy_subject_request' },
+                { tablename: 'privacy_subject_request_transition' },
+              ];
+        },
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'audit_sink',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).not.toContain('audit_unavailable');
   });
 });
 
