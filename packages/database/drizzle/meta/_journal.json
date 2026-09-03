@@ -183,6 +183,13 @@
       "when": 1788464037451,
       "tag": "0025_prd21_processor_execution_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788470788696,
+      "tag": "0026_prd07_onboarding_coach_bootstrap_namespace",
+      "breakpoints": true
     }
   ]
 }

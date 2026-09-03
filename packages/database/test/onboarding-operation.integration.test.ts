@@ -88,5 +88,57 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         record,
       );
     });
+
+    /**
+     * `issue_coach_bootstrap_invitation` is not yet a namespace the typed
+     * `OnboardingOperationRepository` port accepts (its idempotency ledger
+     * stays in-memory-only for this slice — see
+     * `apps/api/src/onboarding/bootstrap.ts`), but the database CHECK
+     * constraint must already permit it so a later slice can widen the typed
+     * repository onto the same migration without a second schema change.
+     * Exercised here with a raw insert, bypassing the narrower repository
+     * type, to prove the constraint itself — not the typed port.
+     */
+    it('accepts the coach-bootstrap namespace and still rejects an unlisted one at the database boundary', async () => {
+      await connection.db.execute(sql`
+        INSERT INTO onboarding_operation
+          (operation_id, binding_key, principal_key, namespace, retry_digest, digest, result, created_at)
+        VALUES (
+          '44444444-4444-4444-8444-444444444444',
+          ${'operator:synthetic:op-1:issue_coach_bootstrap_invitation:hmac-sha256.v1:' + 'a'.repeat(64)},
+          ${'operator:synthetic:op-1'},
+          'issue_coach_bootstrap_invitation',
+          ${`hmac-sha256.v1:${'a'.repeat(64)}`},
+          ${'d'.repeat(64)},
+          ${JSON.stringify({ status: 'ok' })}::jsonb,
+          '2026-08-19T12:00:00.000Z'
+        )
+      `);
+
+      const [inserted] = await connection.db.execute(sql`
+        SELECT namespace FROM onboarding_operation
+        WHERE operation_id = '44444444-4444-4444-8444-444444444444'
+      `);
+      expect(inserted?.namespace).toBe('issue_coach_bootstrap_invitation');
+
+      await expect(
+        connection.db.execute(sql`
+          INSERT INTO onboarding_operation
+            (operation_id, binding_key, principal_key, namespace, retry_digest, digest, result, created_at)
+          VALUES (
+            '55555555-5555-4555-8555-555555555555',
+            ${'principal-unlisted:not_a_real_namespace:hmac-sha256.v1:' + 'a'.repeat(64)},
+            ${'principal-unlisted'},
+            'not_a_real_namespace',
+            ${`hmac-sha256.v1:${'a'.repeat(64)}`},
+            ${'e'.repeat(64)},
+            ${JSON.stringify({ status: 'ok' })}::jsonb,
+            '2026-08-19T12:00:00.000Z'
+          )
+        `),
+      ).rejects.toMatchObject({
+        cause: { constraint_name: 'onboarding_operation_namespace_check' },
+      });
+    });
   },
 );
