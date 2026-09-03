@@ -204,6 +204,24 @@ describe('createApiClient', () => {
     );
   });
 
+  it('fetches and validates a non-empty movement list', async () => {
+    const summary = {
+      movementId: 'bodyweight-squat',
+      contentVersion: 1,
+      name: 'Bodyweight Squat',
+      summary: 'A controlled squat using body weight and a stable stance.',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ items: [summary] }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.movements()).resolves.toEqual({ items: [summary] });
+  });
+
   it('encodes a movement identifier as one URL segment', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({
