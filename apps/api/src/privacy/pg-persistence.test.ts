@@ -164,6 +164,12 @@ const retentionPreviews = {
   put: async () => 'accepted' as const,
 };
 
+const retentionRules = {
+  getActiveVersion: async () => null,
+  listActiveForCategoryAndPurpose: async () => [],
+  put: async () => 'accepted' as const,
+};
+
 vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyAuditSink: vi.fn(() => ({ append })),
   createPostgresPrivacyAuthorizationEvidenceLedger: vi.fn(() => ({
@@ -186,6 +192,7 @@ vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyRetentionPreviewRepository: vi.fn(
     () => retentionPreviews,
   ),
+  createPostgresPrivacyRetentionRuleRepository: vi.fn(() => retentionRules),
 }));
 
 import {
@@ -197,6 +204,7 @@ import {
   createPostgresPrivacyProcessorExecutionJournal,
   createPostgresPrivacyPurposeRegistry,
   createPostgresPrivacyRetentionPreviewRepository,
+  createPostgresPrivacyRetentionRuleRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
 } from '@fitness-os/database';
@@ -236,6 +244,9 @@ describe('privacy PG persistence bundle', () => {
     expect(
       createPostgresPrivacyRetentionPreviewRepository,
     ).toHaveBeenCalledWith(connection);
+    expect(createPostgresPrivacyRetentionRuleRepository).toHaveBeenCalledWith(
+      connection,
+    );
     expect(persistence.evidence.getEvidence).toBe(getEvidence);
     expect(persistence.audit.append).toBe(append);
     expect(persistence.subjectRequests).toBe(subjectRequests);
@@ -248,6 +259,7 @@ describe('privacy PG persistence bundle', () => {
     );
     expect(persistence.governanceLifecycle).toBe(governanceLifecycle);
     expect(persistence.retentionPreviews).toBe(retentionPreviews);
+    expect(persistence.retentionRules).toBe(retentionRules);
   });
 
   it('drives synthetic data-use-evaluate over the composed bundle ports', async () => {
