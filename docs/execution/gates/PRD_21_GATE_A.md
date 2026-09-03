@@ -2,12 +2,13 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `21029e437c0a23e75e87d01a2b1a2afb1ab04a1e` (integrated progress refresh through #242; disposition unchanged)
+- Exact head at recording: `452e3260715090b289b25e5213c746a01c236943` (integrated privacy progress through #245 on current main through #248; disposition unchanged)
 - Prior recorded heads: `da997fcd4d81125c381548ea04daca22bc6269c9`, `f6de54e2ac6f1d7f7127c87e46bad4902b48e21d`, `1ec1c835e8cb630b1c053cd7242683b58a754297`, `5733c3375d71edab713b57045d4447a42bab9518`, `c4d4d77033748d5a82b915dd34fece024d78f049`, `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e49a9f41e5fba1fd7857c405`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`, `72656e448a6f09b28b8451bd8c66de9e3f18c403`
+- Immediately prior recorded head: `21029e437c0a23e75e87d01a2b1a2afb1ab04a1e`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-09-03` (landed-evidence refresh only; includes #209/#217–#234/#236/#238/#240/#242)
+- Record timestamp: `2026-09-03` (landed-evidence refresh only; includes #209/#217–#234/#236/#238/#240/#242/#244/#245)
 
 ## Explicit non-claims
 
@@ -94,6 +95,8 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Independent processor outcome receipt     | `#238` (caller outcome rejected; exact runtime-validated request/processor/capability/operation/correlation receipt owns recorded outcome; zero append on failure)                  |
 | Synthetic processor coordinator           | `#240` (server-selected stable plan; descriptor/subject-lookup binding; non-destructive execute→receipt→step; production/destructive hard-disable; exact in-process replay)         |
 | Durable processor execution journal       | `#242` (reserve-before-execute PG ownership; exact completed restart replay; ambiguous result/restart hold; guarded terminal inserts and state transitions)                         |
+| PG inventory/runtime readiness binding    | `#244` (real expected-inventory/runtime registry comparison; combined fail-closed coverage result; API composition still open)                                                      |
+| PG audit-sink readiness binding           | `#245` (real audit table evidence replaces the synthetic audit-sink component; functional round-trip remains open)                                                                  |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -170,15 +173,18 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   its own new row. Trusted evidence-based resolution of
   `reconciliation_required` without handler re-execution and full coordinator
   semantics remain open. H4 is not closed.
-- Privacy DB readiness now replaces the migration/repository components with
-  real journal/table evidence (#191); the other readiness components remain
-  independently unverified/synthetic and Gate A remains `PENDING`.
+- Privacy DB readiness now replaces migration/repository/governance-lifecycle
+  components with real journal/table evidence (#191/#220), binds expected
+  inventory/runtime coverage (#244), and binds audit-sink table evidence (#245).
+  API composition, functional audit round-trip evidence, identity boundary, and
+  policy package remain open; Gate A remains `PENDING`.
 - H5 contract coverage now rejects missing or duplicate mappings and the reviewed
   synthetic fixture maps all 14 declared governance record families exactly once
-  (#210). Runtime readiness binding, lifecycle-handler coverage, and independently
-  reviewed exception semantics remain open; H5 is not closed.
+  (#210). PG runtime coverage binding landed in #244; API composition,
+  lifecycle-handler coverage, and independently reviewed exception semantics
+  remain open; H5 is not closed.
 - Remaining open residual bands: H4 (full coordinator semantics), H5
-  (runtime readiness/exceptions), and H6 (not attribution of legal identity).
+  (composition/readiness exceptions), and H6 (not attribution of legal identity).
 - Disposable migration/recovery evidence landed in #209, but package-level
   rollback/forward-correction and destructive retention recovery evidence remain
   insufficient for a Gate A package (H6).
