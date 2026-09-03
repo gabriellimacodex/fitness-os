@@ -239,9 +239,12 @@ describe('review record verification', () => {
 
   it('rejects a tampered review signature', () => {
     const { authority, record } = signedRecord();
-    const tampered = record.signatures[0].endsWith('A')
-      ? `${record.signatures[0].slice(0, -1)}B`
-      : `${record.signatures[0].slice(0, -1)}A`;
+    // Flip a character from a full 4-char/3-byte base64url group, not the
+    // trailing group: an Ed25519 signature's final base64url character
+    // encodes trailing padding bits Node's decoder never validates, so
+    // tampering it can silently decode back to the same signature bytes.
+    const original = record.signatures[0];
+    const tampered = `${original[0] === 'A' ? 'B' : 'A'}${original.slice(1)}`;
 
     expect(() =>
       verifyReviewRecord(
