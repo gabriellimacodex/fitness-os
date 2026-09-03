@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { digestMovementDetail } from '../src/movement-library/index.js';
 import {
+  assertUniqueNonces,
   createSignedReviewRecord,
   createTestReviewAuthority,
   fingerprintPublicKey,
@@ -11,7 +12,12 @@ import {
   ReviewVerificationError,
   verifyReviewRecord,
 } from '../src/movement-library/review-record.js';
-import { readerReceipt, safetyReceipt, SQUAT } from './movement-fixtures.js';
+import {
+  HINGE,
+  readerReceipt,
+  safetyReceipt,
+  SQUAT,
+} from './movement-fixtures.js';
 
 const SOURCE_COMMIT = 'cccccccccccccccccccccccccccccccccccccccc';
 
@@ -139,5 +145,125 @@ describe('review record verification', () => {
     expect(fingerprintPublicKey(authority.publicKeyPem)).toBe(
       authority.fingerprint,
     );
+  });
+
+  it('rejects a nonce reused across two different review records', () => {
+    const authority = createTestReviewAuthority();
+    const first = createSignedReviewRecord({
+      authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [
+        safetyReceipt('cross-record-nonce-01'),
+        readerReceipt('reader-nonce-first-01'),
+      ],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+    const second = createSignedReviewRecord({
+      authority,
+      contentVersion: HINGE.contentVersion,
+      digest: digestMovementDetail(HINGE),
+      movementId: HINGE.movementId,
+      receipts: [
+        safetyReceipt('safety-nonce-second-01'),
+        readerReceipt('cross-record-nonce-01'),
+      ],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+
+    expect(() => assertUniqueNonces([first, second])).toThrow(
+      /nonce was reused/,
+    );
+  });
+
+  it('accepts distinct nonces across multiple review records', () => {
+    const authority = createTestReviewAuthority();
+    const first = createSignedReviewRecord({
+      authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [
+        safetyReceipt('distinct-nonce-01'),
+        readerReceipt('distinct-nonce-02'),
+      ],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+    const second = createSignedReviewRecord({
+      authority,
+      contentVersion: HINGE.contentVersion,
+      digest: digestMovementDetail(HINGE),
+      movementId: HINGE.movementId,
+      receipts: [
+        safetyReceipt('distinct-nonce-03'),
+        readerReceipt('distinct-nonce-04'),
+      ],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+
+    expect(() => assertUniqueNonces([first, second])).not.toThrow();
+  });
+
+  it('rejects a malformed digest or source commit SHA', () => {
+    const { authority, record } = signedRecord();
+
+    expect(() =>
+      verifyReviewRecord(
+        { ...record, digest: 'not-a-sha256-digest' },
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/artifact binding is malformed/);
+
+    expect(() =>
+      verifyReviewRecord(
+        { ...record, sourceCommitSha: 'not-a-commit-sha' },
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/artifact binding is malformed/);
+  });
+
+  it('rejects a missing review signature', () => {
+    const { authority, record } = signedRecord();
+
+    expect(() =>
+      verifyReviewRecord(
+        { ...record, signatures: [record.signatures[0], undefined] } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/signature is missing/);
+  });
+
+  it('rejects a tampered review signature', () => {
+    const { authority, record } = signedRecord();
+    const tampered = record.signatures[0].endsWith('A')
+      ? `${record.signatures[0].slice(0, -1)}B`
+      : `${record.signatures[0].slice(0, -1)}A`;
+
+    expect(() =>
+      verifyReviewRecord(
+        { ...record, signatures: [tampered, record.signatures[1]] },
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/signature is invalid/);
+  });
+
+  it('rejects an authority whose pinned fingerprint does not match its own public key', () => {
+    const { authority, record } = signedRecord();
+    const other = createTestReviewAuthority();
+    const inconsistentAuthority = {
+      ...authority,
+      publicKeyPem: other.publicKeyPem,
+    };
+
+    expect(() =>
+      verifyReviewRecord(record, inconsistentAuthority, {
+        allowTestAuthority: true,
+      }),
+    ).toThrow(/Pinned review authority fingerprint is inconsistent/);
   });
 });
