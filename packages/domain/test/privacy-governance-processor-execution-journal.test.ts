@@ -2,6 +2,7 @@ import {
   privacyExpectedProcessorInventorySchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyProcessorExecutionJournalRecordSchema,
+  privacySubjectRequestIdSchema,
   type PrivacyProcessorExecutionJournalRecord,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
@@ -86,6 +87,18 @@ class MemoryJournal implements PrivacyProcessorExecutionJournal {
   }
 
   async complete(record: PrivacyProcessorExecutionJournalRecord) {
+    this.records.set(record.operationId, record);
+    return 'accepted' as const;
+  }
+
+  async reconcileCompletion(record: PrivacyProcessorExecutionJournalRecord) {
+    const prior = this.records.get(record.operationId);
+    if (
+      prior?.state !== 'reconciliation_required' ||
+      prior.bindingDigest !== record.bindingDigest
+    ) {
+      return 'conflict' as const;
+    }
     this.records.set(record.operationId, record);
     return 'accepted' as const;
   }
@@ -262,5 +275,72 @@ describe('journaled synthetic processor execution coordinator', () => {
     expect(journal.records.get(command.operationId)?.state).toBe(
       'reconciliation_required',
     );
+  });
+
+  it('resolves a held operation from one trusted receipt without executing again', async () => {
+    const journal = new MemoryJournal();
+    let executions = 0;
+    const input = {
+      requestId: privacySubjectRequestIdSchema.parse(
+        '66666666-6666-4666-8666-666666666666',
+      ),
+      command,
+      expected: {
+        inventoryVersionDigest: descriptor.inventoryVersionDigest,
+        processor: expected,
+      },
+    };
+    journal.records.set(
+      command.operationId,
+      privacyProcessorExecutionJournalRecordSchema.parse({
+        operationId: command.operationId,
+        requestId: input.requestId,
+        processorId: command.processorId,
+        capability: command.capability,
+        correlationId: command.correlationId,
+        bindingDigest: digestProcessorExecutionInput(input),
+        state: 'reconciliation_required',
+        outcome: null,
+        reservedAt: '2026-08-18T12:03:00.000Z',
+        completedAt: null,
+        synthetic: true,
+      }),
+    );
+    const coordinator =
+      new JournaledSyntheticPrivacyProcessorExecutionCoordinator({
+        journal,
+        resolver: {
+          resolve: async () => ({
+            descriptorReference: () => descriptor,
+            execute: async () => {
+              executions += 1;
+              throw new Error('must not execute');
+            },
+          }),
+        },
+        reconciliationReceipts: {
+          listByOperationId: async () => [
+            {
+              requestId: input.requestId,
+              processorId: command.processorId,
+              capability: command.capability,
+              outcome: 'completed',
+              operationId: command.operationId,
+              correlationId: command.correlationId,
+            },
+          ],
+        },
+        clock: { nowUtcMs: () => '2026-08-18T12:04:00.000Z' },
+      });
+
+    await expect(coordinator.execute(input)).resolves.toEqual({
+      status: 'executed',
+    });
+    expect(executions).toBe(0);
+    expect(journal.records.get(command.operationId)).toMatchObject({
+      state: 'completed',
+      outcome: 'completed',
+      completedAt: '2026-08-18T12:04:00.000Z',
+    });
   });
 });

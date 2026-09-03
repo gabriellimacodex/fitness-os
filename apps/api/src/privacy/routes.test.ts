@@ -2653,6 +2653,93 @@ describe('POST /v1/privacy/synthetic/processor-coordinate', () => {
     await app.close();
   });
 
+  it('advances from trusted reconciliation evidence without executing again', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const operationId = privacyOperationIdSchema.parse(
+      'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    );
+    const correlationId = privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId,
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let completedRecord: unknown = null;
+    let executions = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          fixedUtcMs: '2026-08-18T12:04:00.000Z',
+          processorExecutionJournal: {
+            complete: async () => 'conflict',
+            getByOperationId: async () => completedRecord as never,
+            markReconciliationRequired: async () => 'accepted',
+            reconcileCompletion: async (record) => {
+              completedRecord = record;
+              return 'accepted';
+            },
+            reserve: async () => ({ status: 'reconciliation_required' }),
+          },
+          processorExecutionReceipts: {
+            listByOperationId: async () => [
+              {
+                requestId,
+                processorId: processor.processorId,
+                capability: 'access',
+                outcome: 'completed',
+                operationId,
+                correlationId,
+              },
+            ],
+          },
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                executions += 1;
+                throw new Error('must not execute');
+              },
+            }),
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: { requestId, operationId, productionMode: false },
+    });
+
+    expect(response.json()).toMatchObject({
+      status: 'advanced',
+      completion: 'completed',
+    });
+    expect(executions).toBe(0);
+    expect(completedRecord).toMatchObject({
+      state: 'completed',
+      outcome: 'completed',
+    });
+    await app.close();
+  });
+
   it('rejects caller-selected processor, capability, outcome, and step identity', async () => {
     const app = buildSyntheticPrivacyApp();
     const response = await app.inject({

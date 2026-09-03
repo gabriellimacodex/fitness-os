@@ -160,6 +160,43 @@ export function createPostgresPrivacyProcessorExecutionJournal(
         : 'conflict';
     },
 
+    reconcileCompletion: async (candidate) => {
+      const valid =
+        privacyProcessorExecutionJournalRecordSchema.parse(candidate);
+      if (valid.state !== 'completed') return 'conflict';
+
+      const updated = await connection.db
+        .update(privacyProcessorExecutionJournal)
+        .set({
+          state: valid.state,
+          outcome: valid.outcome,
+          completedAt: valid.completedAt,
+        })
+        .where(
+          and(
+            eq(privacyProcessorExecutionJournal.operationId, valid.operationId),
+            eq(
+              privacyProcessorExecutionJournal.bindingDigest,
+              valid.bindingDigest,
+            ),
+            eq(
+              privacyProcessorExecutionJournal.state,
+              'reconciliation_required',
+            ),
+          ),
+        )
+        .returning();
+      if (updated.length === 1) return 'accepted';
+
+      const prior = await getByOperationId(valid.operationId);
+      return prior !== null &&
+        sameBinding(prior, valid) &&
+        prior.state === 'completed' &&
+        prior.outcome === valid.outcome
+        ? 'idempotent_replay'
+        : 'conflict';
+    },
+
     markReconciliationRequired: async (operationId, bindingDigest) => {
       const updated = await connection.db
         .update(privacyProcessorExecutionJournal)
