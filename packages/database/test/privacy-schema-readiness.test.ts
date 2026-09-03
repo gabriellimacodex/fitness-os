@@ -272,6 +272,104 @@ describe('privacy schema readiness', () => {
   });
 });
 
+describe('privacy recovery readiness', () => {
+  it('reports recovery not_ready with recovery_unverified when no append-only guard triggers are present', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: { execute: async () => [] },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: 'recovery_unverified',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain('recovery_unverified');
+  });
+
+  it('reports recovery not_ready with recovery_unverified when only some required guard triggers are present', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tgname: 'privacy_audit_event_append_only_guard' },
+          { tgname: 'privacy_withdrawal_append_only_guard' },
+        ],
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: 'recovery_unverified',
+      state: 'not_ready',
+    });
+  });
+
+  it('reports recovery ready once every required append-only guard trigger is present', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tgname: 'privacy_authorization_evidence_append_only_guard' },
+          { tgname: 'privacy_withdrawal_append_only_guard' },
+          { tgname: 'privacy_audit_event_append_only_guard' },
+          { tgname: 'privacy_subject_request_transition_append_only_guard' },
+          { tgname: 'privacy_policy_package_version_append_only_guard' },
+          { tgname: 'privacy_purpose_version_append_only_guard' },
+          { tgname: 'privacy_processor_registration_append_only_guard' },
+          // An unrelated trigger must not be required or otherwise affect
+          // the result.
+          { tgname: 'some_other_unrelated_guard' },
+        ],
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).not.toContain('recovery_unverified');
+  });
+
+  it('reports recovery not_ready with recovery_unverified on a database error', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          throw new Error('connection refused');
+        },
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: 'recovery_unverified',
+      state: 'not_ready',
+    });
+  });
+});
+
 describe('privacy readiness inventory coverage override', () => {
   it('leaves expected_inventory and runtime_processors exactly as the base probe reports them when the ports are omitted', async () => {
     const result =

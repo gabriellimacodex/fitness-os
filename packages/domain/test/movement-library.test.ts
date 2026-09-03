@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { movementDetailSchema } from '@fitness-os/schemas';
 
 import {
+  assertValidManifestRecord,
   createMovementCatalog,
   deriveManifestState,
   digestMovementDetail,
@@ -14,6 +15,7 @@ import {
 import { createSignedReviewRecord } from '../src/movement-library/review-record.js';
 import {
   HINGE,
+  publishRecord,
   readerReceipt,
   reviewedCatalogInput,
   safetyReceipt,
@@ -187,6 +189,21 @@ describe('createMovementCatalog', () => {
     ).toThrow(/durable review record/);
   });
 
+  it('rejects a published movement absent from the manifest', () => {
+    expect(() =>
+      createMovementCatalog({ manifest: [], published: [SQUAT] }),
+    ).toThrow(/latest manifest lifecycle/);
+  });
+
+  it('rejects a current manifest entry with no published detail', () => {
+    expect(() =>
+      createMovementCatalog({
+        manifest: [publishRecord(SQUAT)],
+        published: [],
+      }),
+    ).toThrow(/published catalog detail/);
+  });
+
   it('rejects skipped manifest versions', () => {
     const revised = { ...SQUAT, contentVersion: 3, name: 'Skipped Version' };
     const input = reviewedCatalogInput([SQUAT]);
@@ -208,6 +225,50 @@ describe('createMovementCatalog', () => {
         published: [revised],
       }),
     ).toThrow(/increment by one/);
+  });
+});
+
+describe('assertValidManifestRecord', () => {
+  it('rejects a non-positive sequence', () => {
+    const record = publishRecord(SQUAT, 0);
+
+    expect(() => assertValidManifestRecord(record)).toThrow(/positive integer/);
+  });
+
+  it('rejects a malformed digest', () => {
+    const record: MovementManifestRecord = {
+      ...publishRecord(SQUAT, 1),
+      digest: 'not-a-valid-digest',
+    };
+
+    expect(() => assertValidManifestRecord(record)).toThrow(/malformed/);
+  });
+
+  it('rejects a withdrawal record that carries a review path', () => {
+    const record: MovementManifestRecord = {
+      action: 'withdraw',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v1.md`,
+      sequence: 2,
+    };
+
+    expect(() => assertValidManifestRecord(record)).toThrow(
+      /must not carry a review path/,
+    );
+  });
+
+  it('rejects a non-withdrawal record with a mismatched review path', () => {
+    const record: MovementManifestRecord = {
+      ...publishRecord(SQUAT, 1),
+      reviewRecordPath:
+        'docs/execution/content-reviews/movements/wrong-id-v1.md',
+    };
+
+    expect(() => assertValidManifestRecord(record)).toThrow(
+      /does not match the expected record/,
+    );
   });
 });
 
@@ -239,5 +300,98 @@ describe('deriveManifestState', () => {
     };
 
     expect(() => deriveManifestState([publish])).not.toThrow();
+  });
+
+  it('rejects a movement whose first record does not start at sequence 1', () => {
+    const record = publishRecord(SQUAT, 2);
+
+    expect(() => deriveManifestState([record])).toThrow(/publish sequence 1/);
+  });
+
+  it('rejects a movement whose first published version is not 1', () => {
+    const record: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: 2,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 1,
+    };
+
+    expect(() => deriveManifestState([record])).toThrow(
+      /must start at version 1/,
+    );
+  });
+
+  it('rejects a non-consecutive manifest sequence', () => {
+    const first = publishRecord(SQUAT, 1);
+    const second: MovementManifestRecord = {
+      action: 'revise',
+      contentVersion: 2,
+      digest: digestMovementDetail({ ...SQUAT, name: 'Revised Squat' }),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 3,
+    };
+
+    expect(() => deriveManifestState([first, second])).toThrow(
+      /sequences must increment by one/,
+    );
+  });
+
+  it('rejects a non-republish action following a withdrawal', () => {
+    const first = publishRecord(SQUAT, 1);
+    const withdraw: MovementManifestRecord = {
+      action: 'withdraw',
+      contentVersion: first.contentVersion,
+      digest: first.digest,
+      movementId: SQUAT.movementId,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+    const revise: MovementManifestRecord = {
+      action: 'revise',
+      contentVersion: 2,
+      digest: digestMovementDetail({ ...SQUAT, name: 'Revised Squat' }),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 3,
+    };
+
+    expect(() => deriveManifestState([first, withdraw, revise])).toThrow(
+      /only be republished/,
+    );
+  });
+
+  it('rejects a republish action that does not follow a withdrawal', () => {
+    const first = publishRecord(SQUAT, 1);
+    const republish: MovementManifestRecord = {
+      action: 'republish',
+      contentVersion: 2,
+      digest: digestMovementDetail({ ...SQUAT, name: 'Revised Squat' }),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 2,
+    };
+
+    expect(() => deriveManifestState([first, republish])).toThrow(
+      /only valid after withdrawal/,
+    );
+  });
+
+  it('rejects a withdrawal that changes the preceding version or digest', () => {
+    const first = publishRecord(SQUAT, 1);
+    const withdraw: MovementManifestRecord = {
+      action: 'withdraw',
+      contentVersion: first.contentVersion + 1,
+      digest: first.digest,
+      movementId: SQUAT.movementId,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+
+    expect(() => deriveManifestState([first, withdraw])).toThrow(
+      /retain the preceding version and digest/,
+    );
   });
 });
