@@ -189,6 +189,21 @@ describe('createMovementCatalog', () => {
     ).toThrow(/durable review record/);
   });
 
+  it('rejects a published movement absent from the manifest', () => {
+    expect(() =>
+      createMovementCatalog({ manifest: [], published: [SQUAT] }),
+    ).toThrow(/latest manifest lifecycle/);
+  });
+
+  it('rejects a current manifest entry with no published detail', () => {
+    expect(() =>
+      createMovementCatalog({
+        manifest: [publishRecord(SQUAT)],
+        published: [],
+      }),
+    ).toThrow(/published catalog detail/);
+  });
+
   it('rejects skipped manifest versions', () => {
     const revised = { ...SQUAT, contentVersion: 3, name: 'Skipped Version' };
     const input = reviewedCatalogInput([SQUAT]);

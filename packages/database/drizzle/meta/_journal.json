@@ -169,6 +169,13 @@
       "when": 1788389844254,
       "tag": "0023_prd21_processor_execution_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788420337264,
+      "tag": "0024_prd07_onboarding_claim_failure",
+      "breakpoints": true
     }
   ]
 }
