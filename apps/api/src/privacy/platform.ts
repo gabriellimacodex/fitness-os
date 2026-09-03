@@ -29,8 +29,8 @@ export interface PrivacyPlatformHandles {
  * real operations.
  *
  * This does not set `allowSyntheticPrivacy` — that gate, and whether to also
- * inject `retentionRules`, `ids`, `clock`, or any other still-synthetic-only
- * option, remains the caller's decision when building the app. Like
+ * inject `ids`, `clock`, or any other still-synthetic-only option, remains the
+ * caller's decision when building the app. Like
  * `createCatalogPlatformFromEnv`, this function is not wired into
  * `bootstrap.ts` or any production server-startup path; no call site
  * currently constructs it.
@@ -63,6 +63,7 @@ export function createPrivacyPlatformFromEnv(
         processorExecutionJournal: persistence.processorExecutionJournal,
         governanceLifecycle: persistence.governanceLifecycle,
         retentionPreviews: persistence.retentionPreviews,
+        retentionRules: persistence.retentionRules,
         governanceLifecycleVerifier,
         readiness,
       },
