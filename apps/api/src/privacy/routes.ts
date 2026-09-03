@@ -342,6 +342,7 @@ export function registerPrivacySyntheticRoutes(
         : new JournaledSyntheticPrivacyProcessorExecutionCoordinator({
             clock,
             journal: options.processorExecutionJournal,
+            reconciliationReceipts: options.processorExecutionReceipts,
             resolver: options.processorResolver,
           });
   const governanceLifecycle =

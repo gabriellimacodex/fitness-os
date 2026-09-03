@@ -9,6 +9,7 @@ import {
   privacySyntheticProcessorResultSchema,
   type PrivacyExpectedProcessorInventoryEntry,
   type PrivacyProcessorDescriptorReference,
+  type PrivacyProcessorExecutionJournalRecord,
   type PrivacyProcessorExecutionReceipt,
   type PrivacySyntheticProcessorCommand,
 } from '@fitness-os/schemas';
@@ -102,6 +103,7 @@ export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
       resolver: PrivacySubjectDataProcessorResolver;
       journal: PrivacyProcessorExecutionJournal;
       clock: PrivacyTrustedClock;
+      reconciliationReceipts?: PrivacyProcessorExecutionReceiptSource;
     },
   ) {}
 
@@ -193,7 +195,7 @@ export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
     }
     if (reserveResult.status === 'conflict') return { status: 'conflict' };
     if (reserveResult.status === 'reconciliation_required') {
-      return { status: 'reconciliation_required' };
+      return this.reconcile(reservation);
     }
     if (reserveResult.status === 'completed') {
       const completed = privacyProcessorExecutionJournalRecordSchema.safeParse(
@@ -255,6 +257,56 @@ export class JournaledSyntheticPrivacyProcessorExecutionCoordinator
       );
     } catch {
       // The reservation remains fail-closed even if this best-effort marker fails.
+    }
+  }
+
+  private async reconcile(
+    reservation: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<PrivacyProcessorExecutionCoordinationResult> {
+    const source = this.dependencies.reconciliationReceipts;
+    const reconcileCompletion =
+      this.dependencies.journal.reconcileCompletion?.bind(
+        this.dependencies.journal,
+      );
+    if (source === undefined || reconcileCompletion === undefined) {
+      return { status: 'reconciliation_required' };
+    }
+
+    const verification = await createPrivacyProcessorExecutionReceiptVerifier(
+      source,
+    ).verify({
+      requestId: reservation.requestId,
+      processorId: reservation.processorId,
+      capability: reservation.capability,
+      operationId: reservation.operationId,
+      correlationId: reservation.correlationId,
+    });
+    if (verification.status === 'unavailable') {
+      return { status: 'unavailable' };
+    }
+    if (verification.status === 'invalid') {
+      return { status: 'receipt_invalid' };
+    }
+
+    let completedAt: string;
+    try {
+      completedAt = this.dependencies.clock.nowUtcMs();
+    } catch {
+      return { status: 'unavailable' };
+    }
+    const completed = privacyProcessorExecutionJournalRecordSchema.parse({
+      ...reservation,
+      state: 'completed',
+      outcome: verification.receipt.outcome,
+      completedAt,
+    });
+    try {
+      const result = await reconcileCompletion(completed);
+      return result === 'conflict'
+        ? { status: 'reconciliation_required' }
+        : { status: 'executed' };
+    } catch {
+      return { status: 'unavailable' };
     }
   }
 

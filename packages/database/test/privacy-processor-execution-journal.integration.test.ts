@@ -119,6 +119,63 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ).resolves.toMatchObject({ state: 'reconciliation_required' });
     });
 
+    it('completes a held operation only through the reconciliation transition', async () => {
+      const journal =
+        createPostgresPrivacyProcessorExecutionJournal(connection);
+      await expect(journal.reserve(reservation)).resolves.toEqual({
+        status: 'reserved',
+      });
+      await expect(journal.reserve(reservation)).resolves.toEqual({
+        status: 'reconciliation_required',
+      });
+      const completed = privacyProcessorExecutionJournalRecordSchema.parse({
+        ...reservation,
+        state: 'completed',
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
+      });
+
+      await expect(journal.reconcileCompletion?.(completed)).resolves.toBe(
+        'accepted',
+      );
+      await expect(journal.reserve(reservation)).resolves.toEqual({
+        status: 'completed',
+        record: completed,
+      });
+    });
+
+    it('converges concurrent reconciliation with different trusted timestamps', async () => {
+      const first = createPostgresPrivacyProcessorExecutionJournal(connection);
+      const second = createPostgresPrivacyProcessorExecutionJournal(connection);
+      await first.reserve(reservation);
+      await first.reserve(reservation);
+      const firstCompletion =
+        privacyProcessorExecutionJournalRecordSchema.parse({
+          ...reservation,
+          state: 'completed',
+          outcome: 'completed',
+          completedAt: '2026-08-18T12:04:00.000Z',
+        });
+      const secondCompletion =
+        privacyProcessorExecutionJournalRecordSchema.parse({
+          ...firstCompletion,
+          completedAt: '2026-08-18T12:04:01.000Z',
+        });
+
+      const results = await Promise.all([
+        first.reconcileCompletion?.(firstCompletion),
+        second.reconcileCompletion?.(secondCompletion),
+      ]);
+
+      expect(results.sort()).toEqual(['accepted', 'idempotent_replay']);
+      await expect(
+        first.getByOperationId(reservation.operationId),
+      ).resolves.toMatchObject({
+        state: 'completed',
+        outcome: 'completed',
+      });
+    });
+
     it('allows one concurrent reservation winner and holds the loser for reconciliation', async () => {
       const first = createPostgresPrivacyProcessorExecutionJournal(connection);
       const second = createPostgresPrivacyProcessorExecutionJournal(connection);
