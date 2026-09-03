@@ -2,12 +2,12 @@
 
 - Capability: Privacy & Data Governance (Option A)
 - Record type: Gate A **status** (not completion)
-- Exact head at recording: `72656e448a6f09b28b8451bd8c66de9e3f18c403` (integrated progress refresh through #240; disposition unchanged)
-- Prior recorded heads: `da997fcd4d81125c381548ea04daca22bc6269c9`, `f6de54e2ac6f1d7f7127c87e46bad4902b48e21d`, `1ec1c835e8cb630b1c053cd7242683b58a754297`, `5733c3375d71edab713b57045d4447a42bab9518`, `c4d4d77033748d5a82b915dd34fece024d78f049`, `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e7ec30accfd626562540cf9f`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`
+- Exact head at recording: `21029e437c0a23e75e87d01a2b1a2afb1ab04a1e` (integrated progress refresh through #242; disposition unchanged)
+- Prior recorded heads: `da997fcd4d81125c381548ea04daca22bc6269c9`, `f6de54e2ac6f1d7f7127c87e46bad4902b48e21d`, `1ec1c835e8cb630b1c053cd7242683b58a754297`, `5733c3375d71edab713b57045d4447a42bab9518`, `c4d4d77033748d5a82b915dd34fece024d78f049`, `68e973c8863addab4efb0193188b960dbaad2cae`, `a17bd25ec80bd125ad08a7c6a779ec2bdd541e3e`, `3fcae686ad097309c38bd165e85c8cc656ccf061`, `8feee8186522065fd2a805d0d4ad68a2456f39e0`, `74962897ceab12e1e49a9f41e5fba1fd7857c405`, `0d5880cdb43e06a1e49a9f41e5fba1fd7857c405`, `a611e35c0f6e999e820a9db1581b55dab6791d73`, `ea40d855d4b1a474586a30b6c77e3e424559d35e`, `e4a413284ffe1f7d11103e3dae7167d8ca3381c0`, `054090d5ad2a1efb025768ab5d5f88d2c4e9c852`, `aa6775b94d0f1e608cd0f930e05cb9b9e892c06a`, `06a92e53e1ea4a6f5bf1745dca32fa97ccefff32`, `b1a4f90fe0f92bcc19bec5c9e50e16351599108e`, `5889fac340efc26fd33282c58cfafd83c7027b19`, `69311d63a43f0b0b7827f94b343822dd351e1a6b`, `b0b9e178e9cc4e2ffceea1c6c0dd8c5fbbf9a486`, `72656e448a6f09b28b8451bd8c66de9e3f18c403`
 - Disposition: `PENDING`
 - Production readiness: `BLOCKED` — `LEGAL_PRIVACY_DECISION_REQUIRED`
 - Registry state: `IN_PROGRESS` (must **not** flip to `COMPLETED` from this record)
-- Record timestamp: `2026-09-02` (landed-evidence refresh only; includes #209/#217–#234/#236/#238/#240)
+- Record timestamp: `2026-09-03` (landed-evidence refresh only; includes #209/#217–#234/#236/#238/#240/#242)
 
 ## Explicit non-claims
 
@@ -29,7 +29,7 @@
 | Security / privacy           | `BLOCKED`                   | Production paths stopped; synthetic-only seams                                                                                     |
 | Scope                        | `PASS` (slice-level)        | Disposable/synthetic Option A only                                                                                                 |
 | Contracts                    | `CONSISTENT` (slice-level)  | Frozen rows in `docs/contracts/README.md`                                                                                          |
-| Migrations                   | `VALIDATED` (slice-level)   | PRD 21 `0002`–`0006`, `0011`–`0012`, `0014`–`0015`, `0017`–`0022`; onboarding `0013`/`0016` is landed but outside this PRD's scope |
+| Migrations                   | `VALIDATED` (slice-level)   | PRD 21 `0002`–`0006`, `0011`–`0012`, `0014`–`0015`, `0017`–`0023`; onboarding `0013`/`0016` is landed but outside this PRD's scope |
 | Production policy activation | `BLOCKED`                   | `LEGAL_PRIVACY_DECISION_REQUIRED`                                                                                                  |
 | Destructive lifecycle        | `BLOCKED`                   | Synthetic deny `requires_legal_privacy_decision` (#58)                                                                             |
 | Gate A package review        | `PENDING`                   | Requires independent Agent 90 on a future **completion** candidate                                                                 |
@@ -93,6 +93,7 @@ Explicit Option A / privacy-governance PRs only (not a continuous numeric range)
 | Server-authoritative processor-step path  | `#236` (pinned-inventory plan, trusted timestamp, deterministic transition identity, exact immutable replay match; production hard-disabled before evidence reads)                  |
 | Independent processor outcome receipt     | `#238` (caller outcome rejected; exact runtime-validated request/processor/capability/operation/correlation receipt owns recorded outcome; zero append on failure)                  |
 | Synthetic processor coordinator           | `#240` (server-selected stable plan; descriptor/subject-lookup binding; non-destructive execute→receipt→step; production/destructive hard-disable; exact in-process replay)         |
+| Durable processor execution journal       | `#242` (reserve-before-execute PG ownership; exact completed restart replay; ambiguous result/restart hold; guarded terminal inserts and state transitions)                         |
 
 Non-PRD-21 PRs in nearby numbers (e.g. `#29`–`#31`, `#36`–`#37`, and PRD 07
 composition `#107`–`#117`, `#119`, `#121` resume-sink portion, `#126`/`#132`/`#134`/`#137`
@@ -162,10 +163,13 @@ Until then this file remains `PENDING`, and registry must remain `IN_PROGRESS`.
   (#234), and server-authoritative processor-step plan/timestamp/transition
   identity plus exact immutable replay matching (#236), and runtime-validated
   independent processor outcome receipts (#238), and the coordinator-owned
-  non-destructive synthetic execute→receipt→step path (#240) landed. The target
+  non-destructive synthetic execute→receipt→step path (#240), and durable
+  reserve-before-execute ownership with exact completed replay and fail-closed
+  ambiguous restart handling (#242) landed. The target
   PG lifecycle ledger remains the separate append target and cannot authorize
-  its own new row. Durable restart-safe execution receipt/idempotency recovery
-  and full coordinator semantics remain open. H4 is not closed.
+  its own new row. Trusted evidence-based resolution of
+  `reconciliation_required` without handler re-execution and full coordinator
+  semantics remain open. H4 is not closed.
 - Privacy DB readiness now replaces the migration/repository components with
   real journal/table evidence (#191); the other readiness components remain
   independently unverified/synthetic and Gate A remains `PENDING`.
