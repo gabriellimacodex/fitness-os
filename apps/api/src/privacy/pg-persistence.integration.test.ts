@@ -16,6 +16,7 @@ import {
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionReceiptSchema,
   privacyProcessorIdSchema,
   privacyPurposeVersionReferenceSchema,
   privacySubjectRequestIdSchema,
@@ -147,7 +148,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_governance_lifecycle_proof, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_retention_preview, privacy_governance_lifecycle_proof, privacy_processor_execution_journal, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -612,12 +613,38 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         }),
       ).resolves.toMatchObject({ status: 'advanced' });
 
+      const inventory = await expectedInventory.getInventory();
+      const processorStepInventory =
+        new SyntheticPrivacyExpectedProcessorInventory(
+          privacyExpectedProcessorInventorySchema.parse({
+            ...inventory,
+            inventoryVersionDigest: '1'.repeat(64),
+            processors: inventory.processors.map((entry) => ({
+              ...entry,
+              supportedCapabilities: [...entry.supportedCapabilities, 'export'],
+            })),
+          }),
+        );
+
       const app = buildApp(
         { logger: false },
         {
           allowSyntheticPrivacy: true,
           privacy: {
+            expectedInventory: processorStepInventory,
             fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            processorExecutionReceipts: {
+              listByOperationId: async () => [
+                privacyProcessorExecutionReceiptSchema.parse({
+                  requestId,
+                  processorId: processor.processorId,
+                  capability: 'export',
+                  outcome: 'completed',
+                  operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+                  correlationId,
+                }),
+              ],
+            },
             subjectRequests: persistence.subjectRequests,
             processorSteps: persistence.processorSteps,
           },
@@ -634,19 +661,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             requestId,
             processorId,
             capability: 'export',
-            outcome: 'completed',
             operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
             correlationId,
-            recordedAt: '2026-08-18T12:02:00.000Z',
           },
-          expected: [{ processorId, capability: 'export' }],
-          transitionId: privacySubjectRequestTransitionIdSchema.parse(
-            'a5555555-5555-4555-8555-555555555555',
-          ),
-          operationId: privacyOperationIdSchema.parse(
-            'b6666666-6666-4666-8666-666666666666',
-          ),
-          correlationId,
           productionMode: false,
         },
       });
@@ -659,6 +676,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         status: 'advanced',
         completion: 'completed',
         request: { state: 'completed' },
+        transition: {
+          correlationId,
+          operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          transitionId: 'e2222222-2222-4222-8222-222222222222',
+        },
       });
 
       const stepRows = await connection.db.execute<{
@@ -914,6 +936,219 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await expect(
         persistence.governanceLifecycle.getByOperationId(proof.operationId),
       ).resolves.toEqual(proof);
+    });
+
+    it('replays a journaled processor operation after app restart without re-execution', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+      const requestId = privacySubjectRequestIdSchema.parse(
+        '12121212-1212-4212-8212-121212121212',
+      );
+      const correlationId = privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      );
+      await expect(
+        persistence.subjectRequests.createReceived(
+          privacySubjectRequestReferenceSchema.parse({
+            requestId,
+            requestType: 'access',
+            state: 'received',
+            subjectScopeId: '22222222-2222-4222-8222-222222222222',
+            verification: null,
+            policyVersionId: policy.versionId,
+            inventoryVersionDigest: processor.inventoryVersionDigest,
+            correlationId,
+            updatedAt: '2026-08-18T11:00:00.000Z',
+          }),
+          '2026-08-18T11:00:00.000Z',
+        ),
+      ).resolves.toBe('accepted');
+      await persistence.subjectRequests.applyTransition({
+        requestId,
+        next: 'verification_required',
+        updatedAt: '2026-08-18T11:10:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '13131313-1313-4313-8313-131313131313',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '14141414-1414-4414-8414-141414141414',
+        ),
+        correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+      await persistence.subjectRequests.applyTransition({
+        requestId,
+        next: 'ready',
+        updatedAt: '2026-08-18T11:20:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '15151515-1515-4515-8515-151515151515',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '16161616-1616-4616-8616-161616161616',
+        ),
+        correlationId,
+        reasonCode: 'verification_accepted',
+        verification: {
+          verificationRefDigest: '2'.repeat(64),
+          synthetic: true,
+        },
+        productionMode: false,
+      });
+      await persistence.subjectRequests.applyTransition({
+        requestId,
+        next: 'in_progress',
+        updatedAt: '2026-08-18T11:30:00.000Z',
+        transitionId: privacySubjectRequestTransitionIdSchema.parse(
+          '17171717-1717-4717-8717-171717171717',
+        ),
+        operationId: privacyOperationIdSchema.parse(
+          '18181818-1818-4818-8818-181818181818',
+        ),
+        correlationId,
+        reasonCode: 'forward',
+        productionMode: false,
+      });
+
+      let executions = 0;
+      const privacyOptions = {
+        expectedInventory,
+        fixedUtcMs: '2026-08-18T12:00:00.000Z',
+        processorExecutionJournal: persistence.processorExecutionJournal,
+        processorResolver: {
+          resolve: async () => {
+            const handler = new SyntheticPrivacySubjectDataProcessor(
+              processor,
+              [],
+            );
+            return {
+              descriptorReference: () => handler.descriptorReference(),
+              execute: async (
+                command: Parameters<typeof handler.execute>[0],
+              ) => {
+                executions += 1;
+                return handler.execute(command);
+              },
+            };
+          },
+        },
+        processorSteps: persistence.processorSteps,
+        subjectRequests: persistence.subjectRequests,
+      };
+      const operationId = '19191919-1919-4919-8919-191919191919';
+      const firstApp = buildApp(
+        { logger: false },
+        { allowSyntheticPrivacy: true, privacy: privacyOptions },
+      );
+      const first = await firstApp.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/processor-coordinate',
+        payload: { requestId, operationId, productionMode: false },
+      });
+      expect(first.json()).toMatchObject({
+        status: 'advanced',
+        completion: 'completed',
+      });
+      await firstApp.close();
+
+      const restartedApp = buildApp(
+        { logger: false },
+        { allowSyntheticPrivacy: true, privacy: privacyOptions },
+      );
+      const replay = await restartedApp.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/processor-coordinate',
+        payload: { requestId, operationId, productionMode: false },
+      });
+
+      expect(replay.json()).toMatchObject({ status: 'already_terminal' });
+      expect(executions).toBe(1);
+      await expect(
+        persistence.processorExecutionJournal.getByOperationId(operationId),
+      ).resolves.toMatchObject({ state: 'completed', outcome: 'completed' });
+      await restartedApp.close();
+    });
+
+    it('persists a planned retention preview over disposable Postgres via HTTP write-through', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            fixedUtcMs: '2026-08-18T12:00:00.000Z',
+            retentionPreviews: persistence.retentionPreviews,
+          },
+        },
+      );
+
+      const previewPayload = {
+        policyVersionId: policy.versionId,
+        policySynthetic: true,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['c'.repeat(64), 'b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        approvedExceptionIds: [
+          'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ],
+        productionMode: false,
+      };
+
+      const planned = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/retention-preview',
+        payload: previewPayload,
+      });
+      expect(planned.statusCode).toBe(200);
+      expect(planned.json()).toMatchObject({
+        status: 'planned',
+        preview: { synthetic: true },
+      });
+      const { selectionDigest } = planned.json().preview;
+
+      const rows = await connection.db.execute<{
+        selection_digest: string;
+        status: string;
+        executed_at: string | null;
+      }>(sql`
+        SELECT selection_digest, status, executed_at
+        FROM privacy_retention_preview
+        WHERE selection_digest = ${selectionDigest}
+      `);
+      expect(rows).toEqual([
+        {
+          selection_digest: selectionDigest,
+          status: 'planned',
+          executed_at: null,
+        },
+      ]);
+
+      // Replaying the identical input is an idempotent no-op: the route
+      // treats the resulting 'conflict' from `put` as expected, not an error.
+      const replayed = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/retention-preview',
+        payload: previewPayload,
+      });
+      expect(replayed.statusCode).toBe(200);
+      expect(replayed.json().preview.selectionDigest).toBe(selectionDigest);
+
+      const rowsAfterReplay = await connection.db.execute<{
+        selection_digest: string;
+      }>(sql`
+        SELECT selection_digest
+        FROM privacy_retention_preview
+        WHERE selection_digest = ${selectionDigest}
+      `);
+      expect(rowsAfterReplay).toHaveLength(1);
+
+      await expect(
+        persistence.retentionPreviews.getBySelectionDigest(selectionDigest),
+      ).resolves.toMatchObject({ selectionDigest, status: 'planned' });
+
+      await app.close();
     });
   },
 );

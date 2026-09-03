@@ -15,6 +15,7 @@
     }
   },
   "dependencies": {
-    "@fitness-os/schemas": "workspace:*"
+    "@fitness-os/schemas": "workspace:*",
+    "zod": "4.4.3"
   }
 }

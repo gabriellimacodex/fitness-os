@@ -4,9 +4,11 @@ export {
   privacyGovernanceLifecycleProof,
   privacyPolicyPackageVersion,
   privacyProcessorRegistration,
+  privacyProcessorExecutionJournal,
   privacyProcessorStep,
   privacyPurposeVersion,
   privacyRetentionPreview,
+  privacyRetentionRule,
   privacySubjectRequest,
   privacySubjectRequestTransition,
   privacyWithdrawal,
@@ -17,6 +19,7 @@ export {
   type PostgresPrivacyAuthorizationEvidenceLedger,
 } from './ledger.js';
 export {
+  createPostgresPrivacyGovernanceLifecycleBindingVerifier,
   createPostgresPrivacyGovernanceLifecycleLedger,
   type PostgresPrivacyGovernanceLifecycleLedger,
 } from './governance-lifecycle.js';
@@ -26,8 +29,12 @@ export {
   createPostgresPrivacyRuntimeProcessorRegistry,
 } from './registries.js';
 export { createPostgresPrivacySubjectRequestRepository } from './subject-request.js';
-export { createPostgresPrivacyRetentionPreviewRepository } from './retention.js';
+export {
+  createPostgresPrivacyRetentionPreviewRepository,
+  createPostgresPrivacyRetentionRuleRepository,
+} from './retention.js';
 export { createPostgresPrivacyProcessorStepRepository } from './processor-step.js';
+export { createPostgresPrivacyProcessorExecutionJournal } from './processor-execution-journal.js';
 export {
   checkPrivacyCoreDatabaseReadiness,
   createPostgresPrivacyReadinessProbe,

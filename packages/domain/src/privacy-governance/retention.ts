@@ -6,11 +6,35 @@ import {
   sortPrivacySetIdentifiers,
   type PrivacyPolicyVersionId,
   type PrivacyRetentionExceptionId,
+  type PrivacyRetentionPreviewRecord,
   type PrivacyRetentionRuleReference,
   type RetentionPreviewCanonicalInput,
 } from '@fitness-os/schemas';
 
 import type { PrivacyRetentionRuleRepository } from './ports.js';
+
+/** Stable digest for exact-operation replay on the synthetic execution seam. */
+export function digestRetentionExecutionInput(input: {
+  requestedSelectionDigest: string;
+  previewTtlMs: number;
+}): string {
+  if (!Number.isFinite(input.previewTtlMs) || input.previewTtlMs <= 0) {
+    throw new RangeError(
+      'digestRetentionExecutionInput requires a positive, finite previewTtlMs.',
+    );
+  }
+
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        canonicalizationVersion: 'retention-execution-input.v1',
+        previewTtlMs: input.previewTtlMs,
+        requestedSelectionDigest: input.requestedSelectionDigest,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}
 
 export type RetentionPreviewPlan =
   | {
@@ -300,4 +324,100 @@ export function authorizeRetentionExecution(input: {
   }
 
   return { status: 'allowed_synthetic_test' };
+}
+
+/**
+ * Composes `authorizeRetentionExecution` with a real persisted retention
+ * preview instead of trusting caller-supplied `previewExecuted` /
+ * `previewExpired` / `digestsMatch` booleans directly. This is the
+ * persisted-preview lookup the Technical Design's execution preflight
+ * requires — "an unexpired, unexecuted preview whose inventory and processor
+ * digests still match" — derived here from the exact repository row rather
+ * than an unverified request field, so a caller cannot claim a preview is
+ * current or unexecuted that the repository does not actually hold.
+ *
+ * `preview` is the exact row a caller's own repository lookup by
+ * `requestedSelectionDigest` returned; `null` means no such preview was
+ * found and is treated as a digest mismatch, never as "no preview needed".
+ * The current inventory and processor digests must come from the trusted
+ * execution environment. They are compared independently with the persisted
+ * preview so a once-valid preview cannot authorize execution after either
+ * dependency changes.
+ *
+ * `previewTtlMs` has no default: the Technical Design states "No duration
+ * ... is defaulted. An absent parameter prevents evaluation or execution",
+ * so the caller's own approved rule/operational configuration must supply
+ * the exact bound; this function never invents one. It fails closed
+ * (`RangeError`) on a non-finite/non-positive TTL or an unparseable
+ * `nowUtcMs/preview.createdAt`, rather than silently treating a malformed
+ * timestamp as "not yet expired".
+ */
+export function resolveRetentionExecutionAuthorization(input: {
+  productionMode: boolean;
+  policySynthetic: boolean;
+  authoritySynthetic: boolean;
+  preview: PrivacyRetentionPreviewRecord | null;
+  requestedSelectionDigest: string;
+  currentInventoryVersionDigest: string;
+  currentProcessorDescriptorDigests: readonly string[];
+  nowUtcMs: string;
+  previewTtlMs: number;
+}): RetentionExecutionAuthorization {
+  if (!Number.isFinite(input.previewTtlMs) || input.previewTtlMs <= 0) {
+    throw new RangeError(
+      'resolveRetentionExecutionAuthorization requires a positive, finite previewTtlMs.',
+    );
+  }
+
+  const nowMs = Date.parse(input.nowUtcMs);
+  if (!Number.isFinite(nowMs)) {
+    throw new RangeError(
+      'resolveRetentionExecutionAuthorization requires a parseable nowUtcMs.',
+    );
+  }
+
+  const { preview } = input;
+
+  if (preview === null) {
+    return authorizeRetentionExecution({
+      authoritySynthetic: input.authoritySynthetic,
+      digestsMatch: false,
+      policySynthetic: input.policySynthetic,
+      previewExecuted: false,
+      previewExpired: false,
+      productionMode: input.productionMode,
+    });
+  }
+
+  const createdAtMs = Date.parse(preview.createdAt);
+  if (!Number.isFinite(createdAtMs)) {
+    throw new RangeError(
+      'resolveRetentionExecutionAuthorization requires a parseable preview.createdAt.',
+    );
+  }
+
+  const currentProcessorDescriptorDigests = sortPrivacySetIdentifiers(
+    input.currentProcessorDescriptorDigests,
+  );
+  const previewProcessorDescriptorDigests = sortPrivacySetIdentifiers(
+    preview.processorDescriptorDigests,
+  );
+  const processorDigestsMatch =
+    currentProcessorDescriptorDigests.length ===
+      previewProcessorDescriptorDigests.length &&
+    currentProcessorDescriptorDigests.every(
+      (digest, index) => digest === previewProcessorDescriptorDigests[index],
+    );
+
+  return authorizeRetentionExecution({
+    authoritySynthetic: input.authoritySynthetic,
+    digestsMatch:
+      preview.selectionDigest === input.requestedSelectionDigest &&
+      preview.inventoryVersionDigest === input.currentInventoryVersionDigest &&
+      processorDigestsMatch,
+    policySynthetic: input.policySynthetic,
+    previewExecuted: preview.status === 'executed',
+    previewExpired: nowMs - createdAtMs >= input.previewTtlMs,
+    productionMode: input.productionMode,
+  });
 }

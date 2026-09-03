@@ -14,6 +14,7 @@ import {
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
   privacyRetentionExceptionIdSchema,
+  privacyRetentionPreviewRecordSchema,
   privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
@@ -23,6 +24,7 @@ import {
   privacyWithdrawalIdSchema,
   privacyWithdrawalReferenceSchema,
   type PrivacyProcessorStepReference,
+  type PrivacyRetentionPreviewRecord,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -34,11 +36,13 @@ import {
   composeSyntheticProcessorSimulation,
   createSyntheticPrivacyDataUsePorts,
   deriveRequestCompletionFromSteps,
+  digestRetentionExecutionInput,
   evaluateDataUse,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
+  resolveRetentionExecutionAuthorization,
   selectActiveRetentionRule,
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyExpectedProcessorInventory,
@@ -2343,18 +2347,9 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     base: Pick<AdvanceInput, 'requests' | 'steps'>,
     overrides: Partial<Omit<AdvanceInput, 'requests' | 'steps'>> = {},
   ): AdvanceInput => ({
-    correlationId: privacyCorrelationIdSchema.parse(
-      '55555555-5555-4555-8555-555555555555',
-    ),
     expected: expectedOnePair,
-    operationId: privacyOperationIdSchema.parse(
-      'b2222222-2222-4222-8222-222222222222',
-    ),
     productionMode: false,
     step: step(),
-    transitionId: privacySubjectRequestTransitionIdSchema.parse(
-      'a1111111-1111-4111-8111-111111111111',
-    ),
     updatedAt: '2026-08-18T12:03:00.000Z',
     ...base,
     ...overrides,
@@ -2503,14 +2498,7 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     expect(first.status).toBe('advanced');
 
     const replay = await recordProcessorStepAndAdvanceRequest(
-      advanceInput(
-        { requests, steps },
-        {
-          transitionId: privacySubjectRequestTransitionIdSchema.parse(
-            'c3333333-3333-4333-8333-333333333333',
-          ),
-        },
-      ),
+      advanceInput({ requests, steps }),
     );
 
     expect(replay).toMatchObject({
@@ -2543,6 +2531,47 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     expect(result.request.state).toBe('completed');
     await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
   });
+
+  it.each([
+    {
+      field: 'outcome',
+      changedStep: step({ outcome: 'permanent_failure' }),
+    },
+    {
+      field: 'operationId',
+      changedStep: step({
+        operationId: privacyOperationIdSchema.parse(
+          'd4444444-4444-4444-8444-444444444444',
+        ),
+      }),
+    },
+    {
+      field: 'processor pair',
+      changedStep: step({
+        processorId: privacyProcessorIdSchema.parse(processorB),
+        capability: 'access',
+      }),
+    },
+  ])(
+    'does not recover a dropped transition when reused stepId changes $field',
+    async ({ changedStep }) => {
+      const requests = new SyntheticPrivacySubjectRequestRepository();
+      requests.seedForTest(requestInState('in_progress'));
+      const steps = new SyntheticPrivacyProcessorStepRepository();
+      await steps.append(step());
+
+      const result = await recordProcessorStepAndAdvanceRequest(
+        advanceInput({ requests, steps }, { step: changedStep }),
+      );
+
+      expect(result).toMatchObject({ status: 'step_conflict' });
+      await expect(requests.get(requestId)).resolves.toMatchObject({
+        state: 'in_progress',
+      });
+      await expect(requests.listTransitions(requestId)).resolves.toEqual([]);
+      await expect(steps.listForRequest(requestId)).resolves.toEqual([step()]);
+    },
+  );
 
   it('still reports step_conflict when a replayed step needs no transition', async () => {
     // The request is not yet executing, so neither the original call nor a
@@ -2701,6 +2730,237 @@ describe('retention preview and execution gates', () => {
       status: 'hard_disabled',
       reason: 'synthetic_fixtures_required',
     });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: false,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'synthetic_fixtures_required',
+    });
+  });
+
+  it('hard-disables execution against an already-executed or expired preview', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: true,
+        previewExpired: false,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: true,
+        digestsMatch: true,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_expired_or_executed',
+    });
+  });
+
+  it('hard-disables execution when the reviewed preview digest no longer matches', () => {
+    expect(
+      authorizeRetentionExecution({
+        productionMode: false,
+        policySynthetic: true,
+        authoritySynthetic: true,
+        previewExecuted: false,
+        previewExpired: false,
+        digestsMatch: false,
+      }),
+    ).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'preview_mismatch',
+    });
+  });
+});
+
+describe('resolveRetentionExecutionAuthorization', () => {
+  function preview(
+    overrides: Partial<PrivacyRetentionPreviewRecord> = {},
+  ): PrivacyRetentionPreviewRecord {
+    return privacyRetentionPreviewRecordSchema.parse({
+      selectionDigest: '4'.repeat(64),
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T00:00:00.000Z',
+      executedAt: null,
+      ...overrides,
+    });
+  }
+
+  const baseInput = {
+    productionMode: false,
+    policySynthetic: true,
+    authoritySynthetic: true,
+    requestedSelectionDigest: '4'.repeat(64),
+    currentInventoryVersionDigest: '3'.repeat(64),
+    currentProcessorDescriptorDigests: ['c'.repeat(64)],
+    nowUtcMs: '2026-08-18T00:05:00.000Z',
+    previewTtlMs: 60 * 60 * 1000,
+  };
+
+  it('allows synthetic execution against a fresh, unexecuted, digest-matching preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+      }),
+    ).toEqual({ status: 'allowed_synthetic_test' });
+  });
+
+  it('denies as preview_mismatch when no preview was found', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: null,
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the persisted digest differs from the requested one', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview({ selectionDigest: '5'.repeat(64) }),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current inventory changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentInventoryVersionDigest: '9'.repeat(64),
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_mismatch when the trusted current processor descriptors changed after preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        currentProcessorDescriptorDigests: ['8'.repeat(64)],
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'preview_mismatch', status: 'hard_disabled' });
+  });
+
+  it('denies as preview_expired_or_executed when the persisted preview is already executed', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview({
+          status: 'executed',
+          executedAt: '2026-08-18T00:01:00.000Z',
+        }),
+      }),
+    ).toEqual({
+      reason: 'preview_expired_or_executed',
+      status: 'hard_disabled',
+    });
+  });
+
+  it('denies as preview_expired_or_executed once the caller-supplied TTL has elapsed, at the exact boundary', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: '2026-08-18T01:00:00.000Z',
+        preview: preview(),
+      }),
+    ).toEqual({
+      reason: 'preview_expired_or_executed',
+      status: 'hard_disabled',
+    });
+  });
+
+  it('remains allowed just before the TTL boundary', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: '2026-08-18T00:59:59.999Z',
+        preview: preview(),
+      }),
+    ).toEqual({ status: 'allowed_synthetic_test' });
+  });
+
+  it('still hard-disables production regardless of a valid persisted preview', () => {
+    expect(
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        productionMode: true,
+        preview: preview(),
+      }),
+    ).toEqual({ reason: 'production_path', status: 'hard_disabled' });
+  });
+
+  it('fails closed on a non-finite or non-positive previewTtlMs instead of reporting allowed', () => {
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+        previewTtlMs: 0,
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: preview(),
+        previewTtlMs: Number.NaN,
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('fails closed on an unparseable nowUtcMs', () => {
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        nowUtcMs: 'not-a-timestamp',
+        preview: preview(),
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('fails closed on an unparseable preview.createdAt even though the frozen schema would normally reject one first', () => {
+    // Exercises the function's own defensive guard directly, independent of
+    // `privacyRetentionPreviewRecordSchema` — a caller with a raw repository
+    // row that bypassed schema validation must still fail closed here rather
+    // than silently treating a malformed timestamp as "not yet expired".
+    const malformed = {
+      ...preview(),
+      createdAt: 'not-a-timestamp',
+    } as unknown as ReturnType<typeof preview>;
+
+    expect(() =>
+      resolveRetentionExecutionAuthorization({
+        ...baseInput,
+        preview: malformed,
+      }),
+    ).toThrow(RangeError);
   });
 });
 
@@ -2948,6 +3208,145 @@ describe('synthetic retention preview repository', () => {
     await expect(
       repository.getBySelectionDigest('0'.repeat(64)),
     ).resolves.toBeNull();
+  });
+
+  it('marks a planned preview executed for one operation', async () => {
+    const plan = planRetentionPreview({
+      policyVersionId: privacyPolicyVersionIdSchema.parse(policy.versionId),
+      policySynthetic: true,
+      inventoryVersionDigest: '3'.repeat(64),
+      processorDescriptorDigests: ['b'.repeat(64)],
+      watermark: '2026-08-18T00:00:00.000Z',
+      approvedExceptionIds: [],
+      productionMode: false,
+    });
+    if (plan.status !== 'planned') {
+      throw new Error('expected planned');
+    }
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    await repository.put({
+      ...plan.preview,
+      status: 'planned',
+      createdAt: '2026-08-18T00:00:01.000Z',
+      executedAt: null,
+    });
+
+    await expect(
+      repository.markExecuted({
+        selectionDigest: plan.preview.selectionDigest,
+        inputDigest: 'a'.repeat(64),
+        operationId: privacyOperationIdSchema.parse(
+          '11111111-1111-4111-8111-111111111111',
+        ),
+        executedAt: '2026-08-18T00:00:02.000Z',
+      }),
+    ).resolves.toBe('executed');
+    await expect(
+      repository.getBySelectionDigest(plan.preview.selectionDigest),
+    ).resolves.toMatchObject({
+      status: 'executed',
+      executedAt: '2026-08-18T00:00:02.000Z',
+    });
+  });
+
+  it('returns an idempotent replay for the same execution operation', async () => {
+    const selectionDigest = 'a'.repeat(64);
+    const operationId = privacyOperationIdSchema.parse(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    const repository = new SyntheticPrivacyRetentionPreviewRepository();
+    const inputDigest = digestRetentionExecutionInput({
+      previewTtlMs: 60 * 60 * 1000,
+      requestedSelectionDigest: selectionDigest,
+    });
+    await repository.put(
+      privacyRetentionPreviewRecordSchema.parse({
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        selectionDigest,
+        approvedExceptionIds: [],
+        synthetic: true,
+        status: 'planned',
+        createdAt: '2026-08-18T00:00:01.000Z',
+        executedAt: null,
+      }),
+    );
+
+    await repository.markExecuted({
+      selectionDigest,
+      inputDigest,
+      operationId,
+      executedAt: '2026-08-18T00:00:02.000Z',
+    });
+    await expect(
+      repository.markExecuted({
+        selectionDigest,
+        inputDigest,
+        operationId,
+        executedAt: '2026-08-18T00:00:03.000Z',
+      }),
+    ).resolves.toBe('idempotent_replay');
+    await expect(
+      repository.markExecuted({
+        selectionDigest,
+        inputDigest: digestRetentionExecutionInput({
+          previewTtlMs: 30 * 60 * 1000,
+          requestedSelectionDigest: selectionDigest,
+        }),
+        operationId,
+        executedAt: '2026-08-18T00:00:04.000Z',
+      }),
+    ).resolves.toBe('conflict');
+    await expect(
+      repository.markExecuted({
+        selectionDigest,
+        inputDigest,
+        operationId: privacyOperationIdSchema.parse(
+          '33333333-3333-4333-8333-333333333333',
+        ),
+        executedAt: '2026-08-18T00:00:04.000Z',
+      }),
+    ).resolves.toBe('conflict');
+    await expect(
+      repository.markExecuted({
+        selectionDigest: 'f'.repeat(64),
+        inputDigest: 'f'.repeat(64),
+        operationId,
+        executedAt: '2026-08-18T00:00:05.000Z',
+      }),
+    ).resolves.toBe('not_found');
+    await expect(
+      repository.getBySelectionDigest(selectionDigest),
+    ).resolves.toMatchObject({ executedAt: '2026-08-18T00:00:02.000Z' });
+
+    const otherSelectionDigest = 'e'.repeat(64);
+    await repository.put(
+      privacyRetentionPreviewRecordSchema.parse({
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: '3'.repeat(64),
+        processorDescriptorDigests: ['b'.repeat(64)],
+        watermark: '2026-08-18T00:00:00.000Z',
+        selectionDigest: otherSelectionDigest,
+        approvedExceptionIds: [],
+        synthetic: true,
+        status: 'planned',
+        createdAt: '2026-08-18T00:00:01.000Z',
+        executedAt: null,
+      }),
+    );
+    await expect(
+      repository.markExecuted({
+        selectionDigest: otherSelectionDigest,
+        inputDigest: digestRetentionExecutionInput({
+          previewTtlMs: 60 * 60 * 1000,
+          requestedSelectionDigest: otherSelectionDigest,
+        }),
+        operationId,
+        executedAt: '2026-08-18T00:00:05.000Z',
+      }),
+    ).resolves.toBe('conflict');
   });
 });
 

@@ -7,12 +7,15 @@ import type {
   PrivacyEngineeringCategoryId,
   PrivacyEvidenceReference,
   PrivacyExpectedProcessorInventory,
+  PrivacyExpectedProcessorInventoryEntry,
   PrivacyGovernanceLifecycleProofReference,
   PrivacyGovernanceLifecycleBinding,
   PrivacyOperationId,
   PrivacyOperationKind,
   PrivacyPolicyPackageReference,
   PrivacyProcessorDescriptorReference,
+  PrivacyProcessorExecutionJournalRecord,
+  PrivacyProcessorExecutionReceipt,
   PrivacyProcessorStepReference,
   PrivacyPurposeVersionReference,
   PrivacyRetentionPreviewRecord,
@@ -120,6 +123,82 @@ export interface PrivacyGovernanceLifecycleBindingVerifier {
   verify(
     input: PrivacyGovernanceLifecycleBinding,
   ): Promise<PrivacyGovernanceLifecycleBindingVerificationResult>;
+}
+
+/**
+ * Read-only execution/coordinator evidence source. Its plural lookup is
+ * intentionally distinct from the append target ledger: zero or multiple
+ * receipts fail authorization, and this port cannot append lifecycle proofs.
+ */
+export interface PrivacyGovernanceExecutionReceiptSource {
+  listByOperationId(
+    operationId: string,
+  ): Promise<readonly PrivacyGovernanceLifecycleBinding[]>;
+}
+
+/**
+ * Read-only outcome evidence emitted by an independent synthetic processor or
+ * coordinator. Plural lookup makes missing and ambiguous operation receipts
+ * explicit fail-closed states; this port cannot append processor steps.
+ */
+export interface PrivacyProcessorExecutionReceiptSource {
+  listByOperationId(
+    operationId: string,
+  ): Promise<readonly PrivacyProcessorExecutionReceipt[]>;
+}
+
+export type PrivacyProcessorExecutionJournalReserveResult =
+  | { status: 'reserved' }
+  | {
+      status: 'completed';
+      record: PrivacyProcessorExecutionJournalRecord;
+    }
+  | { status: 'conflict' }
+  | { status: 'reconciliation_required' };
+
+/**
+ * Durable synthetic execution ownership. Reservations are atomic by
+ * operationId; a non-terminal reservation is never authority to re-execute.
+ */
+export interface PrivacyProcessorExecutionJournal {
+  reserve(
+    record: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<PrivacyProcessorExecutionJournalReserveResult>;
+  complete(
+    record: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<'accepted' | 'idempotent_replay' | 'conflict'>;
+  markReconciliationRequired(
+    operationId: string,
+    bindingDigest: string,
+  ): Promise<'accepted' | 'conflict'>;
+  getByOperationId(
+    operationId: string,
+  ): Promise<PrivacyProcessorExecutionJournalRecord | null>;
+}
+
+export type PrivacyProcessorExecutionCoordinationResult =
+  | { status: 'executed' }
+  | { status: 'conflict' }
+  | { status: 'handler_missing' }
+  | { status: 'receipt_invalid' }
+  | { status: 'reconciliation_required' }
+  | { status: 'unavailable' };
+
+/**
+ * Executes one internally selected synthetic processor command and makes its
+ * immutable outcome receipt available through a separate receipt source.
+ * Implementations own operation-id replay; callers never submit a processor
+ * outcome through this port.
+ */
+export interface PrivacyProcessorExecutionCoordinator {
+  execute(input: {
+    requestId: string;
+    command: PrivacySyntheticProcessorCommand;
+    expected: {
+      inventoryVersionDigest: string;
+      processor: PrivacyExpectedProcessorInventoryEntry;
+    };
+  }): Promise<PrivacyProcessorExecutionCoordinationResult>;
 }
 
 /**
@@ -293,8 +372,10 @@ export interface PrivacySubjectRequestRepository {
 /**
  * Persisted retention preview evidence, keyed by the deterministic
  * `selectionDigest` computed by `planRetentionPreview`. A preview is
- * accepted at most once per digest; consuming/marking it `executed` is a
- * separate, later composition step.
+ * accepted at most once per digest. `markExecuted` performs the atomic
+ * synthetic/disposable `planned` -> `executed` transition and binds the winner
+ * to one operation ID plus canonical input digest so only an identical request
+ * can replay idempotently and one operation cannot own multiple previews.
  */
 export interface PrivacyRetentionPreviewRepository {
   getBySelectionDigest(
@@ -303,7 +384,16 @@ export interface PrivacyRetentionPreviewRepository {
   put(
     record: PrivacyRetentionPreviewRecord,
   ): Promise<PrivacyReferencePutResult>;
+  markExecuted(input: {
+    selectionDigest: string;
+    operationId: PrivacyOperationId;
+    inputDigest: string;
+    executedAt: string;
+  }): Promise<PrivacyRetentionPreviewExecutionResult>;
 }
+
+export type PrivacyRetentionPreviewExecutionResult =
+  'executed' | 'idempotent_replay' | 'conflict' | 'not_found';
 
 /**
  * Append-only per-processor execution attempts for a subject request.

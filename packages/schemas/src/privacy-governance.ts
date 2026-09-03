@@ -816,6 +816,74 @@ export type PrivacyProcessorStepReference = z.infer<
 >;
 
 /**
+ * Read-only execution/coordinator evidence for one processor operation. This
+ * is structurally separate from the append-only processor-step record: the
+ * route resolves one exact receipt before it assigns the trusted timestamp
+ * and records the authoritative outcome under the requested stepId.
+ */
+export const privacyProcessorExecutionReceiptSchema =
+  privacyProcessorStepReferenceSchema.omit({
+    stepId: true,
+    recordedAt: true,
+  });
+export type PrivacyProcessorExecutionReceipt = z.infer<
+  typeof privacyProcessorExecutionReceiptSchema
+>;
+
+export const privacyProcessorExecutionBindingSchema =
+  privacyProcessorExecutionReceiptSchema.omit({ outcome: true });
+export type PrivacyProcessorExecutionBinding = z.infer<
+  typeof privacyProcessorExecutionBindingSchema
+>;
+
+/**
+ * Durable, synthetic-only reservation for one processor operation. A reserved
+ * row proves that execution may already have started, so it must be reconciled
+ * after a restart rather than executed again automatically.
+ */
+export const privacyProcessorExecutionJournalStateSchema = z.enum([
+  'reserved',
+  'completed',
+  'reconciliation_required',
+]);
+export type PrivacyProcessorExecutionJournalState = z.infer<
+  typeof privacyProcessorExecutionJournalStateSchema
+>;
+
+export const privacyProcessorExecutionJournalRecordSchema = z
+  .object({
+    operationId: privacyOperationIdSchema,
+    requestId: privacySubjectRequestIdSchema,
+    processorId: privacyProcessorIdSchema,
+    capability: privacyProcessorCapabilitySchema,
+    correlationId: privacyCorrelationIdSchema,
+    bindingDigest: privacySha256DigestSchema,
+    state: privacyProcessorExecutionJournalStateSchema,
+    outcome: privacyProcessorStepOutcomeSchema.nullable(),
+    reservedAt: privacyTrustedUtcMsSchema,
+    completedAt: privacyTrustedUtcMsSchema.nullable(),
+    synthetic: z.literal(true),
+  })
+  .strict()
+  .superRefine((record, context) => {
+    const isCompleted = record.state === 'completed';
+    const hasCompletion =
+      record.outcome !== null && record.completedAt !== null;
+
+    if (isCompleted !== hasCompletion) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'completed state requires outcome and completedAt; other states forbid both',
+        path: ['state'],
+      });
+    }
+  });
+export type PrivacyProcessorExecutionJournalRecord = z.infer<
+  typeof privacyProcessorExecutionJournalRecordSchema
+>;
+
+/**
  * Append-only governance-lifecycle proof ledger record. Wraps the frozen
  * `governanceLifecycleResultSchema` outcome/proofId rule (Option A) with the
  * minimum association metadata needed to locate a proof — never the
@@ -1468,8 +1536,30 @@ export type PrivacySyntheticWithdrawalPlanResponse = z.infer<
 >;
 
 /**
+ * Optional caller-identified retention-rule selection. When present, the
+ * route plans the preview through the fail-closed rule-aware path instead of
+ * the unconditional one — the caller never picks "latest" or "default"; the
+ * exact `ruleVersionId` must already be active for the identified
+ * category/purpose pair.
+ */
+export const privacySyntheticRetentionRuleSelectionSchema = z
+  .object({
+    engineeringCategoryId: privacyEngineeringCategoryIdSchema,
+    purposeVersionId: privacyPurposeVersionIdSchema,
+    ruleVersionId: privacyRetentionRuleVersionIdSchema,
+  })
+  .strict();
+export type PrivacySyntheticRetentionRuleSelection = z.infer<
+  typeof privacySyntheticRetentionRuleSelectionSchema
+>;
+
+/**
  * Disposable synthetic API for retention preview planning. Read-only; never
  * deletes or transforms data. Not a production public privacy route.
+ * `retentionRuleSelection` is optional and additive: omitting it preserves
+ * the unconditional `planRetentionPreview` behavior exactly; providing it
+ * routes through `planRetentionPreviewWithRetentionRule`'s fail-closed rule
+ * binding instead.
  */
 export const privacySyntheticRetentionPreviewRequestSchema = z
   .object({
@@ -1480,6 +1570,8 @@ export const privacySyntheticRetentionPreviewRequestSchema = z
     watermark: privacyTrustedUtcMsSchema,
     approvedExceptionIds: privacyApprovedExceptionIdsSchema,
     productionMode: z.boolean(),
+    retentionRuleSelection:
+      privacySyntheticRetentionRuleSelectionSchema.optional(),
   })
   .strict();
 export type PrivacySyntheticRetentionPreviewRequest = z.infer<
@@ -1495,6 +1587,11 @@ export const privacySyntheticRetentionPreviewResponseSchema = z
         'missing_inventory_digest',
         'missing_processor_descriptors',
         'missing_watermark',
+        'no_active_retention_rule',
+        'retention_rule_not_active_for_scope',
+        'retention_rule_ambiguous',
+        'retention_rule_policy_mismatch',
+        'retention_rule_synthetic_mismatch',
       ])
       .optional(),
     preview: z
@@ -1506,6 +1603,8 @@ export const privacySyntheticRetentionPreviewResponseSchema = z
         selectionDigest: privacySha256DigestSchema,
         approvedExceptionIds: privacyApprovedExceptionIdsSchema,
         synthetic: z.literal(true),
+        retentionRuleDigest: privacySha256DigestSchema.optional(),
+        retentionRuleVersionId: privacyRetentionRuleVersionIdSchema.optional(),
       })
       .strict()
       .optional(),
@@ -1517,16 +1616,18 @@ export type PrivacySyntheticRetentionPreviewResponse = z.infer<
 
 /**
  * Disposable synthetic API for retention execution authorization.
- * Production path remains hard-disabled.
+ * The caller identifies a persisted preview and operation and supplies its explicit TTL;
+ * preview state and current inventory/processor digests are resolved from
+ * trusted server-side ports. A successful synthetic authorization records only
+ * the exact-once preview transition; production and processor side effects
+ * remain hard-disabled.
  */
 export const privacySyntheticRetentionExecutionAuthorizeRequestSchema = z
   .object({
+    operationId: privacyOperationIdSchema,
     productionMode: z.boolean(),
-    policySynthetic: z.boolean(),
-    authoritySynthetic: z.boolean(),
-    previewExecuted: z.boolean(),
-    previewExpired: z.boolean(),
-    digestsMatch: z.boolean(),
+    requestedSelectionDigest: privacySha256DigestSchema,
+    previewTtlMs: z.number().positive().finite(),
   })
   .strict();
 export type PrivacySyntheticRetentionExecutionAuthorizeRequest = z.infer<
@@ -1535,7 +1636,12 @@ export type PrivacySyntheticRetentionExecutionAuthorizeRequest = z.infer<
 
 export const privacySyntheticRetentionExecutionAuthorizeResponseSchema = z
   .object({
-    status: z.enum(['allowed_synthetic_test', 'hard_disabled']),
+    status: z.enum([
+      'executed',
+      'idempotent_replay',
+      'conflict',
+      'hard_disabled',
+    ]),
     reason: z
       .enum([
         'production_path',
@@ -1634,29 +1740,81 @@ export type PrivacySyntheticProcessorPlanResponse = z.infer<
 >;
 
 /**
+ * Starts one coordinator-owned synthetic processor attempt. The caller owns
+ * only request and idempotency identity; the pinned plan selects processor and
+ * capability, while outcome, receipt, step, timestamp, and transition remain
+ * server-authoritative.
+ */
+export const privacySyntheticProcessorCoordinateRequestSchema = z
+  .object({
+    requestId: privacySubjectRequestIdSchema,
+    operationId: privacyOperationIdSchema,
+    productionMode: z.boolean(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorCoordinateRequest = z.infer<
+  typeof privacySyntheticProcessorCoordinateRequestSchema
+>;
+
+export const privacySyntheticProcessorCoordinateResponseSchema = z
+  .object({
+    status: z.enum([
+      'recorded',
+      'step_conflict',
+      'advanced',
+      'already_terminal',
+      'invalid_transition',
+      'transition_conflict',
+      'request_not_found',
+      'request_not_executable',
+      'inventory_mismatch',
+      'plan_incomplete',
+      'no_pending_step',
+      'handler_missing',
+      'execution_unavailable',
+      'execution_conflict',
+      'reconciliation_required',
+      'receipt_invalid',
+      'hard_disabled',
+    ]),
+    completion: z
+      .enum(['incomplete', 'completed', 'partially_failed'])
+      .optional(),
+    request: privacySubjectRequestReferenceSchema.optional(),
+    transition: privacySubjectRequestTransitionReferenceSchema.optional(),
+    reason: z
+      .enum([
+        'illegal_transition',
+        'verification_required',
+        'synthetic_verification_in_production',
+        'terminal_state',
+        'not_found',
+        'production_path',
+      ])
+      .optional(),
+  })
+  .strict();
+export type PrivacySyntheticProcessorCoordinateResponse = z.infer<
+  typeof privacySyntheticProcessorCoordinateResponseSchema
+>;
+
+/**
  * Disposable synthetic API to append one append-only processor-step attempt
- * and, only when the full expected (processorId, capability) set is now
- * terminal, advance the subject request through its own state machine. A
- * replay of the exact same `step.stepId` still evaluates and, if needed,
- * attempts the dropped transition — this is the mechanism-proof seam for
- * partial-failure resume, not a new decision surface.
+ * and, only when the server-derived expected (processorId, capability) plan
+ * is now terminal, advance the subject request through its own state machine.
+ * The route binds correlation metadata to the persisted request, assigns the
+ * trusted step timestamp, resolves the outcome from one independent execution
+ * receipt, and derives the transition identity from the step. A replay of the
+ * exact same `step.stepId` still evaluates and, if needed, attempts the dropped
+ * transition — this is the mechanism-proof seam for partial-failure resume,
+ * not a new decision surface.
  */
 export const privacySyntheticProcessorStepRecordRequestSchema = z
   .object({
-    step: privacyProcessorStepReferenceSchema,
-    expected: z
-      .array(
-        z
-          .object({
-            processorId: privacyProcessorIdSchema,
-            capability: privacyProcessorCapabilitySchema,
-          })
-          .strict(),
-      )
-      .max(128),
-    transitionId: privacySubjectRequestTransitionIdSchema,
-    operationId: privacyOperationIdSchema,
-    correlationId: privacyCorrelationIdSchema,
+    step: privacyProcessorStepReferenceSchema.omit({
+      outcome: true,
+      recordedAt: true,
+    }),
     productionMode: z.boolean(),
   })
   .strict();
@@ -1674,6 +1832,14 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
       'invalid_transition',
       'transition_conflict',
       'request_not_found',
+      'binding_mismatch',
+      'plan_unavailable',
+      'inventory_mismatch',
+      'plan_incomplete',
+      'step_not_planned',
+      'execution_receipt_unavailable',
+      'execution_receipt_invalid',
+      'hard_disabled',
     ]),
     completion: z
       .enum(['incomplete', 'completed', 'partially_failed'])
@@ -1687,6 +1853,7 @@ export const privacySyntheticProcessorStepRecordResponseSchema = z
         'synthetic_verification_in_production',
         'terminal_state',
         'not_found',
+        'production_path',
       ])
       .optional(),
   })

@@ -28,6 +28,7 @@ import {
   privacyOperationKindSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionJournalRecordSchema,
   privacyProcessorIdSchema,
   privacyProcessorStepReferenceSchema,
   privacyPurposeVersionReferenceSchema,
@@ -47,6 +48,8 @@ import {
   privacySyntheticRetentionExecutionAuthorizeRequestSchema,
   privacySyntheticRetentionPreviewRequestSchema,
   privacySyntheticProcessorCommandSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorResultSchema,
   privacySyntheticSubjectRequestTransitionRequestSchema,
   privacySyntheticSubjectRequestTransitionResponseSchema,
@@ -69,6 +72,39 @@ const exceptionB = privacyRetentionExceptionIdSchema.parse(
 const exceptionC = privacyRetentionExceptionIdSchema.parse(
   'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
 );
+
+describe('synthetic processor coordinator contract', () => {
+  it('accepts only request and operation identity plus the production guard', () => {
+    const input = {
+      requestId: '66666666-6666-4666-8666-666666666666',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      productionMode: false,
+    };
+
+    expect(
+      privacySyntheticProcessorCoordinateRequestSchema.parse(input),
+    ).toEqual(input);
+    expect(
+      privacySyntheticProcessorCoordinateRequestSchema.safeParse({
+        ...input,
+        processorId: '99999999-9999-4999-8999-999999999999',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a closed fail-closed coordinator response', () => {
+    expect(
+      privacySyntheticProcessorCoordinateResponseSchema.parse({
+        status: 'execution_unavailable',
+      }),
+    ).toEqual({ status: 'execution_unavailable' });
+    expect(
+      privacySyntheticProcessorCoordinateResponseSchema.safeParse({
+        status: 'executed_anyway',
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe('privacy operation kinds and canonical profiles', () => {
   it('pins the Option A canonicalization version', () => {
@@ -664,6 +700,64 @@ describe('subject request and audit event references', () => {
     ).toBe(false);
   });
 
+  it('accepts a strict reserved processor execution journal record', () => {
+    const record = {
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      bindingDigest: '1'.repeat(64),
+      state: 'reserved',
+      outcome: null,
+      reservedAt: '2026-08-18T12:03:00.000Z',
+      completedAt: null,
+      synthetic: true,
+    } as const;
+
+    expect(privacyProcessorExecutionJournalRecordSchema.parse(record)).toEqual(
+      record,
+    );
+  });
+
+  it('requires journal outcome and completion time to match completed state', () => {
+    const reserved = {
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      requestId: '66666666-6666-4666-8666-666666666666',
+      processorId: '99999999-9999-4999-8999-999999999999',
+      capability: 'export',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      bindingDigest: '1'.repeat(64),
+      state: 'reserved',
+      outcome: null,
+      reservedAt: '2026-08-18T12:03:00.000Z',
+      completedAt: null,
+      synthetic: true,
+    } as const;
+
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        state: 'completed',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
+      }).success,
+    ).toBe(false);
+    expect(
+      privacyProcessorExecutionJournalRecordSchema.safeParse({
+        ...reserved,
+        state: 'completed',
+        outcome: 'completed',
+        completedAt: '2026-08-18T12:04:00.000Z',
+      }).success,
+    ).toBe(true);
+  });
+
   it('requires closed audit kinds and denied reason codes without free-text metadata', () => {
     const denied = privacyAuditEventReferenceSchema.parse({
       auditEventId: '77777777-7777-4777-8777-777777777777',
@@ -1243,14 +1337,23 @@ describe('processor descriptor and readiness contracts', () => {
 
     expect(
       privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse({
+        operationId: '11111111-1111-4111-8111-111111111111',
         productionMode: true,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      }).productionMode,
+    ).toBe(true);
+
+    expect(
+      privacySyntheticRetentionExecutionAuthorizeRequestSchema.safeParse({
+        productionMode: false,
         policySynthetic: true,
         authoritySynthetic: true,
         previewExecuted: false,
         previewExpired: false,
         digestsMatch: true,
-      }).productionMode,
-    ).toBe(true);
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -1365,26 +1468,50 @@ describe('synthetic processor-step record contracts', () => {
     requestId: '66666666-6666-4666-8666-666666666666',
     processorId: '99999999-9999-4999-8999-999999999999',
     capability: 'export',
-    outcome: 'completed',
     operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     correlationId: '55555555-5555-4555-8555-555555555555',
-    recordedAt: '2026-08-18T12:02:00.000Z',
   };
   const validRequest = {
     step,
-    expected: [
-      {
-        processorId: '99999999-9999-4999-8999-999999999999',
-        capability: 'export',
-      },
-    ],
-    transitionId: 'a1111111-1111-4111-8111-111111111111',
-    operationId: 'b2222222-2222-4222-8222-222222222222',
-    correlationId: '55555555-5555-4555-8555-555555555555',
     productionMode: false,
   };
 
-  it('accepts a strict request pairing a step with its expected pairs and transition envelope', () => {
+  it('rejects a caller-supplied expected processor plan', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        expected: [
+          {
+            processorId: '99999999-9999-4999-8999-999999999999',
+            capability: 'export',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a caller-supplied processor-step timestamp', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        step: {
+          ...validRequest.step,
+          recordedAt: '2026-08-18T12:02:00.000Z',
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a caller-supplied processor outcome', () => {
+    expect(
+      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+        ...validRequest,
+        step: { ...validRequest.step, outcome: 'completed' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts a strict request with server-authoritative transition metadata', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse(validRequest)
         .success,
@@ -1400,22 +1527,21 @@ describe('synthetic processor-step record contracts', () => {
     ).toBe(false);
   });
 
-  it('rejects a request missing the expected set or transition envelope', () => {
+  it.each(['transitionId', 'operationId', 'correlationId'] as const)(
+    'rejects caller-supplied transition envelope field %s',
+    (field) => {
+      expect(
+        privacySyntheticProcessorStepRecordRequestSchema.safeParse({
+          ...validRequest,
+          [field]: 'a1111111-1111-4111-8111-111111111111',
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('rejects a request missing the processor step', () => {
     expect(
       privacySyntheticProcessorStepRecordRequestSchema.safeParse({
-        step,
-        transitionId: validRequest.transitionId,
-        operationId: validRequest.operationId,
-        correlationId: validRequest.correlationId,
-        productionMode: false,
-      }).success,
-    ).toBe(false);
-    expect(
-      privacySyntheticProcessorStepRecordRequestSchema.safeParse({
-        step,
-        expected: validRequest.expected,
-        operationId: validRequest.operationId,
-        correlationId: validRequest.correlationId,
         productionMode: false,
       }).success,
     ).toBe(false);
@@ -1478,6 +1604,20 @@ describe('synthetic processor-step record contracts', () => {
         status: 'request_not_found',
       }),
     ).toEqual({ status: 'request_not_found' });
+  });
+
+  it.each([
+    'binding_mismatch',
+    'plan_unavailable',
+    'inventory_mismatch',
+    'plan_incomplete',
+    'step_not_planned',
+    'execution_receipt_unavailable',
+    'execution_receipt_invalid',
+  ] as const)('accepts the fail-closed %s response', (status) => {
+    expect(
+      privacySyntheticProcessorStepRecordResponseSchema.parse({ status }),
+    ).toEqual({ status });
   });
 
   it('accepts an invalid_transition response carrying a closed reason', () => {

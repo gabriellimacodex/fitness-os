@@ -8,9 +8,12 @@ import {
   privacyOperationIdSchema,
   privacyPolicyPackageReferenceSchema,
   privacyProcessorDescriptorReferenceSchema,
+  privacyProcessorExecutionReceiptSchema,
   privacyPurposeVersionReferenceSchema,
   privacyExpectedProcessorInventorySchema,
+  privacyGovernanceLifecycleBindingSchema,
   privacyReadinessResultSchema,
+  privacyRetentionRuleReferenceSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
@@ -19,17 +22,20 @@ import {
   privacySyntheticGovernanceLifecycleRecordResponseSchema,
   privacySyntheticInventoryCoverageResponseSchema,
   privacySyntheticProcessorPlanResponseSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorStepRecordResponseSchema,
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacyWithdrawalIdSchema,
   type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import {
+  digestRetentionExecutionInput,
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyGovernanceLifecycleBindingVerifier,
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyProcessorStepRepository,
   SyntheticPrivacyRetentionPreviewRepository,
+  SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacyRuntimeProcessorRegistry,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
@@ -56,6 +62,18 @@ const purpose = privacyPurposeVersionReferenceSchema.parse({
   evidenceRequired: true,
   activationState: 'active',
   contentDigest: 'b'.repeat(64),
+});
+
+const retentionRule = privacyRetentionRuleReferenceSchema.parse({
+  ruleId: '55555555-5555-4555-8555-555555555555',
+  ruleVersionId: '66666666-6666-4666-8666-666666666666',
+  engineeringCategoryId: purpose.allowedCategoryIds[0],
+  purposeVersionId: purpose.purposeVersionId,
+  policyVersionId: policy.versionId,
+  action: 'delete',
+  parametersDigest: 'e'.repeat(64),
+  canonicalizationVersion: 'privacy-governance.canonical.v1',
+  synthetic: true,
 });
 
 const processor = privacyProcessorDescriptorReferenceSchema.parse({
@@ -1208,30 +1226,288 @@ describe('POST /v1/privacy/synthetic/retention-preview', () => {
 
     await app.close();
   });
+
+  it('plans a rule-aware preview and binds the active rule version and digest when retentionRuleSelection is provided', async () => {
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(retentionRule);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: 'planned',
+      preview: { retentionRuleVersionId: retentionRule.ruleVersionId },
+    });
+    expect(typeof response.json().preview.retentionRuleDigest).toBe('string');
+    // Binding the rule into the selection digest changes it from the
+    // unconditional plan for otherwise identical input.
+    const unconditional = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+    expect(response.json().preview.selectionDigest).not.toBe(
+      unconditional.json().preview.selectionDigest,
+    );
+
+    await app.close();
+  });
+
+  it('omitting retentionRuleSelection preserves the unconditional plan exactly, with no rule fields in the response', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: previewPayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().preview).not.toHaveProperty('retentionRuleDigest');
+    expect(response.json().preview).not.toHaveProperty(
+      'retentionRuleVersionId',
+    );
+
+    await app.close();
+  });
+
+  it('fails closed as no_active_retention_rule when retentionRuleSelection is provided but no rule is seeded or injected', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: 'invalid',
+      reason: 'no_active_retention_rule',
+    });
+
+    await app.close();
+  });
+
+  it('fails closed as retention_rule_policy_mismatch when the active rule carries a different policy version', async () => {
+    const mismatchedRule = privacyRetentionRuleReferenceSchema.parse({
+      ...retentionRule,
+      policyVersionId: '11111111-1111-4111-8111-111111111111',
+    });
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(mismatchedRule);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: mismatchedRule.engineeringCategoryId,
+          purposeVersionId: mismatchedRule.purposeVersionId,
+          ruleVersionId: mismatchedRule.ruleVersionId,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: 'invalid',
+      reason: 'retention_rule_policy_mismatch',
+    });
+
+    await app.close();
+  });
+
+  it('does not persist rule-aware retentionRuleDigest/retentionRuleVersionId into the retentionPreviews write-through', async () => {
+    const retentionRules = new SyntheticPrivacyRetentionRuleRepository();
+    retentionRules.seed(retentionRule);
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          processorResolver,
+          expectedInventory: expectedInventoryPort as never,
+          retentionRules,
+          retentionPreviews,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-preview',
+      payload: {
+        ...previewPayload,
+        retentionRuleSelection: {
+          engineeringCategoryId: retentionRule.engineeringCategoryId,
+          purposeVersionId: retentionRule.purposeVersionId,
+          ruleVersionId: retentionRule.ruleVersionId,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const selectionDigest = response.json().preview.selectionDigest;
+
+    const stored =
+      await retentionPreviews.getBySelectionDigest(selectionDigest);
+    expect(stored).not.toHaveProperty('retentionRuleDigest');
+    expect(stored).not.toHaveProperty('retentionRuleVersionId');
+    expect(stored).toMatchObject({ selectionDigest, status: 'planned' });
+
+    await app.close();
+  });
 });
 
 describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
-  it('hard-disables production execution and allows disposable synthetic tests', async () => {
-    const app = buildSyntheticPrivacyApp();
+  it('authorizes from the persisted preview and trusted current runtime evidence', async () => {
+    const selectionDigest = 'f'.repeat(64);
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    await retentionPreviews.put({
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: expectedInventoryArtifact.inventoryVersionDigest,
+      processorDescriptorDigests: [processor.descriptorDigest],
+      watermark: '2026-08-18T11:00:00.000Z',
+      selectionDigest,
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T11:30:00.000Z',
+      executedAt: null,
+    });
+    const processors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    processors.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: expectedInventoryPort,
+          processors,
+          retentionPreviews,
+        },
+      },
+    );
 
-    const production = await app.inject({
+    const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {
-        productionMode: true,
-        policySynthetic: true,
-        authoritySynthetic: true,
-        previewExecuted: false,
-        previewExpired: false,
-        digestsMatch: true,
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
       },
     });
-    expect(production.json()).toMatchObject({
-      status: 'hard_disabled',
-      reason: 'production_path',
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'executed' });
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+    expect(replay.json()).toEqual({ status: 'idempotent_replay' });
+
+    const changedTtl = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 30 * 60 * 1000,
+      },
+    });
+    expect(changedTtl.json()).toEqual({ status: 'conflict' });
+
+    const conflict = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '22222222-2222-4222-8222-222222222222',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+    expect(conflict.json()).toEqual({ status: 'conflict' });
+    await expect(
+      retentionPreviews.getBySelectionDigest(selectionDigest),
+    ).resolves.toMatchObject({
+      executedAt: '2026-08-18T12:00:00.000Z',
+      status: 'executed',
     });
 
-    const synthetic = await app.inject({
+    await app.close();
+  });
+
+  it('rejects caller-supplied preview state and digest booleans', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/retention-execution-authorize',
       payload: {
@@ -1243,7 +1519,330 @@ describe('POST /v1/privacy/synthetic/retention-execution-authorize', () => {
         digestsMatch: true,
       },
     });
-    expect(synthetic.json()).toEqual({ status: 'allowed_synthetic_test' });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+
+  it('returns 503 when persisted preview evidence is unavailable', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processors: new SyntheticPrivacyRuntimeProcessorRegistry(),
+          retentionPreviews: {
+            getBySelectionDigest: async () => {
+              throw new Error('preview store unavailable');
+            },
+            markExecuted: async () => 'conflict' as const,
+            put: async () => 'accepted' as const,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+
+    await app.close();
+  });
+
+  it('returns 503 when the trusted clock is unavailable', async () => {
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              throw new Error('trusted clock unavailable');
+            },
+          },
+          retentionPreviews: {
+            getBySelectionDigest: async () => null,
+            markExecuted: async () => 'not_found' as const,
+            put: async () => 'accepted' as const,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+
+    await app.close();
+  });
+
+  it('returns 503 without claiming execution when the atomic transition is unavailable', async () => {
+    const selectionDigest = '9'.repeat(64);
+    const preview = {
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: expectedInventoryArtifact.inventoryVersionDigest,
+      processorDescriptorDigests: [processor.descriptorDigest],
+      watermark: '2026-08-18T11:00:00.000Z',
+      selectionDigest,
+      approvedExceptionIds: [],
+      synthetic: true as const,
+      status: 'planned' as const,
+      createdAt: '2026-08-18T11:30:00.000Z',
+      executedAt: null,
+    };
+    const processors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    processors.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: expectedInventoryPort,
+          processors,
+          retentionPreviews: {
+            getBySelectionDigest: async () => preview,
+            markExecuted: async () => {
+              throw new Error('transition unavailable');
+            },
+            put: async () => 'accepted' as const,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+
+    await app.close();
+  });
+
+  it('replays the persisted winning operation without consulting current evidence again', async () => {
+    const selectionDigest = '8'.repeat(64);
+    const operationId = privacyOperationIdSchema.parse(
+      '44444444-4444-4444-8444-444444444444',
+    );
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    await retentionPreviews.put({
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: expectedInventoryArtifact.inventoryVersionDigest,
+      processorDescriptorDigests: [processor.descriptorDigest],
+      watermark: '2026-08-18T11:00:00.000Z',
+      selectionDigest,
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T11:30:00.000Z',
+      executedAt: null,
+    });
+    await retentionPreviews.markExecuted({
+      selectionDigest,
+      inputDigest: digestRetentionExecutionInput({
+        previewTtlMs: 60 * 60 * 1000,
+        requestedSelectionDigest: selectionDigest,
+      }),
+      operationId,
+      executedAt: '2026-08-18T12:00:00.000Z',
+    });
+    let currentEvidenceReads = 0;
+    const unavailable = () => {
+      currentEvidenceReads += 1;
+      throw new Error('current evidence unavailable');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: { nowUtcMs: unavailable },
+          expectedInventory: { getInventory: async () => unavailable() },
+          processors: {
+            getDescriptor: async () => unavailable(),
+            listDescriptors: async () => unavailable(),
+            put: async () => unavailable(),
+          },
+          retentionPreviews,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId,
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'idempotent_replay' });
+    expect(currentEvidenceReads).toBe(0);
+
+    await app.close();
+  });
+
+  it('fails closed when trusted preview or current-runtime ports are absent', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      reason: 'preview_mismatch',
+      status: 'hard_disabled',
+    });
+
+    await app.close();
+  });
+
+  it('does not consume an expired planned preview', async () => {
+    const selectionDigest = 'e'.repeat(64);
+    const retentionPreviews = new SyntheticPrivacyRetentionPreviewRepository();
+    await retentionPreviews.put({
+      policyVersionId: policy.versionId,
+      inventoryVersionDigest: expectedInventoryArtifact.inventoryVersionDigest,
+      processorDescriptorDigests: [processor.descriptorDigest],
+      watermark: '2026-08-18T10:00:00.000Z',
+      selectionDigest,
+      approvedExceptionIds: [],
+      synthetic: true,
+      status: 'planned',
+      createdAt: '2026-08-18T10:00:00.000Z',
+      executedAt: null,
+    });
+    const processors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    processors.seed(processor);
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: expectedInventoryPort,
+          processors,
+          retentionPreviews,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '33333333-3333-4333-8333-333333333333',
+        productionMode: false,
+        requestedSelectionDigest: selectionDigest,
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+
+    expect(response.json()).toEqual({
+      reason: 'preview_expired_or_executed',
+      status: 'hard_disabled',
+    });
+    await expect(
+      retentionPreviews.getBySelectionDigest(selectionDigest),
+    ).resolves.toMatchObject({ status: 'planned', executedAt: null });
+
+    await app.close();
+  });
+
+  it('hard-disables production execution before considering synthetic evidence', async () => {
+    let evidenceReads = 0;
+    const unavailable = () => {
+      evidenceReads += 1;
+      throw new Error('must not read evidence for production');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: { nowUtcMs: unavailable },
+          expectedInventory: { getInventory: async () => unavailable() },
+          processors: {
+            getDescriptor: async () => unavailable(),
+            listDescriptors: async () => unavailable(),
+            put: async () => unavailable(),
+          },
+          retentionPreviews: {
+            getBySelectionDigest: async () => unavailable(),
+            markExecuted: async () => unavailable(),
+            put: async () => unavailable(),
+          },
+        },
+      },
+    );
+
+    const production = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/retention-execution-authorize',
+      payload: {
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: true,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      },
+    });
+    expect(production.statusCode).toBe(200);
+    expect(production.json()).toMatchObject({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+    expect(evidenceReads).toBe(0);
 
     await app.close();
   });
@@ -1869,12 +2468,377 @@ describe('POST /v1/privacy/synthetic/processor-plan', () => {
   });
 });
 
+describe('POST /v1/privacy/synthetic/processor-coordinate', () => {
+  it('executes the server-selected synthetic step and advances the request', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    const boundProcessor = new SyntheticPrivacySubjectDataProcessor(
+      processor,
+      [],
+    );
+    let executions = 0;
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          fixedUtcMs: '2026-08-18T12:03:00.000Z',
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => boundProcessor.descriptorReference(),
+              execute: async (command) => {
+                executions += 1;
+                return boundProcessor.execute(command);
+              },
+            }),
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+    const body = privacySyntheticProcessorCoordinateResponseSchema.parse(
+      response.json(),
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      status: 'advanced',
+      completion: 'completed',
+      request: { state: 'completed' },
+    });
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+    expect(replay.json()).toMatchObject({ status: 'already_terminal' });
+    expect(executions).toBe(1);
+    await app.close();
+  });
+
+  it('hard-disables production before reading request, plan, or processor ports', async () => {
+    let reads = 0;
+    const unavailable = () => {
+      reads += 1;
+      throw new Error('must not read');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: { getInventory: async () => unavailable() },
+          processorResolver: { resolve: async () => unavailable() },
+          processorSteps: {
+            append: async () => unavailable(),
+            listForRequest: async () => unavailable(),
+          } as never,
+          subjectRequests: {
+            applyTransition: async () => unavailable(),
+            createReceived: async () => unavailable(),
+            get: async () => unavailable(),
+            listTransitions: async () => unavailable(),
+          } as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId: '66666666-6666-4666-8666-666666666666',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: true,
+      },
+    });
+
+    expect(response.json()).toEqual({
+      status: 'hard_disabled',
+      reason: 'production_path',
+    });
+    expect(reads).toBe(0);
+    await app.close();
+  });
+
+  it('returns reconciliation_required for a durable unfinished reservation without executing', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let executions = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processorExecutionJournal: {
+            complete: async () => 'conflict',
+            getByOperationId: async () => null,
+            markReconciliationRequired: async () => 'accepted',
+            reserve: async () => ({ status: 'reconciliation_required' }),
+          },
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => {
+                executions += 1;
+                throw new Error('must not execute');
+              },
+            }),
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'reconciliation_required' });
+    expect(executions).toBe(0);
+    await app.close();
+  });
+
+  it('rejects caller-selected processor, capability, outcome, and step identity', async () => {
+    const app = buildSyntheticPrivacyApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId: '66666666-6666-4666-8666-666666666666',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+        processorId: processor.processorId,
+        capability: 'access',
+        outcome: 'completed',
+        stepId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+    await app.close();
+  });
+
+  it('rejects a malformed processor result before appending a step', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'in_progress',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: expectedInventoryPort,
+          processorResolver: {
+            resolve: async () => ({
+              descriptorReference: () => processor,
+              execute: async () => ({ raw: 'untrusted output' }) as never,
+            }),
+          },
+          processorSteps,
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'receipt_invalid' });
+    await expect(processorSteps.listForRequest(requestId)).resolves.toEqual([]);
+    await app.close();
+  });
+
+  it('does not resolve, execute, timestamp, or append a fresh operation after completion', async () => {
+    const requestId = privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    );
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        requestId,
+        requestType: 'access',
+        state: 'completed',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: policy.versionId,
+        inventoryVersionDigest: processor.inventoryVersionDigest,
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-08-18T12:00:00.000Z',
+      }),
+    );
+    let resolverReads = 0;
+    let clockReads = 0;
+    let appends = 0;
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              clockReads += 1;
+              return '2026-08-18T12:03:00.000Z';
+            },
+          },
+          expectedInventory: expectedInventoryPort,
+          processorResolver: {
+            resolve: async () => {
+              resolverReads += 1;
+              throw new Error('must not resolve');
+            },
+          },
+          processorSteps: {
+            append: async () => {
+              appends += 1;
+              return 'accepted';
+            },
+            listForRequest: async () => [],
+          },
+          subjectRequests,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-coordinate',
+      payload: {
+        requestId,
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: false,
+      },
+    });
+
+    expect(response.json()).toEqual({ status: 'request_not_executable' });
+    expect({ appends, clockReads, resolverReads }).toEqual({
+      appends: 0,
+      clockReads: 0,
+      resolverReads: 0,
+    });
+    await app.close();
+  });
+});
+
 describe('POST /v1/privacy/synthetic/processor-step-record', () => {
   const stepRequestId = privacySubjectRequestIdSchema.parse(
     '66666666-6666-4666-8666-666666666666',
   );
   const processorA = '99999999-9999-4999-8999-999999999999';
   const processorB = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  const stepInventory = (processorIds: readonly string[]) =>
+    new SyntheticPrivacyExpectedProcessorInventory(
+      privacyExpectedProcessorInventorySchema.parse({
+        schemaVersion: 'privacy.processor-inventory.v1',
+        inventoryId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        inventoryVersionDigest: '1'.repeat(64),
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        sourceCommit: 'a35c289',
+        processors: processorIds.map((processorId, index) => ({
+          processorId,
+          registrationVersion: 1,
+          inventoryId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          descriptorDigest: String(index + 1).repeat(64),
+          codeOwner: 'packages.domain.privacy',
+          adapterPackage: '@fitness-os/domain',
+          storageKind: 'in_memory_synthetic',
+          allowedPurposeIds: [],
+          allowedCategoryIds: [],
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: ['export'],
+          unsupportedCapabilities: [],
+          recordFamilies: [
+            {
+              family: 'privacy_export_metadata',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          environmentApplicability: 'synthetic_only',
+          requiredReadiness: 'mechanism_only',
+          synthetic: true,
+        })),
+      }),
+    );
 
   const seedRequest = (
     state: 'in_progress' | 'partially_failed' | 'completed',
@@ -1898,25 +2862,28 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     requestId: stepRequestId,
     processorId: processorA,
     capability: 'export',
-    outcome: 'completed',
     operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     correlationId: '55555555-5555-4555-8555-555555555555',
-    recordedAt: '2026-08-18T12:02:00.000Z',
     ...overrides,
+  });
+
+  const executionReceipt = (overrides: Record<string, unknown> = {}) =>
+    privacyProcessorExecutionReceiptSchema.parse({
+      requestId: stepRequestId,
+      processorId: processorA,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+      ...overrides,
+    });
+
+  const executionReceipts = (overrides: Record<string, unknown> = {}) => ({
+    listByOperationId: async () => [executionReceipt(overrides)],
   });
 
   const basePayload = (overrides: Record<string, unknown> = {}) => ({
     step: step(),
-    expected: [{ processorId: processorA, capability: 'export' }],
-    transitionId: privacySubjectRequestTransitionIdSchema.parse(
-      'a1111111-1111-4111-8111-111111111111',
-    ),
-    operationId: privacyOperationIdSchema.parse(
-      'b2222222-2222-4222-8222-222222222222',
-    ),
-    correlationId: privacyCorrelationIdSchema.parse(
-      '55555555-5555-4555-8555-555555555555',
-    ),
     productionMode: false,
     ...overrides,
   });
@@ -1943,12 +2910,18 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
   it('records the step but stays incomplete while an expected pair has not reported', async () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
     subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
     const app = buildApp(
       { logger: false },
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts({
+            outcome: 'permanent_failure',
+          }),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: stepInventory([processorA, processorB]),
+          processorSteps,
           subjectRequests: subjectRequests as never,
         },
       },
@@ -1957,12 +2930,7 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-step-record',
-      payload: basePayload({
-        expected: [
-          { processorId: processorA, capability: 'export' },
-          { processorId: processorB, capability: 'access' },
-        ],
-      }),
+      payload: basePayload(),
     });
     const body = privacySyntheticProcessorStepRecordResponseSchema.parse(
       response.json(),
@@ -1976,7 +2944,318 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     await expect(subjectRequests.get(stepRequestId)).resolves.toMatchObject({
       state: 'in_progress',
     });
+    await expect(
+      processorSteps.listForRequest(stepRequestId),
+    ).resolves.toMatchObject([
+      {
+        outcome: 'permanent_failure',
+        recordedAt: '2026-08-18T12:00:00.000Z',
+      },
+    ]);
 
+    await app.close();
+  });
+
+  it('fails closed without a trusted expected inventory', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: { processorSteps, subjectRequests: subjectRequests as never },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.json()).toEqual({ status: 'plan_unavailable' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('fails closed when the request-pinned inventory digest changed', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const currentInventory = await stepInventory([processorA]).getInventory();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: {
+            getInventory: async () => ({
+              ...currentInventory,
+              inventoryVersionDigest: '2'.repeat(64),
+            }),
+          },
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.json()).toEqual({ status: 'inventory_mismatch' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('fails closed when the trusted request plan is incomplete', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.json()).toEqual({ status: 'plan_incomplete' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('rejects a processor step that is absent from the trusted plan', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({
+        step: step({ processorId: processorB }),
+      }),
+    });
+
+    expect(response.json()).toEqual({ status: 'step_not_planned' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('rejects step correlation that differs from the pinned request', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({
+        step: step({
+          correlationId: '77777777-7777-4777-8777-777777777777',
+        }),
+      }),
+    });
+
+    expect(response.json()).toEqual({ status: 'binding_mismatch' });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('fails closed without an independent processor execution receipt source', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.json()).toEqual({
+      status: 'execution_receipt_unavailable',
+    });
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it.each([
+    ['missing', []],
+    ['ambiguous', [executionReceipt(), executionReceipt()]],
+    [
+      'mismatched',
+      [executionReceipt({ outcome: 'completed', processorId: processorB })],
+    ],
+  ])(
+    'rejects %s independent processor execution evidence before append',
+    async (_case, receipts) => {
+      const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+      subjectRequests.seedForTest(seedRequest('in_progress'));
+      const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+      const app = buildApp(
+        { logger: false },
+        {
+          allowSyntheticPrivacy: true,
+          privacy: {
+            expectedInventory: stepInventory([processorA]),
+            processorExecutionReceipts: {
+              listByOperationId: async () => receipts,
+            },
+            processorSteps,
+            subjectRequests: subjectRequests as never,
+          },
+        },
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/privacy/synthetic/processor-step-record',
+        payload: basePayload(),
+      });
+
+      expect(response.json()).toEqual({
+        status: 'execution_receipt_invalid',
+      });
+      await expect(
+        processorSteps.listForRequest(stepRequestId),
+      ).resolves.toEqual([]);
+      await app.close();
+    },
+  );
+
+  it('returns 503 without appending when processor receipt evidence is unavailable', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          expectedInventory: stepInventory([processorA]),
+          processorExecutionReceipts: {
+            listByOperationId: () => {
+              throw new Error('processor receipt unavailable');
+            },
+          },
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
+    await app.close();
+  });
+
+  it('returns 503 without appending when the trusted clock is unavailable', async () => {
+    const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
+    subjectRequests.seedForTest(seedRequest('in_progress'));
+    const processorSteps = new SyntheticPrivacyProcessorStepRepository();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: {
+            nowUtcMs: () => {
+              throw new Error('clock unavailable');
+            },
+          },
+          expectedInventory: stepInventory([processorA]),
+          processorExecutionReceipts: executionReceipts(),
+          processorSteps,
+          subjectRequests: subjectRequests as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+    await expect(processorSteps.listForRequest(stepRequestId)).resolves.toEqual(
+      [],
+    );
     await app.close();
   });
 
@@ -1988,7 +3267,9 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
         },
       },
@@ -2008,7 +3289,12 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       status: 'advanced',
       completion: 'completed',
       request: { state: 'completed' },
-      transition: { nextState: 'completed' },
+      transition: {
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        nextState: 'completed',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        transitionId: 'e1111111-1111-4111-8111-111111111111',
+      },
     });
 
     await app.close();
@@ -2023,13 +3309,19 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     const subjectRequests = new SyntheticPrivacySubjectRequestRepository();
     subjectRequests.seedForTest(seedRequest('in_progress'));
     const processorSteps = new SyntheticPrivacyProcessorStepRepository();
-    await processorSteps.append(step() as never);
+    await processorSteps.append({
+      ...step(),
+      outcome: 'completed',
+      recordedAt: '2026-08-18T12:02:00.000Z',
+    } as never);
     const app = buildApp(
       { logger: false },
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
           processorSteps: processorSteps as never,
         },
@@ -2066,7 +3358,9 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       {
         allowSyntheticPrivacy: true,
         privacy: {
+          processorExecutionReceipts: executionReceipts(),
           fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          expectedInventory: stepInventory([processorA]),
           subjectRequests: subjectRequests as never,
         },
       },
@@ -2090,6 +3384,52 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
     await app.close();
   });
 
+  it('hard-disables production before reading coordinator evidence', async () => {
+    let evidenceReads = 0;
+    const unavailable = () => {
+      evidenceReads += 1;
+      throw new Error('must not read');
+    };
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          clock: { nowUtcMs: unavailable },
+          expectedInventory: { getInventory: async () => unavailable() },
+          processorExecutionReceipts: {
+            listByOperationId: async () => unavailable(),
+          },
+          processorSteps: {
+            append: async () => unavailable(),
+            listForRequest: async () => unavailable(),
+          } as never,
+          subjectRequests: {
+            applyTransition: async () => unavailable(),
+            createReceived: async () => unavailable(),
+            get: async () => unavailable(),
+            listTransitions: async () => unavailable(),
+          } as never,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({ productionMode: true }),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      reason: 'production_path',
+      status: 'hard_disabled',
+    });
+    expect(evidenceReads).toBe(0);
+
+    await app.close();
+  });
+
   it('rejects a malformed request body', async () => {
     const app = buildSyntheticPrivacyApp();
 
@@ -2097,6 +3437,25 @@ describe('POST /v1/privacy/synthetic/processor-step-record', () => {
       method: 'POST',
       url: '/v1/privacy/synthetic/processor-step-record',
       payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
+
+    await app.close();
+  });
+
+  it('rejects a caller-supplied processor outcome at the HTTP boundary', async () => {
+    const app = buildSyntheticPrivacyApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/processor-step-record',
+      payload: basePayload({
+        step: { ...step(), outcome: 'completed' },
+      }),
     });
 
     expect(response.statusCode).toBe(400);
@@ -2178,6 +3537,38 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
         synthetic: true,
       },
     });
+
+    await app.close();
+  });
+
+  it('records only after an independent execution-receipt source verifies the binding', async () => {
+    const governanceLifecycle = new SyntheticPrivacyGovernanceLifecycleLedger();
+    const receipt =
+      privacyGovernanceLifecycleBindingSchema.parse(basePayload());
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          fixedUtcMs: '2026-08-18T12:00:00.000Z',
+          governanceExecutionReceipts: {
+            listByOperationId: async () => [receipt],
+          },
+          governanceLifecycle,
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    await expect(
+      governanceLifecycle.getByOperationId(receipt.operationId),
+    ).resolves.toMatchObject(receipt);
 
     await app.close();
   });

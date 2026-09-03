@@ -68,11 +68,11 @@ export function deriveManifestState(
   const byMovement = new Map<string, MovementManifestRecord[]>();
 
   for (const [index, record] of records.entries()) {
-    assertValidManifestRecord(record);
-
-    if (index > 0 && records[index - 1] === undefined) {
+    if (!(index in records)) {
       throw new Error('Manifest records cannot be sparse.');
     }
+
+    assertValidManifestRecord(record);
 
     const history = byMovement.get(record.movementId) ?? [];
     const previous = history.at(-1);

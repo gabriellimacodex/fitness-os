@@ -1,12 +1,17 @@
 import {
-  authorizeRetentionExecution,
   buildRequestProcessorPlan,
   compareExpectedInventoryToRuntime,
+  coordinateSyntheticProcessorStep,
+  createPrivacyGovernanceExecutionReceiptVerifier,
+  createPrivacyProcessorExecutionReceiptVerifier,
   createSyntheticPrivacyDataUsePorts,
+  digestRetentionExecutionInput,
   evaluateDataUse,
   planRetentionPreview,
+  planRetentionPreviewWithRetentionRule,
   planWithdrawal,
   recordProcessorStepAndAdvanceRequest,
+  resolveRetentionExecutionAuthorization,
   SyntheticPrivacyAuthorizationEvidenceLedger,
   SyntheticPrivacyGovernanceLifecycleLedger,
   SyntheticPrivacyGovernanceLifecycleBindingVerifier,
@@ -14,6 +19,9 @@ import {
   SyntheticPrivacyAttributionVerifier,
   SyntheticPrivacyIntegrityVerifier,
   SyntheticPrivacyProcessorStepRepository,
+  JournaledSyntheticPrivacyProcessorExecutionCoordinator,
+  SyntheticPrivacyProcessorExecutionCoordinator,
+  SyntheticPrivacyRetentionRuleRepository,
   SyntheticPrivacySubjectDataProcessor,
   SyntheticPrivacySubjectRequestRepository,
   SyntheticPrivacyTrustedClock,
@@ -21,14 +29,18 @@ import {
   type PrivacyAuditSink,
   type PrivacyAuthorizationEvidenceLedger,
   type PrivacyExpectedProcessorInventoryPort,
+  type PrivacyGovernanceExecutionReceiptSource,
   type PrivacyGovernanceLifecycleLedger,
   type PrivacyGovernanceLifecycleBindingVerifier,
   type PrivacyIdFactory,
   type PrivacyIntegrityVerifier,
   type PrivacyPolicyPackageRepository,
+  type PrivacyProcessorExecutionReceiptSource,
+  type PrivacyProcessorExecutionJournal,
   type PrivacyProcessorStepRepository,
   type PrivacyPurposeRegistry,
   type PrivacyRetentionPreviewRepository,
+  type PrivacyRetentionRuleRepository,
   type PrivacyRuntimeProcessorRegistry,
   type PrivacySubjectRequestRepository,
   type PrivacySubjectDataProcessorResolver,
@@ -48,6 +60,8 @@ import {
   privacySyntheticRuntimeProcessorsResponseSchema,
   privacySyntheticProcessorExecuteRequestSchema,
   privacySyntheticProcessorExecuteResponseSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
   privacySyntheticProcessorPlanRequestSchema,
   privacySyntheticProcessorPlanResponseSchema,
   privacySyntheticProcessorStepRecordRequestSchema,
@@ -64,6 +78,7 @@ import {
   type ApiErrorCode,
   type PrivacyGovernanceLifecycleBinding,
   type PrivacyReadinessResult,
+  type PrivacyRetentionPreviewRecord,
 } from '@fitness-os/schemas';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -96,12 +111,28 @@ export interface PrivacySyntheticOptions {
    */
   processorSteps?: PrivacyProcessorStepRepository;
   /**
+   * Durable disposable ownership journal. When present with a resolver, the
+   * coordinator refuses ambiguous restart re-execution.
+   */
+  processorExecutionJournal?: PrivacyProcessorExecutionJournal;
+  /**
+   * Independent read-only evidence for synthetic processor outcomes. Omission,
+   * ambiguity, mismatch, or unavailability prevents every step append.
+   */
+  processorExecutionReceipts?: PrivacyProcessorExecutionReceiptSource;
+  /**
    * Optional disposable governance-lifecycle proof ledger (e.g. Postgres).
    * Defaults to an in-memory synthetic ledger shared for the lifetime of
    * this route registration. Recording a row is not authorization to
    * execute a governance-lifecycle command.
    */
   governanceLifecycle?: PrivacyGovernanceLifecycleLedger;
+  /**
+   * Read-only receipts from an execution/coordinator authority that is
+   * independent from `governanceLifecycle`, the append target. Used only when
+   * an explicit `governanceLifecycleVerifier` is not supplied.
+   */
+  governanceExecutionReceipts?: PrivacyGovernanceExecutionReceiptSource;
   /**
    * Composition-owned verifier for the exact request/processor/operation/result
    * tuple. Defaults to an empty fail-closed verifier.
@@ -152,11 +183,20 @@ export interface PrivacySyntheticOptions {
   /**
    * Optional disposable retention preview repository (e.g. Postgres). When
    * set, a successfully planned retention preview is additionally persisted
-   * keyed by its deterministic `selectionDigest`. The public response shape
-   * is unchanged; consuming the persisted record at execution-authorize time
-   * remains a later composition step.
+   * keyed by its deterministic `selectionDigest`; execution authorization reads
+   * it back and atomically binds the `planned` -> `executed` transition to one
+   * operation ID. No processor deletion/transformation occurs on this route.
    */
   retentionPreviews?: PrivacyRetentionPreviewRepository;
+  /**
+   * Optional retention-rule registry (e.g. Postgres). Defaults to an
+   * in-memory synthetic registry shared for the lifetime of this route
+   * registration, seeded with no rules — an unrecognized request keeps
+   * failing closed as `no_active_retention_rule` until a rule is seeded or
+   * injected. Only consulted when a request includes
+   * `retentionRuleSelection`.
+   */
+  retentionRules?: PrivacyRetentionRuleRepository;
 }
 
 function sendError(
@@ -286,12 +326,34 @@ export function registerPrivacySyntheticRoutes(
     options.subjectRequests ?? new SyntheticPrivacySubjectRequestRepository();
   const processorSteps =
     options.processorSteps ?? new SyntheticPrivacyProcessorStepRepository();
+  const processorExecutionReceiptVerifier =
+    options.processorExecutionReceipts === undefined
+      ? undefined
+      : createPrivacyProcessorExecutionReceiptVerifier(
+          options.processorExecutionReceipts,
+        );
+  const processorExecutionCoordinator =
+    options.processorResolver === undefined
+      ? undefined
+      : options.processorExecutionJournal === undefined
+        ? new SyntheticPrivacyProcessorExecutionCoordinator(
+            options.processorResolver,
+          )
+        : new JournaledSyntheticPrivacyProcessorExecutionCoordinator({
+            clock,
+            journal: options.processorExecutionJournal,
+            resolver: options.processorResolver,
+          });
   const governanceLifecycle =
     options.governanceLifecycle ??
     new SyntheticPrivacyGovernanceLifecycleLedger();
   const governanceLifecycleVerifier =
     options.governanceLifecycleVerifier ??
-    new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    (options.governanceExecutionReceipts === undefined
+      ? new SyntheticPrivacyGovernanceLifecycleBindingVerifier()
+      : createPrivacyGovernanceExecutionReceiptVerifier(
+          options.governanceExecutionReceipts,
+        ));
   const injectedEvidence = options.evidence;
   const injectedAudit = options.audit;
   const injectedPolicies = options.policies;
@@ -300,6 +362,8 @@ export function registerPrivacySyntheticRoutes(
   const processors = options.processors;
   const readiness = options.readiness;
   const retentionPreviews = options.retentionPreviews;
+  const retentionRules =
+    options.retentionRules ?? new SyntheticPrivacyRetentionRuleRepository();
 
   app.addHook('onSend', async (request, reply, payload) => {
     const path = request.url.split('?')[0] ?? '';
@@ -656,7 +720,19 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = planRetentionPreview(body.data);
+      const { retentionRuleSelection, ...previewInput } = body.data;
+
+      const result =
+        retentionRuleSelection === undefined
+          ? planRetentionPreview(previewInput)
+          : await planRetentionPreviewWithRetentionRule({
+              ...previewInput,
+              retentionRules,
+              engineeringCategoryId:
+                retentionRuleSelection.engineeringCategoryId,
+              purposeVersionId: retentionRuleSelection.purposeVersionId,
+              ruleVersionId: retentionRuleSelection.ruleVersionId,
+            });
 
       if (result.status === 'invalid') {
         return privacySyntheticRetentionPreviewResponseSchema.parse({
@@ -668,9 +744,20 @@ export function registerPrivacySyntheticRoutes(
       if (retentionPreviews !== undefined) {
         // Idempotent write-through: replanning the identical input yields the
         // identical selectionDigest, so a 'conflict' here is an expected
-        // no-op, not an error to surface to the caller.
+        // no-op, not an error to surface to the caller. The persisted record
+        // keeps the frozen `privacyRetentionPreviewRecordSchema` shape as-is;
+        // a rule-aware plan's `retentionRuleDigest`/`retentionRuleVersionId`
+        // stay response-only until that record contract is separately
+        // extended.
+        const preview = result.preview;
         await retentionPreviews.put({
-          ...result.preview,
+          policyVersionId: preview.policyVersionId,
+          inventoryVersionDigest: preview.inventoryVersionDigest,
+          processorDescriptorDigests: preview.processorDescriptorDigests,
+          watermark: preview.watermark,
+          selectionDigest: preview.selectionDigest,
+          approvedExceptionIds: preview.approvedExceptionIds,
+          synthetic: preview.synthetic,
           status: 'planned',
           createdAt: clock.nowUtcMs(),
           executedAt: null,
@@ -696,7 +783,107 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = authorizeRetentionExecution(body.data);
+      if (body.data.productionMode) {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'production_path',
+          status: 'hard_disabled',
+        });
+      }
+
+      if (retentionPreviews === undefined) {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'preview_mismatch',
+          status: 'hard_disabled',
+        });
+      }
+
+      const executionInputDigest = digestRetentionExecutionInput({
+        previewTtlMs: body.data.previewTtlMs,
+        requestedSelectionDigest: body.data.requestedSelectionDigest,
+      });
+
+      let preview: PrivacyRetentionPreviewRecord | null;
+      try {
+        preview = await retentionPreviews.getBySelectionDigest(
+          body.data.requestedSelectionDigest,
+        );
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention authorization evidence unavailable',
+        );
+      }
+
+      if (preview?.status === 'executed') {
+        try {
+          const replay = await retentionPreviews.markExecuted({
+            executedAt: preview.executedAt ?? preview.createdAt,
+            inputDigest: executionInputDigest,
+            operationId: body.data.operationId,
+            selectionDigest: body.data.requestedSelectionDigest,
+          });
+
+          if (replay === 'not_found') {
+            return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse(
+              {
+                reason: 'preview_mismatch',
+                status: 'hard_disabled',
+              },
+            );
+          }
+
+          return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse(
+            { status: replay },
+          );
+        } catch {
+          return sendError(
+            request,
+            reply,
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Retention execution transition unavailable',
+          );
+        }
+      }
+
+      let result: ReturnType<typeof resolveRetentionExecutionAuthorization>;
+      let nowUtcMs: string;
+      try {
+        const currentInventoryVersionDigest =
+          expectedInventory === undefined
+            ? ''
+            : (await expectedInventory.getInventory()).inventoryVersionDigest;
+        const currentProcessorDescriptorDigests =
+          processors === undefined
+            ? []
+            : (await processors.listDescriptors()).map(
+                (descriptor) => descriptor.descriptorDigest,
+              );
+        nowUtcMs = clock.nowUtcMs();
+
+        result = resolveRetentionExecutionAuthorization({
+          authoritySynthetic: true,
+          currentInventoryVersionDigest,
+          currentProcessorDescriptorDigests,
+          nowUtcMs,
+          policySynthetic: true,
+          preview,
+          previewTtlMs: body.data.previewTtlMs,
+          productionMode: false,
+          requestedSelectionDigest: body.data.requestedSelectionDigest,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention authorization evidence unavailable',
+        );
+      }
 
       if (result.status === 'hard_disabled') {
         return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
@@ -705,8 +892,34 @@ export function registerPrivacySyntheticRoutes(
         });
       }
 
+      let transition:
+        'executed' | 'idempotent_replay' | 'conflict' | 'not_found';
+      try {
+        transition = await retentionPreviews.markExecuted({
+          executedAt: nowUtcMs,
+          inputDigest: executionInputDigest,
+          operationId: body.data.operationId,
+          selectionDigest: body.data.requestedSelectionDigest,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Retention execution transition unavailable',
+        );
+      }
+
+      if (transition === 'not_found') {
+        return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
+          reason: 'preview_mismatch',
+          status: 'hard_disabled',
+        });
+      }
+
       return privacySyntheticRetentionExecutionAuthorizeResponseSchema.parse({
-        status: 'allowed_synthetic_test',
+        status: transition,
       });
     },
   );
@@ -743,6 +956,67 @@ export function registerPrivacySyntheticRoutes(
   });
 
   app.post(
+    '/v1/privacy/synthetic/processor-coordinate',
+    async (request, reply) => {
+      const body = privacySyntheticProcessorCoordinateRequestSchema.safeParse(
+        request.body,
+      );
+      if (!body.success) {
+        return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+      }
+      if (body.data.productionMode) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'hard_disabled',
+          reason: 'production_path',
+        });
+      }
+      if (expectedInventory === undefined) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'plan_incomplete',
+        });
+      }
+      if (processorExecutionCoordinator === undefined) {
+        return privacySyntheticProcessorCoordinateResponseSchema.parse({
+          status: 'handler_missing',
+        });
+      }
+
+      let result;
+      try {
+        result = await coordinateSyntheticProcessorStep({
+          clock,
+          execution: processorExecutionCoordinator,
+          expectedInventory,
+          operationId: body.data.operationId,
+          productionMode: false,
+          requestId: body.data.requestId,
+          receipts: processorExecutionCoordinator,
+          requests: subjectRequests,
+          steps: processorSteps,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor coordination unavailable',
+        );
+      }
+
+      const response = privacySyntheticProcessorCoordinateResponseSchema.parse(
+        result.status === 'invalid_transition'
+          ? { status: result.status, reason: result.reason }
+          : result,
+      );
+      if (result.status === 'execution_unavailable') {
+        return reply.code(503).send(response);
+      }
+      return response;
+    },
+  );
+
+  app.post(
     '/v1/privacy/synthetic/processor-step-record',
     async (request, reply) => {
       const body = privacySyntheticProcessorStepRecordRequestSchema.safeParse(
@@ -753,17 +1027,142 @@ export function registerPrivacySyntheticRoutes(
         return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
       }
 
-      const result = await recordProcessorStepAndAdvanceRequest({
-        requests: subjectRequests,
-        steps: processorSteps,
-        step: body.data.step,
-        expected: body.data.expected,
-        updatedAt: clock.nowUtcMs(),
-        transitionId: body.data.transitionId,
-        operationId: body.data.operationId,
-        correlationId: body.data.correlationId,
-        productionMode: body.data.productionMode,
+      if (body.data.productionMode) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          reason: 'production_path',
+          status: 'hard_disabled',
+        });
+      }
+
+      let subjectRequest;
+      try {
+        subjectRequest = await subjectRequests.get(body.data.step.requestId);
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor plan evidence unavailable',
+        );
+      }
+
+      if (subjectRequest === null) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'request_not_found',
+        });
+      }
+
+      if (body.data.step.correlationId !== subjectRequest.correlationId) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'binding_mismatch',
+        });
+      }
+
+      if (expectedInventory === undefined) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'plan_unavailable',
+        });
+      }
+
+      let inventory;
+      try {
+        inventory = await expectedInventory.getInventory();
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor plan evidence unavailable',
+        );
+      }
+
+      if (
+        inventory.inventoryVersionDigest !==
+        subjectRequest.inventoryVersionDigest
+      ) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'inventory_mismatch',
+        });
+      }
+
+      const plan = buildRequestProcessorPlan({
+        expected: inventory,
+        requestType: subjectRequest.requestType,
       });
+      if (plan.status !== 'planned') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'plan_incomplete',
+        });
+      }
+      if (
+        !plan.steps.some(
+          (planned) =>
+            planned.processorId === body.data.step.processorId &&
+            planned.capability === body.data.step.capability,
+        )
+      ) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'step_not_planned',
+        });
+      }
+
+      if (processorExecutionReceiptVerifier === undefined) {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'execution_receipt_unavailable',
+        });
+      }
+
+      const receiptVerification =
+        await processorExecutionReceiptVerifier.verify({
+          requestId: body.data.step.requestId,
+          processorId: body.data.step.processorId,
+          capability: body.data.step.capability,
+          operationId: body.data.step.operationId,
+          correlationId: body.data.step.correlationId,
+        });
+      if (receiptVerification.status === 'unavailable') {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor execution receipt unavailable',
+        );
+      }
+      if (receiptVerification.status === 'invalid') {
+        return privacySyntheticProcessorStepRecordResponseSchema.parse({
+          status: 'execution_receipt_invalid',
+        });
+      }
+
+      let result: Awaited<
+        ReturnType<typeof recordProcessorStepAndAdvanceRequest>
+      >;
+      try {
+        const recordedAt = clock.nowUtcMs();
+        result = await recordProcessorStepAndAdvanceRequest({
+          requests: subjectRequests,
+          steps: processorSteps,
+          step: {
+            ...body.data.step,
+            outcome: receiptVerification.receipt.outcome,
+            recordedAt,
+          },
+          expected: plan.steps,
+          updatedAt: recordedAt,
+          productionMode: false,
+        });
+      } catch {
+        return sendError(
+          request,
+          reply,
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Processor-step coordination unavailable',
+        );
+      }
 
       if (result.status === 'invalid_transition') {
         return privacySyntheticProcessorStepRecordResponseSchema.parse({

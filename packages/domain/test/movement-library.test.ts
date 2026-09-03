@@ -4,6 +4,7 @@ import { movementDetailSchema } from '@fitness-os/schemas';
 
 import {
   createMovementCatalog,
+  deriveManifestState,
   digestMovementDetail,
   getMovementById,
   listMovements,
@@ -97,6 +98,31 @@ describe('createMovementCatalog', () => {
     ).toThrow(/reserved/);
   });
 
+  it('excludes a withdrawn movement from catalog lookups', () => {
+    const input = reviewedCatalogInput([SQUAT, HINGE]);
+    const withdraw: MovementManifestRecord = {
+      action: 'withdraw',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+
+    const catalog = createMovementCatalog({
+      ...input,
+      manifest: [...input.manifest, withdraw],
+      published: [HINGE],
+    });
+
+    expect(catalog.getMovementById(SQUAT.movementId)).toEqual({
+      status: 'not_found',
+    });
+    expect(catalog.listMovements().map((item) => item.movementId)).toEqual([
+      HINGE.movementId,
+    ]);
+  });
+
   it('derives the current catalog from the latest lifecycle record', () => {
     const revised = {
       ...SQUAT,
@@ -182,5 +208,36 @@ describe('createMovementCatalog', () => {
         published: [revised],
       }),
     ).toThrow(/increment by one/);
+  });
+});
+
+describe('deriveManifestState', () => {
+  it('rejects a sparse manifest array', () => {
+    const publish: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v1.md`,
+      sequence: 1,
+    };
+    const sparse: MovementManifestRecord[] = [];
+    sparse[1] = publish;
+
+    expect(sparse).toHaveLength(2);
+    expect(() => deriveManifestState(sparse)).toThrow(/sparse/);
+  });
+
+  it('accepts a dense manifest array with no holes', () => {
+    const publish: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v1.md`,
+      sequence: 1,
+    };
+
+    expect(() => deriveManifestState([publish])).not.toThrow();
   });
 });

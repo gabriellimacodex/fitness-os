@@ -1,5 +1,10 @@
 export { evaluateDataUse } from './data-use.js';
 export {
+  createPrivacyGovernanceExecutionReceiptVerifier,
+  createPrivacyProcessorExecutionReceiptVerifier,
+  type PrivacyProcessorExecutionReceiptVerificationResult,
+} from './execution-receipt.js';
+export {
   compareExpectedInventoryToRuntime,
   type InventoryCoverageMismatch,
   type InventoryCoverageResult,
@@ -16,6 +21,7 @@ export type {
   PrivacyDataUsePorts,
   PrivacyEvidenceAppendResult,
   PrivacyExpectedProcessorInventoryPort,
+  PrivacyGovernanceExecutionReceiptSource,
   PrivacyGovernanceLifecycleAppendResult,
   PrivacyGovernanceLifecycleBindingVerificationResult,
   PrivacyGovernanceLifecycleBindingVerifier,
@@ -26,9 +32,15 @@ export type {
   PrivacyIntegrityVerificationResult,
   PrivacyIntegrityVerifier,
   PrivacyPolicyPackageRepository,
+  PrivacyProcessorExecutionReceiptSource,
+  PrivacyProcessorExecutionJournal,
+  PrivacyProcessorExecutionJournalReserveResult,
+  PrivacyProcessorExecutionCoordinator,
+  PrivacyProcessorExecutionCoordinationResult,
   PrivacyProcessorStepRepository,
   PrivacyPurposeRegistry,
   PrivacyReferencePutResult,
+  PrivacyRetentionPreviewExecutionResult,
   PrivacyRetentionPreviewRepository,
   PrivacyRetentionRuleRepository,
   PrivacyRuntimeProcessorRegistry,
@@ -40,6 +52,14 @@ export type {
   PrivacyTrustedClock,
   PrivacyWithdrawalAppendResult,
 } from './ports.js';
+export {
+  coordinateSyntheticProcessorStep,
+  digestProcessorExecutionInput,
+  JournaledSyntheticPrivacyProcessorExecutionCoordinator,
+  SyntheticPrivacyProcessorExecutionCoordinator,
+  type ProcessorExecutionInput,
+  type SyntheticProcessorCoordinationResult,
+} from './processor-coordinator.js';
 export {
   composeSyntheticProcessorSimulation,
   SyntheticPrivacySubjectDataProcessor,
@@ -67,9 +87,11 @@ export {
 } from './request.js';
 export {
   authorizeRetentionExecution,
+  digestRetentionExecutionInput,
   digestRetentionRuleReference,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
+  resolveRetentionExecutionAuthorization,
   selectActiveRetentionRule,
   type RetentionExecutionAuthorization,
   type RetentionPreviewPlan,

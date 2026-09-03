@@ -147,9 +147,21 @@ const processorSteps = {
   listForRequest: async () => [],
 };
 
+const processorExecutionJournal = {
+  complete: async () => 'accepted' as const,
+  getByOperationId: async () => null,
+  markReconciliationRequired: async () => 'accepted' as const,
+  reserve: async () => ({ status: 'reserved' as const }),
+};
+
 const governanceLifecycle = {
   append: async () => 'accepted' as const,
   getByOperationId: async () => null,
+};
+
+const retentionPreviews = {
+  getBySelectionDigest: async () => null,
+  put: async () => 'accepted' as const,
 };
 
 vi.mock('@fitness-os/database', () => ({
@@ -165,8 +177,14 @@ vi.mock('@fitness-os/database', () => ({
   createPostgresPrivacyPurposeRegistry: vi.fn(() => purposes),
   createPostgresPrivacyRuntimeProcessorRegistry: vi.fn(() => processors),
   createPostgresPrivacyProcessorStepRepository: vi.fn(() => processorSteps),
+  createPostgresPrivacyProcessorExecutionJournal: vi.fn(
+    () => processorExecutionJournal,
+  ),
   createPostgresPrivacyGovernanceLifecycleLedger: vi.fn(
     () => governanceLifecycle,
+  ),
+  createPostgresPrivacyRetentionPreviewRepository: vi.fn(
+    () => retentionPreviews,
   ),
 }));
 
@@ -176,7 +194,9 @@ import {
   createPostgresPrivacyGovernanceLifecycleLedger,
   createPostgresPrivacyPolicyPackageRepository,
   createPostgresPrivacyProcessorStepRepository,
+  createPostgresPrivacyProcessorExecutionJournal,
   createPostgresPrivacyPurposeRegistry,
+  createPostgresPrivacyRetentionPreviewRepository,
   createPostgresPrivacyRuntimeProcessorRegistry,
   createPostgresPrivacySubjectRequestRepository,
 } from '@fitness-os/database';
@@ -207,9 +227,15 @@ describe('privacy PG persistence bundle', () => {
     expect(createPostgresPrivacyProcessorStepRepository).toHaveBeenCalledWith(
       connection,
     );
+    expect(createPostgresPrivacyProcessorExecutionJournal).toHaveBeenCalledWith(
+      connection,
+    );
     expect(createPostgresPrivacyGovernanceLifecycleLedger).toHaveBeenCalledWith(
       connection,
     );
+    expect(
+      createPostgresPrivacyRetentionPreviewRepository,
+    ).toHaveBeenCalledWith(connection);
     expect(persistence.evidence.getEvidence).toBe(getEvidence);
     expect(persistence.audit.append).toBe(append);
     expect(persistence.subjectRequests).toBe(subjectRequests);
@@ -217,7 +243,11 @@ describe('privacy PG persistence bundle', () => {
     expect(persistence.purposes).toBe(purposes);
     expect(persistence.processors).toBe(processors);
     expect(persistence.processorSteps).toBe(processorSteps);
+    expect(persistence.processorExecutionJournal).toBe(
+      processorExecutionJournal,
+    );
     expect(persistence.governanceLifecycle).toBe(governanceLifecycle);
+    expect(persistence.retentionPreviews).toBe(retentionPreviews);
   });
 
   it('drives synthetic data-use-evaluate over the composed bundle ports', async () => {
