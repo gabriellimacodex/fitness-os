@@ -231,6 +231,30 @@ export const onboardingPrincipalBinding = pgTable(
 );
 
 /**
+ * Disposable synthetic claim-secret brute-force failure log. Backs
+ * `ClaimFailureTracker`: stores only a caller-chosen opaque key and the
+ * trusted failure instant, never a claim secret, invitation, or outcome
+ * detail, matching `SyntheticClaimFailureTracker`'s in-memory shape.
+ */
+export const onboardingClaimFailure = pgTable(
+  'onboarding_claim_failure',
+  {
+    failureId: uuid('failure_id').primaryKey().defaultRandom(),
+    key: text('key').notNull(),
+    occurredAt: timestamp('occurred_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    index('onboarding_claim_failure_key_occurred_at_idx').on(
+      table.key,
+      table.occurredAt,
+    ),
+  ],
+);
+
+/**
  * Disposable synthetic append-only onboarding transition evidence.
  * Mirrors the domain `OnboardingTransitionSink` port shape exactly; a
  * (aggregate, aggregate_id, operation_id, previous_state, next_state) repeat

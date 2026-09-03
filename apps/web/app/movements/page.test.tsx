@@ -57,6 +57,14 @@ describe('loadMovements', () => {
     ).resolves.toEqual({ status: 'empty' });
   });
 
+  it('maps a non-empty API list to the ready state', async () => {
+    await expect(
+      loadMovements({
+        movements: async () => ({ items: [squat] }),
+      } as never),
+    ).resolves.toEqual({ status: 'ready', items: [squat] });
+  });
+
   it('maps an invalid API origin to the unavailable state', async () => {
     const previous = process.env.API_BASE_URL;
     process.env.API_BASE_URL = 'ftp://example.com';

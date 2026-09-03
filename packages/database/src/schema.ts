@@ -40,6 +40,7 @@ export {
 
 export {
   onboardingAttempt,
+  onboardingClaimFailure,
   onboardingInvitation,
   onboardingOperation,
   onboardingPrincipalBinding,
