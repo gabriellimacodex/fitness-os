@@ -7,7 +7,7 @@ describe('privacy platform env composition', () => {
     expect(createPrivacyPlatformFromEnv({})).toBeNull();
   });
 
-  it('composes real ports, a governance-lifecycle verifier, and a readiness probe without connecting', () => {
+  it('composes real ports, retention rules, a governance-lifecycle verifier, and a readiness probe without connecting', () => {
     const handles = createPrivacyPlatformFromEnv({
       PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5999/never',
     });
@@ -36,7 +36,7 @@ describe('privacy platform env composition', () => {
       (handles?.platform as { allowSyntheticPrivacy?: unknown })
         .allowSyntheticPrivacy,
     ).toBeUndefined();
-    expect(privacy?.retentionRules).toBeUndefined();
+    expect(privacy?.retentionRules).toBeDefined();
   });
 
   it('produces independent connections and ledger instances across separate compositions', () => {
