@@ -13,6 +13,13 @@ import { requireDisposableDatabaseUrl } from './postgres.js';
 
 const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
 
+const REPOSITORY_COMPONENT_IDS = [
+  'invitation_repository',
+  'attempt_repository',
+  'operation_repository',
+  'role_mapping_repository',
+] as const;
+
 describe.skipIf(!process.env.TEST_DATABASE_URL)(
   'PRD 07 onboarding schema readiness (disposable PG)',
   () => {
@@ -69,6 +76,46 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           diagnosticCode: 'identity_adapter_synthetic',
           state: 'ready',
         });
+      });
+
+      it('reports every repository component ready from the same real migration and table evidence', async () => {
+        const probe = createPostgresOnboardingReadinessProbe(connection, {
+          evaluatedAt: '2026-08-27T00:00:00.000Z',
+        });
+
+        const result = await probe.evaluate();
+
+        for (const componentId of REPOSITORY_COMPONENT_IDS) {
+          expect(
+            result.components.filter(
+              (component) => component.componentId === componentId,
+            ),
+          ).toEqual([{ componentId, diagnosticCode: null, state: 'ready' }]);
+        }
+      });
+
+      it('flips every repository component not_ready with migration_missing on a missing required migration', async () => {
+        const probe = createPostgresOnboardingReadinessProbe(connection, {
+          evaluatedAt: '2026-08-27T00:00:00.000Z',
+          requiredHashes: ['0'.repeat(64)],
+        });
+
+        const result = await probe.evaluate();
+
+        expect(result.mechanismReady).toBe(false);
+        for (const componentId of REPOSITORY_COMPONENT_IDS) {
+          expect(
+            result.components.filter(
+              (component) => component.componentId === componentId,
+            ),
+          ).toEqual([
+            {
+              componentId,
+              diagnosticCode: 'migration_missing',
+              state: 'not_ready',
+            },
+          ]);
+        }
       });
 
       it('reports the schema component not_ready with migration_missing and flips mechanismReady false on a missing required migration', async () => {
