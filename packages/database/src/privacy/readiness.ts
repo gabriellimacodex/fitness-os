@@ -7,11 +7,19 @@ import { sql } from 'drizzle-orm';
 
 import type {
   PrivacyReadinessComponent,
+  PrivacyReadinessComponentId,
   PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 import { canonicalizePrivacyReadinessDiagnosticCodes } from '@fitness-os/schemas';
-import type { PrivacyReadinessProbe } from '@fitness-os/domain';
-import { SyntheticPrivacyReadinessProbe } from '@fitness-os/domain';
+import type {
+  PrivacyExpectedProcessorInventoryPort,
+  PrivacyReadinessProbe,
+  PrivacyRuntimeProcessorRegistry,
+} from '@fitness-os/domain';
+import {
+  compareExpectedInventoryToRuntime,
+  SyntheticPrivacyReadinessProbe,
+} from '@fitness-os/domain';
 
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
@@ -193,24 +201,96 @@ export async function checkPrivacyGovernanceLifecycleDatabaseReadiness(
   }
 }
 
-const OVERRIDDEN_COMPONENT_IDS = [
+const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
   'migrations',
   'repositories',
+  'audit_sink',
   'governance_lifecycle',
 ] as const;
 
+const INVENTORY_COVERAGE_COMPONENT_IDS = [
+  'expected_inventory',
+  'runtime_processors',
+] as const;
+
+/**
+ * Evaluates the reviewed expected inventory against the runtime processor
+ * registry through the already-tested `compareExpectedInventoryToRuntime`
+ * mechanism and projects the result onto the two readiness components. This
+ * treats coverage as one combined check: any mismatch flips both components
+ * `not_ready` together (fail-closed) rather than inventing a finer per-field
+ * split between "expected inventory content" and "runtime availability".
+ * `runtime_processors` keeps its `processor_missing` default when at least
+ * one expected processor is absent from the runtime registry; otherwise both
+ * components fall back to `inventory_mismatch`.
+ */
+async function evaluateInventoryCoverageComponents(
+  expectedInventory: PrivacyExpectedProcessorInventoryPort,
+  runtimeProcessors: PrivacyRuntimeProcessorRegistry,
+): Promise<{
+  expectedInventoryComponent: PrivacyReadinessComponent;
+  runtimeProcessorsComponent: PrivacyReadinessComponent;
+}> {
+  const expected = await expectedInventory.getInventory();
+  const runtime = await runtimeProcessors.listDescriptors();
+  const coverage = compareExpectedInventoryToRuntime({ expected, runtime });
+
+  if (coverage.status === 'matched') {
+    return {
+      expectedInventoryComponent: {
+        componentId: 'expected_inventory',
+        state: 'ready',
+        diagnosticCode: null,
+      },
+      runtimeProcessorsComponent: {
+        componentId: 'runtime_processors',
+        state: 'ready',
+        diagnosticCode: null,
+      },
+    };
+  }
+
+  const hasProcessorMissing = coverage.mismatches.some(
+    (mismatch) => mismatch.diagnosticCode === 'processor_missing',
+  );
+
+  return {
+    expectedInventoryComponent: {
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    },
+    runtimeProcessorsComponent: {
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: hasProcessorMissing
+        ? 'processor_missing'
+        : 'inventory_mismatch',
+    },
+  };
+}
+
 /**
  * Wraps a base `PrivacyReadinessProbe` (defaults to
- * `SyntheticPrivacyReadinessProbe`) and replaces only its `migrations`,
- * `repositories`, and `governance_lifecycle` components with a real
- * evaluation of `checkPrivacyCoreDatabaseReadiness` and
+ * `SyntheticPrivacyReadinessProbe`) and replaces its `migrations`,
+ * `repositories`, `audit_sink`, and `governance_lifecycle` components with a
+ * real evaluation of `checkPrivacyCoreDatabaseReadiness` and
  * `checkPrivacyGovernanceLifecycleDatabaseReadiness` against `connection`.
- * Every other component (audit_sink, expected_inventory, runtime_processors,
- * identity_boundary, policy_package, recovery) is left exactly as the base
- * probe reports it — this does not verify those, only migration/table
- * presence. `mechanismReady` is recomputed as the conjunction of all
- * components so a real schema gap flips it `false`; `productionReady` stays
- * `false`, unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ * `audit_sink` reuses the core schema result: `privacy_audit_event` is
+ * already one of `REQUIRED_TABLES`, so the same migration/table evidence
+ * that backs `repositories` also backs the audit ledger's own table —
+ * mirroring the exact override pattern already used for the other bound
+ * components, not a functional round-trip through
+ * `createPostgresPrivacyAuditSink`. When both `expectedInventory` and
+ * `runtimeProcessors` are supplied, this also replaces `expected_inventory`
+ * and `runtime_processors` with a real `compareExpectedInventoryToRuntime`
+ * evaluation; when either is omitted, both stay exactly as the base probe
+ * reports them, matching prior behavior. Every remaining component
+ * (identity_boundary, policy_package, recovery) is left exactly as the base
+ * probe reports it — this does not verify those. `mechanismReady` is
+ * recomputed as the conjunction of all components so a real gap flips it
+ * `false`; `productionReady` stays `false`, unaffected by
+ * `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export function createPostgresPrivacyReadinessProbe(
   connection: PostgresConnection,
@@ -219,6 +299,8 @@ export function createPostgresPrivacyReadinessProbe(
     evaluatedAt?: string;
     requiredHashes?: readonly string[];
     governanceLifecycleRequiredHashes?: readonly string[];
+    expectedInventory?: PrivacyExpectedProcessorInventoryPort;
+    runtimeProcessors?: PrivacyRuntimeProcessorRegistry;
   } = {},
 ): PrivacyReadinessProbe {
   const baseProbe =
@@ -226,6 +308,7 @@ export function createPostgresPrivacyReadinessProbe(
     new SyntheticPrivacyReadinessProbe({
       evaluatedAt: options.evaluatedAt ?? new Date().toISOString(),
     });
+  const { expectedInventory, runtimeProcessors } = options;
 
   return {
     async evaluate(): Promise<PrivacyReadinessResult> {
@@ -237,6 +320,13 @@ export function createPostgresPrivacyReadinessProbe(
         await checkPrivacyGovernanceLifecycleDatabaseReadiness(connection, {
           requiredHashes: options.governanceLifecycleRequiredHashes,
         });
+      const inventoryCoverage =
+        expectedInventory !== undefined && runtimeProcessors !== undefined
+          ? await evaluateInventoryCoverageComponents(
+              expectedInventory,
+              runtimeProcessors,
+            )
+          : null;
 
       const migrationsComponent: PrivacyReadinessComponent =
         schemaResult.ready || schemaResult.reason === 'missing_required_table'
@@ -261,6 +351,13 @@ export function createPostgresPrivacyReadinessProbe(
               state: 'not_ready',
               diagnosticCode: 'repository_unavailable',
             };
+      const auditSinkComponent: PrivacyReadinessComponent = schemaResult.ready
+        ? { componentId: 'audit_sink', state: 'ready', diagnosticCode: null }
+        : {
+            componentId: 'audit_sink',
+            state: 'not_ready',
+            diagnosticCode: 'audit_unavailable',
+          };
       const governanceLifecycleComponent: PrivacyReadinessComponent =
         governanceLifecycleResult.ready
           ? {
@@ -274,16 +371,29 @@ export function createPostgresPrivacyReadinessProbe(
               diagnosticCode: 'governance_table_lifecycle_missing',
             };
 
+      const activeOverriddenComponentIds = new Set<PrivacyReadinessComponentId>(
+        [
+          ...ALWAYS_OVERRIDDEN_COMPONENT_IDS,
+          ...(inventoryCoverage !== null
+            ? INVENTORY_COVERAGE_COMPONENT_IDS
+            : []),
+        ],
+      );
+
       const remainingComponents = base.components.filter(
-        (component) =>
-          !OVERRIDDEN_COMPONENT_IDS.includes(
-            component.componentId as (typeof OVERRIDDEN_COMPONENT_IDS)[number],
-          ),
+        (component) => !activeOverriddenComponentIds.has(component.componentId),
       );
       const overriddenComponents = [
         migrationsComponent,
         repositoriesComponent,
+        auditSinkComponent,
         governanceLifecycleComponent,
+        ...(inventoryCoverage !== null
+          ? [
+              inventoryCoverage.expectedInventoryComponent,
+              inventoryCoverage.runtimeProcessorsComponent,
+            ]
+          : []),
       ];
       const components = [...overriddenComponents, ...remainingComponents];
       const mechanismReady = components.every(
@@ -296,9 +406,7 @@ export function createPostgresPrivacyReadinessProbe(
       const overriddenDiagnosticCodes = new Set(
         base.components
           .filter((component) =>
-            OVERRIDDEN_COMPONENT_IDS.includes(
-              component.componentId as (typeof OVERRIDDEN_COMPONENT_IDS)[number],
-            ),
+            activeOverriddenComponentIds.has(component.componentId),
           )
           .flatMap((component) =>
             component.diagnosticCode === null ? [] : [component.diagnosticCode],

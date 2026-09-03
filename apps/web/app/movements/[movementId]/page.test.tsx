@@ -6,7 +6,7 @@ import { movementDetailSchema } from '@fitness-os/schemas';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { ApiClientError } from '../../../lib/api-client';
+import { ApiClientError, ApiProtocolError } from '../../../lib/api-client';
 import { MovementDetailView } from '../movement-views';
 import { loadMovement } from './page';
 
@@ -70,6 +70,32 @@ describe('loadMovement', () => {
         },
       } as never),
     ).resolves.toEqual({ status: 'not_found' });
+  });
+
+  it('maps an invalid API origin to the unavailable state', async () => {
+    const previous = process.env.API_BASE_URL;
+    process.env.API_BASE_URL = 'ftp://example.com';
+
+    await expect(loadMovement('bodyweight-squat')).resolves.toEqual({
+      status: 'unavailable',
+    });
+
+    if (previous === undefined) {
+      delete process.env.API_BASE_URL;
+    } else {
+      process.env.API_BASE_URL = previous;
+    }
+  });
+
+  it('maps protocol failure to unavailable without exposing the error', async () => {
+    const state = await loadMovement('bodyweight-squat', {
+      movement: async () => {
+        throw new ApiProtocolError();
+      },
+    } as never);
+
+    expect(state).toEqual({ status: 'unavailable' });
+    expect(JSON.stringify(state)).not.toContain('protocol');
   });
 });
 

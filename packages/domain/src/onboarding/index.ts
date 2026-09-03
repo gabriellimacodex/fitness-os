@@ -109,6 +109,10 @@ export {
   type OnboardingReadinessProbe,
   type OnboardingReadinessResult,
 } from './readiness.js';
+export {
+  createSelfTestOnboardingReadinessProbe,
+  type OnboardingMechanismSelfTestComponents,
+} from './readiness-self-test.js';
 export { SyntheticOnboardingAttemptRepository } from './synthetic-attempts.js';
 export { SyntheticOnboardingInvitationRepository } from './synthetic-invitations.js';
 export { SyntheticOnboardingOperationRepository } from './synthetic-operations.js';
