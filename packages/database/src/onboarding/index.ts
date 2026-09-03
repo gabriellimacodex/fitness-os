@@ -1,5 +1,6 @@
 export {
   onboardingAttempt,
+  onboardingClaimFailure,
   onboardingInvitation,
   onboardingOperation,
   onboardingPrincipalBinding,
@@ -49,6 +50,11 @@ export {
   createPostgresPrincipalBindingRepository,
   type PostgresPrincipalBindingRepository,
 } from './principal-binding.js';
+export {
+  asClaimFailureTracker,
+  createPostgresClaimFailureTracker,
+  type PostgresClaimFailureTracker,
+} from './claim-failure.js';
 export {
   checkOnboardingSchemaReadiness,
   createPostgresOnboardingReadinessProbe,

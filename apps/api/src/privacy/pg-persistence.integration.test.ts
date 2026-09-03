@@ -19,6 +19,9 @@ import {
   privacyProcessorExecutionReceiptSchema,
   privacyProcessorIdSchema,
   privacyPurposeVersionReferenceSchema,
+  privacyRetentionRuleIdSchema,
+  privacyRetentionRuleReferenceSchema,
+  privacyRetentionRuleVersionIdSchema,
   privacySubjectRequestIdSchema,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionIdSchema,
@@ -148,7 +151,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(
-        sql`TRUNCATE privacy_retention_preview, privacy_governance_lifecycle_proof, privacy_processor_execution_journal, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
+        sql`TRUNCATE privacy_retention_rule, privacy_retention_preview, privacy_governance_lifecycle_proof, privacy_processor_execution_journal, privacy_processor_step, privacy_subject_request_transition, privacy_subject_request, privacy_audit_event, privacy_withdrawal, privacy_authorization_evidence, privacy_purpose_version, privacy_processor_registration, privacy_policy_package_version`,
       );
     });
 
@@ -1149,6 +1152,52 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ).resolves.toMatchObject({ selectionDigest, status: 'planned' });
 
       await app.close();
+    });
+
+    it('persists a retention-rule reference over disposable Postgres and denies a duplicate version', async () => {
+      const persistence = createPrivacyPgPersistence(connection);
+      await expect(persistence.policies.put(policy)).resolves.toBe('accepted');
+
+      const rule = privacyRetentionRuleReferenceSchema.parse({
+        ruleId: privacyRetentionRuleIdSchema.parse(
+          '4d4d4d4d-4d4d-4d4d-8d4d-4d4d4d4d4d4d',
+        ),
+        ruleVersionId: privacyRetentionRuleVersionIdSchema.parse(
+          '5e5e5e5e-5e5e-4e5e-8e5e-5e5e5e5e5e5e',
+        ),
+        engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+          '44444444-4444-4444-8444-444444444444',
+        ),
+        purposeVersionId: purpose.purposeVersionId,
+        policyVersionId: policy.versionId,
+        action: 'retain_under_exception',
+        parametersDigest: '6'.repeat(64),
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        synthetic: true,
+      });
+
+      await expect(persistence.retentionRules.put(rule)).resolves.toBe(
+        'accepted',
+      );
+      await expect(persistence.retentionRules.put(rule)).resolves.toBe(
+        'conflict',
+      );
+
+      await expect(
+        persistence.retentionRules.getActiveVersion(rule.ruleVersionId),
+      ).resolves.toEqual(rule);
+      await expect(
+        persistence.retentionRules.listActiveForCategoryAndPurpose(
+          rule.engineeringCategoryId,
+          rule.purposeVersionId,
+        ),
+      ).resolves.toEqual([rule]);
+      await expect(
+        persistence.retentionRules.listActiveForCategoryAndPurpose(
+          rule.engineeringCategoryId,
+          '99999999-9999-4999-8999-999999999999',
+        ),
+      ).resolves.toEqual([]);
     });
   },
 );
