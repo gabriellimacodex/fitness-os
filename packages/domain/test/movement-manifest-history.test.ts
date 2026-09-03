@@ -44,4 +44,68 @@ describe('committed movement ledger', () => {
     expect(() => assertManifestHistory(base, removed)).toThrow(/removed/);
     expect(() => assertManifestHistory(base, reordered)).toThrow(/reordered/);
   });
+
+  it('rejects reusing the same action at an already-recorded content version', () => {
+    const base = [publishedRecord];
+    const reused = [
+      ...base,
+      { ...publishedRecord, sequence: 2, digest: '1'.repeat(64) },
+    ];
+
+    expect(() => assertManifestHistory(base, reused)).toThrow(/reused/);
+  });
+
+  it('allows a different action at an already-recorded content version', () => {
+    const base = [publishedRecord];
+    const revised = [
+      ...base,
+      {
+        ...publishedRecord,
+        action: 'revise' as const,
+        digest: '2'.repeat(64),
+        sequence: 2,
+      },
+    ];
+
+    expect(() => assertManifestHistory(base, revised)).not.toThrow();
+  });
+
+  it('does not treat a withdrawn record as blocking reuse of its own action', () => {
+    const withdrawn = {
+      ...publishedRecord,
+      action: 'withdraw' as const,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+    const base = [publishedRecord, withdrawn];
+    const republished = [
+      ...base,
+      {
+        ...publishedRecord,
+        action: 'republish' as const,
+        digest: '3'.repeat(64),
+        sequence: 3,
+      },
+    ];
+
+    expect(() => assertManifestHistory(base, republished)).not.toThrow();
+  });
+
+  it('still rejects reusing the pre-withdrawal action at the same content version', () => {
+    const withdrawn = {
+      ...publishedRecord,
+      action: 'withdraw' as const,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+    const base = [publishedRecord, withdrawn];
+    const republishedSameAction = [
+      ...base,
+      { ...publishedRecord, digest: '4'.repeat(64), sequence: 3 },
+    ];
+
+    expect(() => assertManifestHistory(base, republishedSameAction)).toThrow(
+      /reused/,
+    );
+  });
 });
