@@ -117,4 +117,27 @@ describe('GET /movements/:movementId', () => {
     expect(body.error.requestId).toBe(response.headers['x-request-id']);
     await app.close();
   });
+
+  it('sets no-store on unexpected movement detail failures', async () => {
+    const app = buildApp({ logger: false });
+
+    app.addHook('preHandler', async (request) => {
+      if ((request.url.split('?')[0] ?? '') === '/movements/bodyweight-squat') {
+        throw new Error('private catalog failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/movements/bodyweight-squat',
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(body.error.requestId).toBe(response.headers['x-request-id']);
+    expect(response.body).not.toContain('private catalog failure');
+    await app.close();
+  });
 });
