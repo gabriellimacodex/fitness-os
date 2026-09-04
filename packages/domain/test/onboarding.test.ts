@@ -453,4 +453,37 @@ describe('SyntheticClaimFailureTracker + checkClaimThrottle', () => {
       }),
     ).toBe('allowed');
   });
+
+  it('falls back to DEFAULT_CLAIM_THROTTLE_WINDOW when no window is supplied', async () => {
+    const tracker = new SyntheticClaimFailureTracker();
+    const { maxFailuresPerWindow, windowMs } = DEFAULT_CLAIM_THROTTLE_WINDOW;
+
+    for (let i = 0; i < maxFailuresPerWindow - 1; i += 1) {
+      await tracker.recordFailure('principal-a', i);
+    }
+    expect(
+      await checkClaimThrottle({
+        key: 'principal-a',
+        nowUtcMs: windowMs - 1,
+        tracker,
+      }),
+    ).toBe('allowed');
+
+    await tracker.recordFailure('principal-a', maxFailuresPerWindow - 1);
+    expect(
+      await checkClaimThrottle({
+        key: 'principal-a',
+        nowUtcMs: windowMs - 1,
+        tracker,
+      }),
+    ).toBe('throttled');
+
+    expect(
+      await checkClaimThrottle({
+        key: 'principal-a',
+        nowUtcMs: windowMs + 1,
+        tracker,
+      }),
+    ).toBe('allowed');
+  });
 });
