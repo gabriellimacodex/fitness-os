@@ -5,7 +5,10 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPostgresConnection } from '../src/connection.js';
-import { createPostgresClaimFailureTracker } from '../src/onboarding/index.js';
+// Imported from the package root barrel, not the internal `onboarding/`
+// sub-path: this is the exact surface `@fitness-os/database` consumers use,
+// and until now it omitted this tracker (see `src/index.ts`).
+import { createPostgresClaimFailureTracker } from '../src/index.js';
 import { requireDisposableDatabaseUrl } from './postgres.js';
 
 const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
