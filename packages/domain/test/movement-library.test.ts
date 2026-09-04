@@ -189,6 +189,56 @@ describe('createMovementCatalog', () => {
     ).toThrow(/durable review record/);
   });
 
+  it('rejects a review record whose digest does not match the manifest record', () => {
+    const input = reviewedCatalogInput([SQUAT]);
+    const tamperedReview = createSignedReviewRecord({
+      authority: input.authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: '9'.repeat(64),
+      movementId: SQUAT.movementId,
+      receipts: [
+        safetyReceipt('safety-tampered-digest-01'),
+        readerReceipt('reader-tampered-digest-01'),
+      ],
+      sourceCommitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+
+    expect(() =>
+      createMovementCatalog({
+        ...input,
+        reviewRecords: [tamperedReview],
+      }),
+    ).toThrow(/bind the exact movement artifact/);
+  });
+
+  it('rejects a review receipt nonce reused across two published movements', () => {
+    const input = reviewedCatalogInput([SQUAT, HINGE]);
+    const sharedNonce = 'safety-shared-across-movements-01';
+    const squatReview = createSignedReviewRecord({
+      authority: input.authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [safetyReceipt(sharedNonce), readerReceipt('reader-squat-01')],
+      sourceCommitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+    const hingeReview = createSignedReviewRecord({
+      authority: input.authority,
+      contentVersion: HINGE.contentVersion,
+      digest: digestMovementDetail(HINGE),
+      movementId: HINGE.movementId,
+      receipts: [safetyReceipt(sharedNonce), readerReceipt('reader-hinge-01')],
+      sourceCommitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+
+    expect(() =>
+      createMovementCatalog({
+        ...input,
+        reviewRecords: [squatReview, hingeReview],
+      }),
+    ).toThrow(/nonce was reused/);
+  });
+
   it('rejects a published movement absent from the manifest', () => {
     expect(() =>
       createMovementCatalog({ manifest: [], published: [SQUAT] }),
