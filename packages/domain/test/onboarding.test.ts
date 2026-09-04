@@ -58,6 +58,12 @@ describe('attempt transitions', () => {
       'advanced',
     );
   });
+
+  it('rejects a terminal reason when the next state is not terminal', () => {
+    expect(
+      transitionAttempt(attempt(), 'ready_to_claim', 'abandoned').status,
+    ).toBe('invalid');
+  });
 });
 
 describe('attempt selection', () => {
@@ -76,6 +82,43 @@ describe('attempt selection', () => {
     expect(selectAttempt([first, second], first.attemptId).status).toBe(
       'attempt_selected',
     );
+  });
+
+  it('reports no_active_attempt when nothing is active and no locator is given', () => {
+    const terminal = attempt({
+      lifecycle: 'terminal',
+      terminalReason: 'expired',
+    });
+
+    expect(selectAttempt([terminal], undefined).status).toBe(
+      'no_active_attempt',
+    );
+    expect(selectAttempt([], undefined).status).toBe('no_active_attempt');
+  });
+
+  it('selects the sole active attempt when no locator is given', () => {
+    const only = attempt();
+
+    expect(selectAttempt([only], undefined)).toEqual({
+      attempts: [only],
+      status: 'attempt_selected',
+    });
+  });
+
+  it('reports active_attempt_limit_reached when more than the cap are active', () => {
+    const overflow = ['1', '2', '3', '4', '5'].map((digit, index) =>
+      attempt({
+        attemptId: onboardingAttemptIdSchema.parse(
+          `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`,
+        ),
+        ordinal: index + 1,
+      }),
+    );
+
+    const result = selectAttempt(overflow, undefined);
+
+    expect(result.status).toBe('active_attempt_limit_reached');
+    expect(result.attempts).toHaveLength(overflow.length);
   });
 
   it('enforces the fixed active cap', () => {
