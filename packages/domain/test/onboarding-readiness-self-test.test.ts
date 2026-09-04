@@ -141,4 +141,30 @@ describe('createSelfTestOnboardingReadinessProbe', () => {
     });
     expect(result.mechanismReady).toBe(false);
   });
+
+  it('reports configuration_mismatch instead of rejecting when a self-test mechanism throws', async () => {
+    const probe = createSelfTestOnboardingReadinessProbe(
+      {
+        ...realComponents(),
+        secretVerifier: {
+          digest: () => {
+            throw new Error('verifier misconfigured');
+          },
+          verify: () => ({ status: 'matched' as const }),
+        },
+      },
+      { evaluatedAt: '2026-08-19T12:00:00.000Z' },
+    );
+
+    const result = await probe.evaluate();
+
+    expect(
+      result.components.find((c) => c.componentId === 'secret_verifier'),
+    ).toEqual({
+      componentId: 'secret_verifier',
+      diagnosticCode: 'configuration_mismatch',
+      state: 'not_ready',
+    });
+    expect(result.mechanismReady).toBe(false);
+  });
 });
