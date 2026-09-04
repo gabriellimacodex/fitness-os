@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   SyntheticPrivacyExpectedProcessorInventory,
   SyntheticPrivacyRuntimeProcessorRegistry,
+  type PrivacyExpectedProcessorInventoryPort,
   type PrivacyReadinessProbe,
+  type PrivacyRuntimeProcessorRegistry,
 } from '@fitness-os/domain';
 import {
   privacyExpectedProcessorInventorySchema,
@@ -544,5 +546,66 @@ describe('privacy readiness inventory coverage override', () => {
     });
     expect(result.diagnosticCodes).not.toContain('inventory_mismatch');
     expect(result.diagnosticCodes).not.toContain('processor_missing');
+  });
+
+  it('fails closed with repository_unavailable on both components, instead of rejecting, when expectedInventory.getInventory() throws', async () => {
+    const throwingExpectedInventory: PrivacyExpectedProcessorInventoryPort = {
+      getInventory: async () => {
+        throw new Error('inventory artifact store unavailable');
+      },
+    };
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    runtimeProcessors.seed(processor);
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory: throwingExpectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'repository_unavailable',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'repository_unavailable',
+    });
+    expect(result.diagnosticCodes).toContain('repository_unavailable');
+  });
+
+  it('fails closed with repository_unavailable on both components, instead of rejecting, when runtimeProcessors.listDescriptors() throws', async () => {
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const throwingRuntimeProcessors: PrivacyRuntimeProcessorRegistry = {
+      getDescriptor: async () => null,
+      listDescriptors: async () => {
+        throw new Error('connection terminated unexpectedly');
+      },
+      put: async () => {
+        throw new Error('not exercised by this test');
+      },
+    };
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory,
+      runtimeProcessors: throwingRuntimeProcessors,
+    }).evaluate();
+
+    expect(result.mechanismReady).toBe(false);
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'repository_unavailable',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'repository_unavailable',
+    });
+    expect(result.diagnosticCodes).toContain('repository_unavailable');
   });
 });
