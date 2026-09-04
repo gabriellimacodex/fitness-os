@@ -311,18 +311,24 @@ describe('createApiClient', () => {
 
   it('aborts a movement read after 3,000 ms and does not return a prior result', async () => {
     vi.useFakeTimers();
-    const fetch = vi.fn<typeof globalThis.fetch>(
-      (_input, init) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => {
-            reject(new DOMException('Aborted', 'AbortError'));
-          });
-        }),
-    );
+    const priorItems = { items: [] };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json(priorItems))
+      .mockImplementationOnce(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'));
+            });
+          }),
+      );
     const client = createApiClient({
       baseUrl: 'https://api.example.com',
       fetch,
     });
+
+    await expect(client.movements()).resolves.toEqual(priorItems);
 
     const pending = client.movements();
     const expectation =
