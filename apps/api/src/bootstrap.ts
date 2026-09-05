@@ -1,6 +1,10 @@
 import type { FastifyServerOptions } from 'fastify';
 
 import { buildApp, type PlatformOptions } from './app.js';
+import {
+  createCatalogPlatformFromEnv,
+  type CatalogPlatformHandles,
+} from './catalog-platform.js';
 
 const DEFAULT_PORT = '3001';
 
@@ -27,6 +31,17 @@ interface BootstrapDependencies {
     options: FastifyServerOptions,
     platform: PlatformOptions,
   ) => BootstrapApp;
+  /**
+   * Composes the real Postgres-backed exercise catalog reader and readiness
+   * check from environment configuration. Defaults to
+   * `createCatalogPlatformFromEnv`, which returns `null` (no catalog
+   * composition, matching prior behavior) unless `CATALOG_DATABASE_URL` and
+   * the ledger key-ring env vars are configured. Injectable so tests never
+   * need a real database connection.
+   */
+  createCatalogPlatform?: (
+    env: NodeJS.ProcessEnv,
+  ) => CatalogPlatformHandles | null;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -110,14 +125,21 @@ export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const createCatalogPlatform =
+    dependencies.createCatalogPlatform ?? createCatalogPlatformFromEnv;
   const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
+  let catalogPlatform: CatalogPlatformHandles | null = null;
 
   try {
+    catalogPlatform = createCatalogPlatform(env);
     app = createApp(
       { logger: LOGGER_OPTIONS },
-      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+      {
+        corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+        ...catalogPlatform?.platform,
+      },
     );
   } catch (error) {
     runtime.exitCode = 1;
@@ -129,6 +151,14 @@ export async function bootstrapApi(
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
+    if (catalogPlatform !== null) {
+      await catalogPlatform.connection.close().catch((closeError: unknown) => {
+        app.log.error(
+          { err: closeError },
+          'Catalog connection close failed after startup failure',
+        );
+      });
+    }
     throw error;
   }
 
@@ -147,6 +177,17 @@ export async function bootstrapApi(
     } catch (error) {
       runtime.exitCode = 1;
       app.log.error({ err: error, signal }, 'API shutdown failed');
+    }
+    if (catalogPlatform !== null) {
+      try {
+        await catalogPlatform.connection.close();
+      } catch (error) {
+        runtime.exitCode = 1;
+        app.log.error(
+          { err: error, signal },
+          'Catalog connection close failed',
+        );
+      }
     }
   };
   const handleSigterm = (): Promise<void> => shutdown('SIGTERM');
