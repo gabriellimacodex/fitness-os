@@ -251,6 +251,231 @@ describe('bootstrapApi', () => {
     expect(app.close).toHaveBeenCalledOnce();
   });
 
+  it('wires a composed onboarding platform into the app when configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const createApp = vi.fn(() => app);
+    const onboarding = {
+      readinessProbe: { evaluate: vi.fn(async () => true as never) },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createOnboardingPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: { onboarding },
+    }));
+
+    await bootstrapApi({
+      createApp,
+      createOnboardingPlatform,
+      env: { ONBOARDING_DATABASE_URL: 'postgresql://onboarding' },
+      runtime,
+    });
+
+    expect(createOnboardingPlatform).toHaveBeenCalledWith({
+      ONBOARDING_DATABASE_URL: 'postgresql://onboarding',
+    });
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      {
+        corsAllowedOrigins: ['http://localhost:3000'],
+        onboarding,
+      },
+    );
+  });
+
+  it('omits onboarding platform composition when it is not configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createApp = vi.fn(() => app);
+    const createOnboardingPlatform = vi.fn(() => null);
+
+    await bootstrapApi({
+      createApp,
+      createOnboardingPlatform,
+      env: {},
+      runtime,
+    });
+
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      { corsAllowedOrigins: ['http://localhost:3000'] },
+    );
+  });
+
+  it('closes the composed onboarding connection on graceful shutdown', async () => {
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createOnboardingPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createOnboardingPlatform,
+      env: {},
+      runtime,
+    });
+    await signalHandlers.get('SIGTERM')?.();
+
+    expect(app.close).toHaveBeenCalledOnce();
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks an onboarding connection close failure on shutdown as fatal without leaking a rejection', async () => {
+    const closeError = new Error('onboarding close failed');
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createOnboardingPlatform = vi.fn(() => ({
+      connection: {
+        close: vi.fn(async () => Promise.reject(closeError)),
+        db: {} as never,
+      },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createOnboardingPlatform,
+      env: {},
+      runtime,
+    });
+
+    await expect(signalHandlers.get('SIGTERM')?.()).resolves.toBeUndefined();
+    expect(runtime.exitCode).toBe(1);
+    expect(app.log.error).toHaveBeenCalledWith(
+      { err: closeError, signal: 'SIGTERM' },
+      'Onboarding connection close failed',
+    );
+  });
+
+  it('closes a composed onboarding connection when startup fails and marks the failure fatal', async () => {
+    const startupError = new Error('bind failed');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => Promise.reject(startupError)),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createOnboardingPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await expect(
+      bootstrapApi({
+        createApp: () => app,
+        createOnboardingPlatform,
+        env: {},
+        runtime,
+      }),
+    ).rejects.toThrow('bind failed');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks onboarding platform composition failure as fatal before creating the app', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const compositionError = new Error('ONBOARDING_DATABASE_URL invalid');
+    const createApp = vi.fn();
+    const createOnboardingPlatform = vi.fn(() => {
+      throw compositionError;
+    });
+
+    await expect(
+      bootstrapApi({
+        createApp,
+        createOnboardingPlatform,
+        env: {},
+        runtime,
+      }),
+    ).rejects.toThrow('ONBOARDING_DATABASE_URL invalid');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(createApp).not.toHaveBeenCalled();
+  });
+
+  it('closes a composed onboarding connection when app creation fails after composition', async () => {
+    const creationError = new Error('invalid CORS_ALLOWED_ORIGINS');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createOnboardingPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+    const createApp = vi.fn(() => {
+      throw creationError;
+    });
+
+    await expect(
+      bootstrapApi({
+        createApp,
+        createOnboardingPlatform,
+        env: {},
+        runtime,
+      }),
+    ).rejects.toThrow('invalid CORS_ALLOWED_ORIGINS');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
   it('marks a shutdown failure as fatal without leaking a rejection', async () => {
     const shutdownError = new Error('close failed');
     const signalHandlers = new Map<string, () => Promise<void>>();
