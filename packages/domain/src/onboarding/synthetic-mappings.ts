@@ -26,10 +26,10 @@ export class SyntheticPrincipalRoleMappingRepository implements PrincipalRoleMap
     const key = `${record.principalKey}:${record.role}`;
     const existingId = this.#byPrincipalRole.get(key);
     if (existingId !== undefined) {
-      const existing = this.#byId.get(existingId);
-      if (existing === undefined) {
-        throw new Error('synthetic role mapping index corrupt');
-      }
+      // #byPrincipalRole and #byId are always written together by the one
+      // accepted-put branch below, so an ID found here is always present
+      // in #byId.
+      const existing = this.#byId.get(existingId)!;
       if (
         existing.mappingId === record.mappingId &&
         existing.principalKey === record.principalKey &&
