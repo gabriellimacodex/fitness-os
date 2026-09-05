@@ -22,6 +22,23 @@ describe('SyntheticIdentitySessionPort', () => {
     });
   });
 
+  it('defaults synthetic to true and mappedRoles to empty when omitted', async () => {
+    const port = new SyntheticIdentitySessionPort();
+    await expect(
+      port.resolve({
+        productionMode: false,
+        trustedPrincipalKey: 'principal-b',
+      }),
+    ).resolves.toEqual({
+      context: {
+        mappedRoles: [],
+        principalKey: 'principal-b',
+        synthetic: true,
+      },
+      status: 'resolved',
+    });
+  });
+
   it('denies missing principals and synthetic-in-production', async () => {
     const port = new SyntheticIdentitySessionPort();
     await expect(
