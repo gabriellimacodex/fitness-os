@@ -437,6 +437,30 @@ describe('bootstrapApi', () => {
     expect(createApp).not.toHaveBeenCalled();
   });
 
+  it('closes a composed privacy connection when app creation fails after composition', async () => {
+    const creationError = new Error('invalid CORS_ALLOWED_ORIGINS');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createPrivacyPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+    const createApp = vi.fn(() => {
+      throw creationError;
+    });
+
+    await expect(
+      bootstrapApi({ createApp, createPrivacyPlatform, env: {}, runtime }),
+    ).rejects.toThrow('invalid CORS_ALLOWED_ORIGINS');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
   it('marks a shutdown failure as fatal without leaking a rejection', async () => {
     const shutdownError = new Error('close failed');
     const signalHandlers = new Map<string, () => Promise<void>>();

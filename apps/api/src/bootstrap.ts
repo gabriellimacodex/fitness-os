@@ -144,6 +144,9 @@ export async function bootstrapApi(
     );
   } catch (error) {
     runtime.exitCode = 1;
+    if (privacyPlatform !== null) {
+      await privacyPlatform.connection.close().catch(() => undefined);
+    }
     throw error;
   }
 
