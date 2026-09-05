@@ -1,6 +1,10 @@
 import type { FastifyServerOptions } from 'fastify';
 
 import { buildApp, type PlatformOptions } from './app.js';
+import {
+  createPrivacyPlatformFromEnv,
+  type PrivacyPlatformHandles,
+} from './privacy/platform.js';
 
 const DEFAULT_PORT = '3001';
 
@@ -27,6 +31,18 @@ interface BootstrapDependencies {
     options: FastifyServerOptions,
     platform: PlatformOptions,
   ) => BootstrapApp;
+  /**
+   * Composes the real Postgres-backed privacy platform (persistence,
+   * governance-lifecycle verifier, and readiness probe) from environment
+   * configuration. Defaults to `createPrivacyPlatformFromEnv`, which returns
+   * `null` (no privacy composition, matching prior behavior — the app falls
+   * back to `registerPrivacySyntheticRoutes`'s in-memory synthetic defaults)
+   * unless `PRIVACY_DATABASE_URL` is configured. Injectable so tests never
+   * need a real database connection.
+   */
+  createPrivacyPlatform?: (
+    env: NodeJS.ProcessEnv,
+  ) => PrivacyPlatformHandles | null;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -110,14 +126,21 @@ export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const createPrivacyPlatform =
+    dependencies.createPrivacyPlatform ?? createPrivacyPlatformFromEnv;
   const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
+  let privacyPlatform: PrivacyPlatformHandles | null = null;
 
   try {
+    privacyPlatform = createPrivacyPlatform(env);
     app = createApp(
       { logger: LOGGER_OPTIONS },
-      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+      {
+        corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+        ...privacyPlatform?.platform,
+      },
     );
   } catch (error) {
     runtime.exitCode = 1;
@@ -129,6 +152,14 @@ export async function bootstrapApi(
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
+    if (privacyPlatform !== null) {
+      await privacyPlatform.connection.close().catch((closeError: unknown) => {
+        app.log.error(
+          { err: closeError },
+          'Privacy connection close failed after startup failure',
+        );
+      });
+    }
     throw error;
   }
 
@@ -147,6 +178,17 @@ export async function bootstrapApi(
     } catch (error) {
       runtime.exitCode = 1;
       app.log.error({ err: error, signal }, 'API shutdown failed');
+    }
+    if (privacyPlatform !== null) {
+      try {
+        await privacyPlatform.connection.close();
+      } catch (error) {
+        runtime.exitCode = 1;
+        app.log.error(
+          { err: error, signal },
+          'Privacy connection close failed',
+        );
+      }
     }
   };
   const handleSigterm = (): Promise<void> => shutdown('SIGTERM');

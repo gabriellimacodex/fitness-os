@@ -251,6 +251,192 @@ describe('bootstrapApi', () => {
     expect(app.close).toHaveBeenCalledOnce();
   });
 
+  it('wires a composed privacy platform into the app when configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const createApp = vi.fn(() => app);
+    const privacy = {
+      readiness: { evaluate: vi.fn(async () => true as never) },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createPrivacyPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: { privacy },
+    }));
+
+    await bootstrapApi({
+      createApp,
+      createPrivacyPlatform,
+      env: { PRIVACY_DATABASE_URL: 'postgresql://privacy' },
+      runtime,
+    });
+
+    expect(createPrivacyPlatform).toHaveBeenCalledWith({
+      PRIVACY_DATABASE_URL: 'postgresql://privacy',
+    });
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      {
+        corsAllowedOrigins: ['http://localhost:3000'],
+        privacy,
+      },
+    );
+  });
+
+  it('omits privacy platform composition when it is not configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createApp = vi.fn(() => app);
+    const createPrivacyPlatform = vi.fn(() => null);
+
+    await bootstrapApi({ createApp, createPrivacyPlatform, env: {}, runtime });
+
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      { corsAllowedOrigins: ['http://localhost:3000'] },
+    );
+  });
+
+  it('closes the composed privacy connection on graceful shutdown', async () => {
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createPrivacyPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createPrivacyPlatform,
+      env: {},
+      runtime,
+    });
+    await signalHandlers.get('SIGTERM')?.();
+
+    expect(app.close).toHaveBeenCalledOnce();
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks a privacy connection close failure on shutdown as fatal without leaking a rejection', async () => {
+    const closeError = new Error('privacy close failed');
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createPrivacyPlatform = vi.fn(() => ({
+      connection: {
+        close: vi.fn(async () => Promise.reject(closeError)),
+        db: {} as never,
+      },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createPrivacyPlatform,
+      env: {},
+      runtime,
+    });
+
+    await expect(signalHandlers.get('SIGTERM')?.()).resolves.toBeUndefined();
+    expect(runtime.exitCode).toBe(1);
+    expect(app.log.error).toHaveBeenCalledWith(
+      { err: closeError, signal: 'SIGTERM' },
+      'Privacy connection close failed',
+    );
+  });
+
+  it('closes a composed privacy connection when startup fails and marks the failure fatal', async () => {
+    const startupError = new Error('bind failed');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => Promise.reject(startupError)),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createPrivacyPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await expect(
+      bootstrapApi({
+        createApp: () => app,
+        createPrivacyPlatform,
+        env: {},
+        runtime,
+      }),
+    ).rejects.toThrow('bind failed');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks privacy platform composition failure as fatal before creating the app', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const compositionError = new Error('PRIVACY_DATABASE_URL invalid');
+    const createApp = vi.fn();
+    const createPrivacyPlatform = vi.fn(() => {
+      throw compositionError;
+    });
+
+    await expect(
+      bootstrapApi({ createApp, createPrivacyPlatform, env: {}, runtime }),
+    ).rejects.toThrow('PRIVACY_DATABASE_URL invalid');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(createApp).not.toHaveBeenCalled();
+  });
+
   it('marks a shutdown failure as fatal without leaking a rejection', async () => {
     const shutdownError = new Error('close failed');
     const signalHandlers = new Map<string, () => Promise<void>>();
