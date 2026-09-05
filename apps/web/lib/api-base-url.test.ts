@@ -15,4 +15,22 @@ describe('getApiBaseUrl', () => {
       'API base URL must be an absolute HTTP(S) URL.',
     );
   });
+
+  it('strips a trailing slash from a configured origin', () => {
+    expect(getApiBaseUrl('https://api.example.com/')).toBe(
+      'https://api.example.com',
+    );
+  });
+
+  it('preserves a configured non-root path and port without a trailing slash', () => {
+    expect(getApiBaseUrl('https://api.example.com:8443/v1/')).toBe(
+      'https://api.example.com:8443/v1',
+    );
+  });
+
+  it('leaves an already-normalized origin unchanged', () => {
+    expect(getApiBaseUrl('http://api.example.com')).toBe(
+      'http://api.example.com',
+    );
+  });
 });
