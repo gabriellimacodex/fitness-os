@@ -70,6 +70,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
       'exercise_revision_reference',
       'exercise_revision_taxonomy_term',
       'onboarding_attempt',
+      'onboarding_claim_failure',
       'onboarding_invitation',
       'onboarding_operation',
       'onboarding_principal_binding',
@@ -311,7 +312,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PRD 02 migration', () => {
     const after = await connection.db.execute<{ count: number }>(sql`
       SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations
     `);
-    expect(before[0]?.count).toBe(24);
+    expect(before[0]?.count).toBe(26);
     expect(after).toEqual(before);
   });
 

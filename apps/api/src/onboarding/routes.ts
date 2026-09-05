@@ -5,6 +5,7 @@ import {
   checkClaimThrottle,
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
+  createSelfTestOnboardingReadinessProbe,
   DEFAULT_CLAIM_THROTTLE_WINDOW,
   evaluateClaimEligibility,
   HmacInvitationSecretVerifier,
@@ -16,7 +17,6 @@ import {
   SyntheticIdentitySessionStore,
   SyntheticOnboardingClaimRepository,
   SyntheticOnboardingPolicyGateway,
-  SyntheticOnboardingReadinessProbe,
   SyntheticOnboardingTransitionSink,
   SyntheticPrincipalBindingRepository,
   SyntheticPrincipalReferenceDeriver,
@@ -261,9 +261,10 @@ export function registerOnboardingRoutes(
   const digestSecret = (secret: string) => secretVerifier.digest(secret);
   const readinessProbe =
     options.readinessProbe ??
-    new SyntheticOnboardingReadinessProbe({
-      evaluatedAt: '2026-08-19T12:00:00.000Z',
-    });
+    createSelfTestOnboardingReadinessProbe(
+      { clock, idFactory, secretFactory, secretVerifier },
+      { evaluatedAt: '2026-08-19T12:00:00.000Z' },
+    );
   const claimFailureTracker =
     options.claimFailureTracker ?? new SyntheticClaimFailureTracker();
   const claimThrottleWindow =

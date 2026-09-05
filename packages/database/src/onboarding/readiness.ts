@@ -6,12 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 
 import type {
+  OnboardingMechanismSelfTestComponents,
   OnboardingReadinessComponent,
   OnboardingReadinessComponentId,
   OnboardingReadinessProbe,
   OnboardingReadinessResult,
 } from '@fitness-os/domain';
-import { SyntheticOnboardingReadinessProbe } from '@fitness-os/domain';
+import {
+  createSelfTestOnboardingReadinessProbe,
+  SyntheticOnboardingReadinessProbe,
+} from '@fitness-os/domain';
 
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
@@ -154,13 +158,20 @@ export async function checkOnboardingSchemaReadiness(
  * schema state. This is table/migration presence only — it does not exercise
  * a read/write round-trip through the repositories themselves.
  *
- * Every remaining component (clock, id/secret factories, secret verifier,
- * identity/policy adapters) is left exactly as the base probe reports it —
- * this does not verify those. The final evidence is normalized to exactly one
- * database-derived component per overridden id, even if a custom base omits
- * or duplicates them. `mechanismReady` is recomputed as the conjunction of
- * all components so a real schema gap flips it `false`; `productionReady`
- * stays `false`, unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
+ * When `mechanismComponents` is also supplied, this first composes
+ * `createSelfTestOnboardingReadinessProbe` from `@fitness-os/domain` around
+ * the same base, additionally replacing `clock`, `id_factory`,
+ * `secret_factory`, and `secret_verifier` with a real self-test of those
+ * instances, so one probe carries both real schema/repository evidence and
+ * real mechanism self-tests. Omitting `mechanismComponents` leaves those four
+ * components exactly as the base probe reports them, matching prior
+ * behavior. Any remaining component (identity/policy adapters) is left
+ * exactly as the base probe reports it — this does not verify those. The
+ * final evidence is normalized to exactly one database-derived component per
+ * overridden id, even if a custom base omits or duplicates them.
+ * `mechanismReady` is recomputed as the conjunction of all components so a
+ * real schema gap flips it `false`; `productionReady` stays `false`,
+ * unaffected by `LEGAL_PRIVACY_DECISION_REQUIRED`.
  */
 export function createPostgresOnboardingReadinessProbe(
   connection: PostgresConnection,
@@ -168,17 +179,22 @@ export function createPostgresOnboardingReadinessProbe(
     baseProbe?: OnboardingReadinessProbe;
     evaluatedAt?: string;
     requiredHashes?: readonly string[];
+    mechanismComponents?: OnboardingMechanismSelfTestComponents;
   } = {},
 ): OnboardingReadinessProbe {
+  const evaluatedAt = options.evaluatedAt ?? new Date().toISOString();
   const baseProbe =
-    options.baseProbe ??
-    new SyntheticOnboardingReadinessProbe({
-      evaluatedAt: options.evaluatedAt ?? new Date().toISOString(),
-    });
+    options.baseProbe ?? new SyntheticOnboardingReadinessProbe({ evaluatedAt });
+  const composedBaseProbe =
+    options.mechanismComponents !== undefined
+      ? createSelfTestOnboardingReadinessProbe(options.mechanismComponents, {
+          baseProbe,
+        })
+      : baseProbe;
 
   return {
     async evaluate(): Promise<OnboardingReadinessResult> {
-      const base = await baseProbe.evaluate();
+      const base = await composedBaseProbe.evaluate();
       const schemaResult = await checkOnboardingSchemaReadiness(connection, {
         requiredHashes: options.requiredHashes,
       });

@@ -84,15 +84,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       await connection.close();
     });
 
-    it('reports migrations, repositories, audit_sink, and governance_lifecycle ready and leaves every other component as the base probe reports it', async () => {
+    it('reports migrations, repositories, audit_sink, governance_lifecycle, and recovery ready and leaves every other component as the base probe reports it', async () => {
       const probe = createPostgresPrivacyReadinessProbe(connection, {
         evaluatedAt: '2026-08-27T00:00:00.000Z',
       });
 
       const result = await probe.evaluate();
 
-      // Only migrations/repositories/audit_sink/governance_lifecycle are
-      // DB-verified by this probe; the synthetic base probe's other
+      // Only migrations/repositories/audit_sink/governance_lifecycle/recovery
+      // are DB-verified by this probe; the synthetic base probe's other
       // components stay not_ready/unavailable, so mechanismReady correctly
       // remains false.
       expect(result.mechanismReady).toBe(false);
@@ -118,12 +118,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         state: 'ready',
         diagnosticCode: null,
       });
+      expect(result.components).toContainEqual({
+        componentId: 'recovery',
+        state: 'ready',
+        diagnosticCode: null,
+      });
       expect(result.diagnosticCodes).not.toContain('migration_missing');
       expect(result.diagnosticCodes).not.toContain('repository_unavailable');
       expect(result.diagnosticCodes).not.toContain('audit_unavailable');
       expect(result.diagnosticCodes).not.toContain(
         'governance_table_lifecycle_missing',
       );
+      expect(result.diagnosticCodes).not.toContain('recovery_unverified');
       expect(result.diagnosticCodes).toContain(
         'legal_privacy_decision_required',
       );

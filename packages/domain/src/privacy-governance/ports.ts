@@ -167,6 +167,9 @@ export interface PrivacyProcessorExecutionJournal {
   complete(
     record: PrivacyProcessorExecutionJournalRecord,
   ): Promise<'accepted' | 'idempotent_replay' | 'conflict'>;
+  reconcileCompletion?(
+    record: PrivacyProcessorExecutionJournalRecord,
+  ): Promise<'accepted' | 'idempotent_replay' | 'conflict'>;
   markReconciliationRequired(
     operationId: string,
     bindingDigest: string,
