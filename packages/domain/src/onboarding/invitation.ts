@@ -2,8 +2,7 @@ export type InvitationState = 'issued' | 'claimed' | 'revoked' | 'expired';
 
 export type InvitationMutationResult =
   | { status: 'advanced'; state: InvitationState }
-  | { status: 'already_terminal'; state: InvitationState }
-  | { status: 'invalid' };
+  | { status: 'already_terminal'; state: InvitationState };
 
 const TERMINAL: ReadonlySet<InvitationState> = new Set([
   'claimed',
@@ -24,10 +23,8 @@ export function claimInvitation(
     return { state, status: 'already_terminal' };
   }
 
-  if (state !== 'issued') {
-    return { status: 'invalid' };
-  }
-
+  // TERMINAL covers every InvitationState except 'issued', so reaching here
+  // always means state === 'issued'.
   return { state: 'claimed', status: 'advanced' };
 }
 

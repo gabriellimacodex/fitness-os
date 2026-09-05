@@ -81,9 +81,6 @@ export class SyntheticOnboardingInvitationRepository implements OnboardingInvita
     if (result.status === 'already_terminal') {
       return { invitation: current, status: 'already_terminal' };
     }
-    if (result.status !== 'advanced') {
-      return { reason: 'illegal_transition', status: 'invalid' };
-    }
     const next = { ...current, state: result.state, updatedAt };
     this.#byId.set(invitationId, next);
     return { invitation: next, status: 'advanced' };
