@@ -21,6 +21,20 @@ describe('SyntheticOnboardingPolicyGateway', () => {
     }
   });
 
+  it('falls back to default integrity seed and package version when none are supplied', async () => {
+    const gateway = new SyntheticOnboardingPolicyGateway();
+    const result = await gateway.refresh({
+      attemptId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      productionMode: false,
+    });
+    expect(result.status).toBe('started');
+    if (result.status === 'started') {
+      expect(result.handoff.status).toBe('ready');
+      expect(result.handoff.packageVersion).toBe(1);
+      expect(result.handoff.integrityDigest).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
   it('blocks synthetic gateway use in productionMode', async () => {
     const gateway = new SyntheticOnboardingPolicyGateway();
     await expect(
