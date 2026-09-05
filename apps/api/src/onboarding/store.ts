@@ -6,7 +6,11 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 
-import type { ProposedRole } from '@fitness-os/domain';
+import {
+  ATTEMPT_ACTIVE_CAP,
+  isNonterminal,
+  type ProposedRole,
+} from '@fitness-os/domain';
 import {
   attemptDetailSchema,
   onboardingAttemptIdSchema,
@@ -178,24 +182,53 @@ export function createStoredAttempt(
   };
 }
 
+/**
+ * Returns the lowest ordinal in `1..ATTEMPT_ACTIVE_CAP` not currently held by
+ * a *nonterminal* attempt for this exact principal/role — never a
+ * lifetime-monotonic counter. `attemptDetailSchema` bounds `ordinal` to
+ * `1..ATTEMPT_ACTIVE_CAP` (the same fixed concurrent-attempt cap, currently
+ * 4) precisely because a terminal attempt's ordinal is a freed slot a later
+ * attempt for the same principal/role may reuse — see PRD 07's "successor
+ * attempt receives a new ID and ordinal" rule. Counting every historical
+ * attempt (including terminal ones) instead of only nonterminal ones would
+ * make this value grow without bound as attempts complete, expire, or are
+ * abandoned and superseded over time, eventually producing an ordinal
+ * greater than `ATTEMPT_ACTIVE_CAP` that fails `attemptDetailSchema.parse`
+ * inside `createStoredAttempt` and surfaces as an internal error instead of
+ * a normal successful creation.
+ *
+ * The caller already enforces `canAllocateAttempt(activeForRole.length)`
+ * (at most `ATTEMPT_ACTIVE_CAP - 1` nonterminal attempts) before allocating a
+ * new ordinal, so at least one slot in `1..ATTEMPT_ACTIVE_CAP` is always free
+ * here; the trailing throw exists only to fail loudly, never silently, if
+ * that invariant is ever violated by a future caller.
+ */
 export function nextOrdinalForRole(
   store: OnboardingStore,
   principalKey: string,
   proposedRole: ProposedRole,
 ): number {
-  let highest = 0;
+  const occupiedOrdinals = new Set<number>();
 
   for (const record of store.attempts.values()) {
     if (
       record.principalKey === principalKey &&
       record.detail.proposedRole === proposedRole &&
-      record.detail.ordinal > highest
+      isNonterminal(record.detail.lifecycle)
     ) {
-      highest = record.detail.ordinal;
+      occupiedOrdinals.add(record.detail.ordinal);
     }
   }
 
-  return highest + 1;
+  for (let ordinal = 1; ordinal <= ATTEMPT_ACTIVE_CAP; ordinal += 1) {
+    if (!occupiedOrdinals.has(ordinal)) {
+      return ordinal;
+    }
+  }
+
+  throw new Error(
+    'No ordinal slot available: every nonterminal attempt slot for this principal/role is already occupied.',
+  );
 }
 
 export function getAttemptForPrincipal(
