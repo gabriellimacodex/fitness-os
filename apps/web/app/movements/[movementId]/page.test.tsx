@@ -37,6 +37,19 @@ describe('MovementDetailView', () => {
     expect(markup).toContain('<h2>Safety</h2>');
   });
 
+  it('renders each setup, cue, common-mistake, and safety-note item', () => {
+    const markup = renderToStaticMarkup(
+      <MovementDetailView state={{ movement: squat, status: 'ready' }} />,
+    );
+
+    expect(markup).toContain('Stand with feet about hip-width apart.');
+    expect(markup).toContain('Keep the movement slow and even.');
+    expect(markup).toContain('Dropping quickly without control.');
+    expect(markup).toContain(
+      'Stop if you feel pain, dizziness, or loss of control and seek qualified help as appropriate.',
+    );
+  });
+
   it('renders a safe unavailable state without raw internals', () => {
     const markup = renderToStaticMarkup(
       <MovementDetailView state={{ status: 'unavailable' }} />,
