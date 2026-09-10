@@ -274,6 +274,21 @@ describe('invitation inspection', () => {
       status: 'advanced',
     });
   });
+
+  it('reports already_terminal for revoke on every terminal state', () => {
+    expect(revokeInvitation('claimed')).toEqual({
+      state: 'claimed',
+      status: 'already_terminal',
+    });
+    expect(revokeInvitation('revoked')).toEqual({
+      state: 'revoked',
+      status: 'already_terminal',
+    });
+    expect(revokeInvitation('expired')).toEqual({
+      state: 'expired',
+      status: 'already_terminal',
+    });
+  });
 });
 
 describe('claim-secret brute-force throttle', () => {
