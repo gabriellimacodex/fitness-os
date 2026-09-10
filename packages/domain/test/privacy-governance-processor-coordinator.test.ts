@@ -554,7 +554,7 @@ describe('synthetic processor coordinator', () => {
     expect(executions).toBe(0);
   });
 
-  it('replays an operation whose step is already recorded instead of treating it as a conflict', async () => {
+  it('replays an operation whose matching step is already recorded as already_terminal', async () => {
     const requestId = '66666666-6666-4666-8666-666666666666';
     const processorId = '99999999-9999-4999-8999-999999999999';
     const operationId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
@@ -591,8 +591,8 @@ describe('synthetic processor coordinator', () => {
         },
       ],
     });
-    // A step this same operationId already produced (stepId is always set to
-    // the creating operationId — see processor-coordinator.ts).
+    // A step already recorded for this operationId, with a matching stepId
+    // (the shape this coordinator's own writer always produces).
     const priorStep = privacyProcessorStepReferenceSchema.parse({
       stepId: operationId,
       requestId,
@@ -657,8 +657,7 @@ describe('synthetic processor coordinator', () => {
       request: expect.objectContaining({ requestId, state: 'completed' }),
     });
     // The replay still re-verifies the receipt through the same coordinator
-    // seam (idempotent by construction downstream), so execute() is invoked
-    // again rather than short-circuited as a conflict.
+    // seam (idempotent by construction downstream).
     expect(executions).toBe(1);
   });
 });

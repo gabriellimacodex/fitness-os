@@ -501,20 +501,16 @@ export async function coordinateSyntheticProcessorStep(input: {
   }
 
   const history = await input.steps.listForRequest(request.requestId);
-  // Every step this coordinator ever records sets `stepId` to exactly the
-  // creating call's `operationId` (see the `recordProcessorStepAndAdvanceRequest`
-  // call below), and `stepId` is each step repository's append-conflict /
-  // primary-key column (`privacy_processor_step_pkey` in the Postgres-backed
-  // repository; the `stepId`-keyed `Set` in the synthetic one). So no two
-  // stored steps can ever share one `operationId` — a second append for the
-  // same `operationId` would collide on the identical `stepId` and be
-  // rejected as a conflict before it could be persisted — and any step found
-  // by `operationId` always has `stepId === operationId` by construction.
-  // A once-real defensive multi-match/mismatch guard here was therefore
-  // unreachable; removed rather than kept as untestable dead code.
   const operationHistory = history.filter(
     (step) => step.operationId === input.operationId,
   );
+  if (
+    operationHistory.length > 1 ||
+    (operationHistory[0] !== undefined &&
+      operationHistory[0].stepId !== input.operationId)
+  ) {
+    return { status: 'execution_conflict' };
+  }
   const replay = operationHistory[0];
   if (request.state === 'completed' && replay === undefined) {
     return { status: 'request_not_executable' };
