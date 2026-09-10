@@ -309,6 +309,97 @@ describe('createApiClient', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('fetches and validates the current onboarding state with no-store', async () => {
+    const current = {
+      attempts: [],
+      mappings: [],
+      nextCursor: null,
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(current),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.onboardingCurrent()).resolves.toEqual(current);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/v1/onboarding/current'),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('encodes an onboarding cursor as a query parameter', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ attempts: [], mappings: [], nextCursor: null }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingCurrent({ cursor: 'opaque-cursor-value' });
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/v1/onboarding/current?cursor=opaque-cursor-value',
+      ),
+      expect.anything(),
+    );
+  });
+
+  it('throws a typed API error for an unauthenticated onboarding read', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-onboarding-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCurrent()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-onboarding-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed onboarding-current payload', async () => {
+    const rawContent = 'private-principal-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ attempts: rawContent, mappings: [], nextCursor: null }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCurrent()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
   it('aborts a movement read after 3,000 ms and does not return a prior result', async () => {
     vi.useFakeTimers();
     const fetch = vi.fn<typeof globalThis.fetch>(
