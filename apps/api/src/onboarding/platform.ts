@@ -1,4 +1,6 @@
 import {
+  asClaimFailureTracker,
+  createPostgresClaimFailureTracker,
   createPostgresConnection,
   createPostgresOnboardingReadinessProbe,
   type PostgresConnection,
@@ -36,6 +38,17 @@ export interface OnboardingPlatformHandles {
  * production call site currently constructs `createPostgresOnboardingReadinessProbe`
  * with real components at all."
  *
+ * `claimFailureTracker` is a PG-backed `ClaimFailureTracker`
+ * (`createPostgresClaimFailureTracker`, bound to the same `connection` as
+ * every other composed component) instead of `registerOnboardingRoutes`'s
+ * process-local `SyntheticClaimFailureTracker` default: the brute-force
+ * claim-secret throttle it backs must survive a restart and be shared across
+ * replicas, which an in-memory tracker cannot do — closing the gap
+ * `docs/contracts/README.md`'s "Onboarding claim-secret throttle" row
+ * previously recorded ("PG implementation is available for injection but
+ * not yet composed by the environment platform helper or server
+ * bootstrap").
+ *
  * `secretVerifier` is keyed by a fresh in-process pepper from
  * `createOnboardingStore()`, the exact same default `registerOnboardingRoutes`
  * already falls back to when no `store`/`secretVerifier` is supplied. This
@@ -61,6 +74,9 @@ export function createOnboardingPlatformFromEnv(
   const idFactory = new CryptoOnboardingIdFactory();
   const secretFactory = new CryptoOnboardingSecretFactory();
   const secretVerifier = new HmacInvitationSecretVerifier(store.pepper);
+  const claimFailureTracker = asClaimFailureTracker(
+    createPostgresClaimFailureTracker(connection),
+  );
   const persistence = createOnboardingPgPersistence(connection, { clock });
   const readinessProbe = createPostgresOnboardingReadinessProbe(connection, {
     mechanismComponents: { clock, idFactory, secretFactory, secretVerifier },
@@ -70,6 +86,7 @@ export function createOnboardingPlatformFromEnv(
     connection,
     platform: {
       onboarding: {
+        claimFailureTracker,
         clock,
         idFactory,
         persistence,
