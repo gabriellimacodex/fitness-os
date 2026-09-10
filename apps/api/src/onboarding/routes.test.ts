@@ -2671,4 +2671,40 @@ describe('policy-refresh and claim', () => {
 
     await app.close();
   });
+
+  it('sets no-store on an unexpected claim failure', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+    app.addHook('preHandler', async (request) => {
+      if ((request.url.split('?')[0] ?? '').endsWith('/claim')) {
+        throw new Error('private claim failure');
+      }
+    });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-fail'),
+      },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private claim failure');
+    expect(response.body).not.toContain(CLAIM_SECRET);
+
+    await app.close();
+  });
 });
