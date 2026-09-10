@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { CoachInvitationIssuedView, CoachInvitationsView } from './coach-views';
+import {
+  CoachInvitationIssuedView,
+  CoachInvitationsView,
+  CoachRevocationOutcomeView,
+} from './coach-views';
 import CoachOnboardingPage from './page';
 
 const sampleInvitation = {
@@ -52,6 +56,15 @@ describe('CoachInvitationsView', () => {
     expect(markup).not.toContain(sampleClaimSecret);
     expect(markup).not.toMatch(/email|phone|profile|roster/i);
   });
+
+  it('renders a retryable message without a list when unavailable', () => {
+    const markup = renderToStaticMarkup(
+      <CoachInvitationsView state={{ status: 'unavailable' }} />,
+    );
+
+    expect(markup).toContain('temporarily unavailable');
+    expect(markup).not.toContain('<ul');
+  });
 });
 
 describe('CoachInvitationIssuedView', () => {
@@ -63,6 +76,57 @@ describe('CoachInvitationIssuedView', () => {
     expect(markup).toContain(sampleClaimSecret);
     expect(markup).toContain('will not be shown again');
     expect(markup.split(sampleClaimSecret)).toHaveLength(2);
+  });
+});
+
+describe('CoachRevocationOutcomeView', () => {
+  it('reports that the request is still processing while pending', () => {
+    const markup = renderToStaticMarkup(
+      <CoachRevocationOutcomeView outcome={{ status: 'pending' }} />,
+    );
+
+    expect(markup).toContain('still being processed');
+  });
+
+  it('asks for a retry when the retry token does not match the last action', () => {
+    const markup = renderToStaticMarkup(
+      <CoachRevocationOutcomeView outcome={{ status: 'input_mismatch' }} />,
+    );
+
+    expect(markup).toContain('Try again');
+  });
+
+  it('reports a generic unavailable outcome without an invitation status', () => {
+    const markup = renderToStaticMarkup(
+      <CoachRevocationOutcomeView outcome={{ status: 'unavailable' }} />,
+    );
+
+    expect(markup).toContain('could not be revoked right now');
+    expect(markup).not.toContain('is now');
+  });
+
+  it.each(['issued', 'claimed', 'revoked', 'expired'] as const)(
+    'reports the resulting %s status for a resolved outcome',
+    (invitationStatus) => {
+      const markup = renderToStaticMarkup(
+        <CoachRevocationOutcomeView
+          outcome={{ invitationStatus, status: 'resolved' }}
+        />,
+      );
+
+      expect(markup).toContain(`is now ${invitationStatus}`);
+    },
+  );
+
+  it('never renders claim material or a student profile', () => {
+    const markup = renderToStaticMarkup(
+      <CoachRevocationOutcomeView
+        outcome={{ invitationStatus: 'revoked', status: 'resolved' }}
+      />,
+    );
+
+    expect(markup).not.toContain(sampleClaimSecret);
+    expect(markup).not.toMatch(/email|phone|profile|roster/i);
   });
 });
 
