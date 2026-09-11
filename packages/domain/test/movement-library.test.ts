@@ -379,6 +379,22 @@ describe('deriveManifestState', () => {
     );
   });
 
+  it('rejects a second publish action for an already-published movement', () => {
+    const first = publishRecord(SQUAT, 1);
+    const secondPublish: MovementManifestRecord = {
+      action: 'publish',
+      contentVersion: 2,
+      digest: digestMovementDetail({ ...SQUAT, name: 'Revised Squat' }),
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 2,
+    };
+
+    expect(() => deriveManifestState([first, secondPublish])).toThrow(
+      /must be revised, not republished as new/,
+    );
+  });
+
   it('rejects a withdrawal that changes the preceding version or digest', () => {
     const first = publishRecord(SQUAT, 1);
     const withdraw: MovementManifestRecord = {
