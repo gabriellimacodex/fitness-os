@@ -11,7 +11,10 @@ import {
 } from '@fitness-os/schemas';
 
 import { createPostgresConnection } from '../src/connection.js';
-import { createPostgresPrivacyReadinessProbe } from '../src/privacy/readiness.js';
+import {
+  checkPrivacyGovernanceLifecycleFunctionalReadiness,
+  createPostgresPrivacyReadinessProbe,
+} from '../src/privacy/readiness.js';
 import { createPostgresPrivacyRuntimeProcessorRegistry } from '../src/privacy/registries.js';
 import { requireDisposableDatabaseUrl } from './postgres.js';
 
@@ -201,6 +204,44 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(result.diagnosticCodes).not.toContain('migration_missing');
       expect(result.diagnosticCodes).not.toContain('repository_unavailable');
       expect(result.diagnosticCodes).not.toContain('audit_unavailable');
+    });
+
+    it('checkPrivacyGovernanceLifecycleFunctionalReadiness performs a real append+read-back through createPostgresPrivacyGovernanceLifecycleLedger and leaves no row behind in any of the three ledgers it writes to', async () => {
+      const countsBefore = await Promise.all([
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_governance_lifecycle_proof`,
+        ),
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_subject_request`,
+        ),
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_policy_package_version`,
+        ),
+      ]);
+
+      const result =
+        await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
+
+      expect(result.ready).toBe(true);
+
+      const countsAfter = await Promise.all([
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_governance_lifecycle_proof`,
+        ),
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_subject_request`,
+        ),
+        connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM privacy_policy_package_version`,
+        ),
+      ]);
+
+      // The probe transaction always rolls back, so it must never leave a
+      // row in any of the three ledgers it writes to, no matter how many
+      // times it runs.
+      expect(countsAfter[0]?.[0]?.count).toBe(countsBefore[0]?.[0]?.count);
+      expect(countsAfter[1]?.[0]?.count).toBe(countsBefore[1]?.[0]?.count);
+      expect(countsAfter[2]?.[0]?.count).toBe(countsBefore[2]?.[0]?.count);
     });
 
     // Runs before the following test seeds `privacy_processor_registration`,
