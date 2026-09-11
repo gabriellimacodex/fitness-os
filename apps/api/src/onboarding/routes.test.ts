@@ -540,6 +540,38 @@ describe('GET /v1/onboarding/current', () => {
     expect(body.error.code).toBe('BAD_REQUEST');
     await app.close();
   });
+
+  it('hydrates a principal’s existing attempts from Postgres before listing them', async () => {
+    const store = createOnboardingStore();
+    const invitation = seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+    });
+    // Persisted by an earlier request (possibly on a different replica) but
+    // deliberately absent from this process's in-memory `store`, so only a
+    // real hydration call can see it.
+    const persistedAttempt = createStoredAttempt(
+      invitation,
+      1,
+      'principal-a',
+      '2026-08-17T00:00:01.000Z',
+    );
+    const persistence = createAttemptOnlyPersistence([persistedAttempt]);
+    const { app } = buildSyntheticApp({ persistence, store });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/current',
+    });
+    const body = currentOnboardingResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(200);
+    expect(body.attempts.map((attempt) => attempt.attemptId)).toEqual([
+      persistedAttempt.detail.attemptId,
+    ]);
+    expect(store.attempts.size).toBe(1);
+
+    await app.close();
+  });
 });
 
 describe('POST /v1/onboarding/invitations/inspect', () => {

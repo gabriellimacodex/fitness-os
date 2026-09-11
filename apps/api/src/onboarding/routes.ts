@@ -494,6 +494,7 @@ export function registerOnboardingRoutes(
     }
 
     if (persistence !== undefined) {
+      await hydratePrincipalAttempts(store, persistence, context.principalKey);
       await hydratePrincipalMappings(store, persistence, context.principalKey);
     }
 
