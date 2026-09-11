@@ -32,6 +32,8 @@ const REQUIRED_ONBOARDING_MIGRATION_FILES = [
   '0008_prd07_onboarding_attempt.sql',
   '0009_prd07_onboarding_operation.sql',
   '0010_prd07_onboarding_role_mapping.sql',
+  '0013_prd07_onboarding_principal_binding.sql',
+  '0016_prd07_onboarding_transition.sql',
 ] as const;
 
 function hashMigrationFile(relativePath: string): string {
@@ -63,6 +65,8 @@ const REQUIRED_TABLES = [
   'onboarding_attempt',
   'onboarding_operation',
   'onboarding_role_mapping',
+  'onboarding_principal_binding',
+  'onboarding_transition',
 ] as const;
 
 /**
@@ -73,6 +77,14 @@ const REQUIRED_TABLES = [
  * `attempt_repository` → `onboarding_attempt`,
  * `operation_repository` → `onboarding_operation`,
  * `role_mapping_repository` → `onboarding_role_mapping`.
+ *
+ * `onboarding_principal_binding` and `onboarding_transition` are also real,
+ * already-applied PRD 07 tables (migrations 0013/0016): `checkOnboardingSchemaReadiness`
+ * is one combined, fail-closed check across every table the package
+ * requires, so omitting a real landed table from `REQUIRED_TABLES` would
+ * understate what "schema ready" actually verifies. Neither has a dedicated
+ * `OnboardingReadinessComponentId` of its own, so they fold into the
+ * combined `schema` result rather than a new per-table component.
  */
 const REPOSITORY_COMPONENT_IDS = [
   'invitation_repository',
