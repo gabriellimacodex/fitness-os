@@ -289,6 +289,20 @@ const INVENTORY_COVERAGE_COMPONENT_IDS = [
  * `runtime_processors` keeps its `processor_missing` default when at least
  * one expected processor is absent from the runtime registry; otherwise both
  * components fall back to `inventory_mismatch`.
+ *
+ * `expectedInventory.getInventory()` and `runtimeProcessors.listDescriptors()`
+ * are caller-supplied ports — a PG-backed `runtimeProcessors` (see
+ * `createPostgresPrivacyRuntimeProcessorRegistry`) issues a live database
+ * query with no retry or fallback, so it can reject on a transient
+ * connection failure, permission error, or similar. Every other check this
+ * module composes into `createPostgresPrivacyReadinessProbe`
+ * (`checkPrivacyCoreDatabaseReadiness`, `checkPrivacyGovernanceLifecycle-
+ * DatabaseReadiness`, `checkPrivacyRecoveryReadiness`,
+ * `checkPrivacyAuditSinkFunctionalReadiness`) already catches its own
+ * database errors and returns a `not_ready` result instead of throwing; this
+ * function must fail closed the same way; a rejected `evaluate()` would leave
+ * a caller without any readiness answer at all instead of the closed-
+ * vocabulary `not_ready` diagnostic this port promises.
  */
 async function evaluateInventoryCoverageComponents(
   expectedInventory: PrivacyExpectedProcessorInventoryPort,
@@ -297,8 +311,27 @@ async function evaluateInventoryCoverageComponents(
   expectedInventoryComponent: PrivacyReadinessComponent;
   runtimeProcessorsComponent: PrivacyReadinessComponent;
 }> {
-  const expected = await expectedInventory.getInventory();
-  const runtime = await runtimeProcessors.listDescriptors();
+  let expected: Awaited<ReturnType<typeof expectedInventory.getInventory>>;
+  let runtime: Awaited<ReturnType<typeof runtimeProcessors.listDescriptors>>;
+
+  try {
+    expected = await expectedInventory.getInventory();
+    runtime = await runtimeProcessors.listDescriptors();
+  } catch {
+    return {
+      expectedInventoryComponent: {
+        componentId: 'expected_inventory',
+        state: 'not_ready',
+        diagnosticCode: 'repository_unavailable',
+      },
+      runtimeProcessorsComponent: {
+        componentId: 'runtime_processors',
+        state: 'not_ready',
+        diagnosticCode: 'repository_unavailable',
+      },
+    };
+  }
+
   const coverage = compareExpectedInventoryToRuntime({ expected, runtime });
 
   if (coverage.status === 'matched') {
@@ -352,6 +385,11 @@ async function evaluateInventoryCoverageComponents(
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
  * both stay exactly as the base probe reports them, matching prior behavior.
+ * A thrown error from either port (e.g. a PG-backed `runtimeProcessors`
+ * rejecting on a transient database failure) is caught and reported as both
+ * components `not_ready` with `repository_unavailable`, the same fail-closed
+ * shape every other database-backed component here already uses — this
+ * function never rejects on that account.
  * Every remaining component (identity_boundary, policy_package) is left
  * exactly as the base probe reports it — this does not verify those, since
  * both wait on an unresolved identity/legal-policy decision this probe
