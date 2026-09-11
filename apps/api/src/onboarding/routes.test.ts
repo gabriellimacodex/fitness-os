@@ -20,11 +20,13 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
+import type { OnboardingPgPersistence } from './pg-persistence.js';
 import {
   createOnboardingStore,
   createStoredAttempt,
   digestClaimSecret,
   mappingIdFor,
+  type StoredAttempt,
 } from './store.js';
 import { seedInvitation, seedIssuedInvitation } from './test-store.js';
 
@@ -40,6 +42,7 @@ function buildSyntheticApp(input?: {
   claimFailureTracker?: ClaimFailureTracker;
   claimThrottleWindow?: ClaimThrottleWindow;
   mappedRoles?: readonly ('student' | 'coach')[];
+  persistence?: OnboardingPgPersistence;
   principalKey?: string;
   store?: ReturnType<typeof createOnboardingStore>;
 }) {
@@ -53,6 +56,7 @@ function buildSyntheticApp(input?: {
       onboarding: {
         claimFailureTracker: input?.claimFailureTracker,
         claimThrottleWindow: input?.claimThrottleWindow,
+        persistence: input?.persistence,
         resolveContext: () => ({
           mappedRoles,
           principalKey,
@@ -64,6 +68,60 @@ function buildSyntheticApp(input?: {
   );
 
   return { app, principalKey, store };
+}
+
+function createAttemptOnlyPersistence(
+  attempts: StoredAttempt[],
+): OnboardingPgPersistence {
+  const attemptRows = attempts.map((attempt) => ({
+    ...attempt,
+    updatedAt: attempt.createdAt,
+  }));
+
+  return {
+    nowUtcMs: () => '2026-08-19T15:00:00.000Z',
+    principalBinding: {
+      getByPrincipalKey: async () => null,
+      resolveOrEstablish: async ({ principalKey, nowUtcMs }) => ({
+        binding: {
+          bindingId: `binding-${principalKey}`,
+          createdAt: nowUtcMs,
+          principalKey,
+        },
+        status: 'established' as const,
+      }),
+    },
+    invitations: {
+      get: async () => null,
+      getByClaimDigest: async () => null,
+      listByTargetCoach: async () => [],
+      put: async () => 'accepted' as const,
+      applyClaim: async () => ({ status: 'conflict' as const }),
+      applyRevoke: async () => ({ status: 'conflict' as const }),
+    },
+    attempts: {
+      get: async () => null,
+      listByPrincipal: async () => attemptRows,
+      put: async () => 'accepted' as const,
+      applyTransition: async () => ({ status: 'conflict' as const }),
+    },
+    mappings: {
+      get: async () => null,
+      listByPrincipal: async () => [],
+      put: async (record) => ({ mapping: record, status: 'accepted' as const }),
+    },
+    operations: {
+      getByBindingKey: async () => null,
+      getByOperationId: async () => null,
+      put: async (record) => ({
+        operation: record,
+        status: 'accepted' as const,
+      }),
+    },
+    transitions: {
+      append: async () => 'accepted' as const,
+    },
+  };
 }
 
 function secretAt(index: number) {
@@ -782,6 +840,40 @@ describe('POST /v1/onboarding/attempts', () => {
     }
 
     const { app } = buildSyntheticApp({ store });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: secrets[4], retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toMatchObject({
+      outcome: 'active_attempt_limit_reached',
+    });
+    expect(store.attempts.size).toBe(4);
+
+    await app.close();
+  });
+
+  it('hydrates a principal’s existing attempts from Postgres before enforcing the active attempt cap', async () => {
+    const store = createOnboardingStore();
+    const secrets = [1, 2, 3, 4, 5].map((index) => secretAt(index));
+    const persistedAttempts: StoredAttempt[] = [];
+
+    for (const [index, secret] of secrets.entries()) {
+      const invitation = seedIssuedInvitation(store, { claimSecret: secret });
+      if (index < 4) {
+        // Persisted by an earlier request (possibly on a different replica)
+        // but deliberately absent from this process's in-memory `store`, so
+        // only a real hydration call can see them.
+        persistedAttempts.push(
+          createStoredAttempt(invitation, index + 1, 'principal-a'),
+        );
+      }
+    }
+
+    const persistence = createAttemptOnlyPersistence(persistedAttempts);
+    const { app } = buildSyntheticApp({ persistence, store });
     const response = await app.inject({
       method: 'POST',
       url: '/v1/onboarding/attempts',
