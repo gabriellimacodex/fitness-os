@@ -101,6 +101,26 @@ export interface AttemptTimeoutBounds {
   inactivityTtlMs: number;
 }
 
+/**
+ * Conservative default `AttemptTimeoutBounds` for callers that do not supply
+ * their own server configuration. Exact production thresholds are reviewed
+ * product configuration, not a value this package or a caller may silently
+ * widen; this default only bounds the mechanism's own behavior when no
+ * server configuration overrides it — the same posture as
+ * `DEFAULT_CLAIM_THROTTLE_WINDOW` (`./claim-throttle.ts`).
+ *
+ * `inactivityTtlMs` is set here for `evaluateAttemptTimeout`'s input
+ * validation only. No caller in this codebase yet tracks a persisted
+ * `lastActivityAtMs` per attempt, so every current caller passes the current
+ * instant as `lastActivityAtMs`, which makes the inactivity branch
+ * unreachable regardless of this bound's value until that persisted field
+ * exists.
+ */
+export const DEFAULT_ATTEMPT_TIMEOUT_BOUNDS: AttemptTimeoutBounds = {
+  absoluteTtlMs: 24 * 60 * 60 * 1000,
+  inactivityTtlMs: 24 * 60 * 60 * 1000,
+};
+
 export type AttemptTimeoutStatus = 'active' | 'expired' | 'inactive';
 
 /**
