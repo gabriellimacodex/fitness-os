@@ -332,4 +332,113 @@ describe('createApiClient', () => {
     await expectation;
     vi.useRealTimers();
   });
+
+  it('inspects an invitation with a validated claim secret and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'inspect_invitation',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          command: 'inspect_invitation',
+          inspection: {
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            state: 'issued',
+          },
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingInspectInvitation('a'.repeat(24));
+
+    expect(response.result).toMatchObject({
+      command: 'inspect_invitation',
+      outcome: 'command_succeeded',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/invitations/inspect',
+      ),
+      {
+        body: JSON.stringify({ claimSecret: 'a'.repeat(24) }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid claim secret before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingInspectInvitation('too-short'),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when an invitation inspection is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-inspect-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-inspect-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed inspect-invitation payload', async () => {
+    const rawContent = 'private-invitation-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
