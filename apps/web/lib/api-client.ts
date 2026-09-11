@@ -2,10 +2,13 @@ import {
   apiErrorResponseSchema,
   currentOnboardingResponseSchema,
   healthResponseSchema,
+  inspectInvitationRequestSchema,
   movementDetailResponseSchema,
   movementListResponseSchema,
+  onboardingOperationResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
+  type OnboardingOperationResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -227,6 +230,37 @@ export function createApiClient({
       }
 
       return current.data;
+    },
+    async onboardingInspectInvitation(
+      claimSecret: string,
+    ): Promise<OnboardingOperationResponse> {
+      const body = inspectInvitationRequestSchema.parse({ claimSecret });
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/onboarding/invitations/inspect', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const operation = onboardingOperationResponseSchema.safeParse(payload);
+
+      if (!operation.success) {
+        throw new ApiProtocolError();
+      }
+
+      return operation.data;
     },
   };
 }
