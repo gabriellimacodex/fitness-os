@@ -11,7 +11,10 @@ import {
 } from '@fitness-os/schemas';
 
 import type { PostgresConnection } from '../src/connection.js';
-import { createPostgresPrivacyReadinessProbe } from '../src/privacy/readiness.js';
+import {
+  checkPrivacyRecoveryFunctionalReadiness,
+  createPostgresPrivacyReadinessProbe,
+} from '../src/privacy/readiness.js';
 
 const processor = privacyProcessorDescriptorReferenceSchema.parse({
   processorId: '99999999-9999-4999-8999-999999999999',
@@ -316,7 +319,21 @@ describe('privacy recovery readiness', () => {
     });
   });
 
-  it('reports recovery ready once every required append-only guard trigger is present', async () => {
+  it('reports recovery ready once every required append-only guard trigger is present and the functional guard round trip succeeds', async () => {
+    // Minimal stand-in for the drizzle transaction chain
+    // `checkPrivacyRecoveryFunctionalReadiness` exercises: the probe insert
+    // succeeds, and the probe UPDATE is rejected with the exact Postgres
+    // error code the real append-only guard trigger raises.
+    const tx = {
+      insert: () => ({ values: async () => undefined }),
+      execute: async () => {
+        const error = new Error('insufficient privilege') as Error & {
+          code: string;
+        };
+        error.code = '42501';
+        throw error;
+      },
+    };
     const connection = {
       close: async () => undefined,
       db: {
@@ -332,6 +349,7 @@ describe('privacy recovery readiness', () => {
           // the result.
           { tgname: 'some_other_unrelated_guard' },
         ],
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       },
     } as unknown as PostgresConnection;
 
@@ -346,6 +364,42 @@ describe('privacy recovery readiness', () => {
       state: 'ready',
     });
     expect(result.diagnosticCodes).not.toContain('recovery_unverified');
+  });
+
+  it('keeps recovery not_ready with recovery_unverified when every guard trigger is present but the functional round trip finds the guard does not reject a mutation', async () => {
+    const tx = {
+      insert: () => ({ values: async () => undefined }),
+      // The probe UPDATE succeeds instead of being rejected: the guard
+      // trigger is present by name but is not actually enforcing.
+      execute: async () => undefined,
+    };
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tgname: 'privacy_authorization_evidence_append_only_guard' },
+          { tgname: 'privacy_withdrawal_append_only_guard' },
+          { tgname: 'privacy_audit_event_append_only_guard' },
+          { tgname: 'privacy_subject_request_transition_append_only_guard' },
+          { tgname: 'privacy_policy_package_version_append_only_guard' },
+          { tgname: 'privacy_purpose_version_append_only_guard' },
+          { tgname: 'privacy_processor_registration_append_only_guard' },
+        ],
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: 'recovery_unverified',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain('recovery_unverified');
   });
 
   it('reports recovery not_ready with recovery_unverified on a database error', async () => {
@@ -367,6 +421,88 @@ describe('privacy recovery readiness', () => {
       diagnosticCode: 'recovery_unverified',
       state: 'not_ready',
     });
+  });
+});
+
+describe('checkPrivacyRecoveryFunctionalReadiness (mocked)', () => {
+  it('reports ready when the probe insert succeeds and the probe update is rejected with insufficient_privilege', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            execute: async () => {
+              const error = new Error('insufficient privilege') as Error & {
+                code: string;
+              };
+              error.code = '42501';
+              throw error;
+            },
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await checkPrivacyRecoveryFunctionalReadiness(connection);
+
+    expect(result).toEqual({ ready: true });
+  });
+
+  it('reports guard_not_enforced when the probe update succeeds instead of being rejected', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            execute: async () => undefined,
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await checkPrivacyRecoveryFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'guard_not_enforced',
+      detail: 'guard_not_enforced',
+    });
+  });
+
+  it('reports database_error when the probe update fails with an unrelated error code', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            execute: async () => {
+              const error = new Error('duplicate key') as Error & {
+                code: string;
+              };
+              error.code = '23505';
+              throw error;
+            },
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await checkPrivacyRecoveryFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
+  });
+
+  it('reports database_error when the transaction itself is unavailable', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {},
+    } as unknown as PostgresConnection;
+
+    const result = await checkPrivacyRecoveryFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
   });
 });
 

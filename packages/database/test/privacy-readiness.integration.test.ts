@@ -11,7 +11,10 @@ import {
 } from '@fitness-os/schemas';
 
 import { createPostgresConnection } from '../src/connection.js';
-import { createPostgresPrivacyReadinessProbe } from '../src/privacy/readiness.js';
+import {
+  checkPrivacyRecoveryFunctionalReadiness,
+  createPostgresPrivacyReadinessProbe,
+} from '../src/privacy/readiness.js';
 import { createPostgresPrivacyRuntimeProcessorRegistry } from '../src/privacy/registries.js';
 import { requireDisposableDatabaseUrl } from './postgres.js';
 
@@ -133,6 +136,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(result.diagnosticCodes).toContain(
         'legal_privacy_decision_required',
       );
+    });
+
+    it('checkPrivacyRecoveryFunctionalReadiness performs a real insert+update round trip proving the append-only guard rejects a mutation, and leaves no row behind', async () => {
+      const [countBefore] = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_authorization_evidence`,
+      );
+
+      const result = await checkPrivacyRecoveryFunctionalReadiness(connection);
+
+      expect(result).toEqual({ ready: true });
+
+      const [countAfter] = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_authorization_evidence`,
+      );
+
+      // The probe transaction always rolls back, whether the update is
+      // rejected or (unexpectedly) succeeds, so it must never leave a row
+      // in the ledger it writes to.
+      expect(countAfter?.count).toBe(countBefore?.count);
     });
 
     it('reports migrations not_ready with migration_missing and flips mechanismReady false on a missing required migration', async () => {
