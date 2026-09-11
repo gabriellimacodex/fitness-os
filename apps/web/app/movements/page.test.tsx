@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ApiProtocolError } from '../../lib/api-client';
-import { loadMovements } from './page';
+import MovementsPage, { loadMovements } from './page';
 import { MovementsListView } from './movement-views';
 
 const squat = movementSummarySchema.parse({
@@ -87,6 +87,24 @@ describe('loadMovements', () => {
 
     expect(state).toEqual({ status: 'unavailable' });
     expect(JSON.stringify(state)).not.toContain('protocol');
+  });
+});
+
+describe('MovementsPage', () => {
+  it('renders the list view produced by the real request pipeline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ items: [squat] }, { status: 200 })),
+    );
+
+    try {
+      const markup = renderToStaticMarkup(await MovementsPage());
+
+      expect(markup).toContain('Bodyweight Squat');
+      expect(markup).toContain('href="/movements/bodyweight-squat"');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
