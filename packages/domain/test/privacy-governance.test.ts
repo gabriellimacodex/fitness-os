@@ -1429,6 +1429,204 @@ describe('evaluateDataUse', () => {
       reasonCode: 'evidence_missing',
     });
   });
+
+  it('denies when the actor context lacks the data_use_evaluate authority claim', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(ports, {
+      actor: { ...actor, authorityClaims: ['authorization_evidence_append'] },
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'actor_context_lacking_authority',
+    });
+  });
+
+  it('denies when the bound purpose version is not active', async () => {
+    const ports = seedHappyPath();
+    ports.purposes.seed(
+      privacyPurposeVersionReferenceSchema.parse({
+        ...purpose,
+        activationState: 'inactive',
+      }),
+    );
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'purpose_inactive',
+    });
+  });
+
+  it('denies when the purpose is bound to a different policy version', async () => {
+    const ports = seedHappyPath();
+    ports.purposes.seed(
+      privacyPurposeVersionReferenceSchema.parse({
+        ...purpose,
+        policyVersionId: '34343434-3434-4343-8343-343434343434',
+      }),
+    );
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'purpose_version_mismatched',
+    });
+  });
+
+  it('denies an operation kind outside the purpose binding', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'authorization_evidence_append',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'operation_outside_purpose_binding',
+    });
+  });
+
+  it('denies an engineering category outside the purpose binding', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: privacyEngineeringCategoryIdSchema.parse(
+        '12121212-1212-4212-8212-121212121212',
+      ),
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'category_outside_purpose_binding',
+    });
+  });
+
+  it('denies when the processor descriptor is not registered', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: '56565656-5656-4565-8565-565656565656',
+      processorCapability: 'access',
+      evidenceId: evidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'processor_absent',
+    });
+  });
+
+  it('denies an evidence ID that resolves to no record', async () => {
+    const ports = seedHappyPath();
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: '78787878-7878-4787-8787-787878787878',
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'evidence_invalid',
+    });
+  });
+
+  it('denies evidence bound to a different purpose', async () => {
+    const ports = seedHappyPath();
+    const mismatchedEvidence = privacyEvidenceReferenceSchema.parse({
+      evidenceId: '90909090-9090-4909-8909-909090909090',
+      purposeId: '13131313-1313-4313-8313-131313131313',
+      policyVersionId: policy.versionId,
+      contentDigest: 'f'.repeat(64),
+      recordedAt: '2026-08-18T11:00:00.000Z',
+    });
+    ports.evidence.seedEvidence(mismatchedEvidence);
+
+    const result = await evaluateDataUse(ports, {
+      actor,
+      purposeVersionId: purpose.purposeVersionId,
+      policyVersionId: policy.versionId,
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: categoryId,
+      processorId: processor.processorId,
+      processorCapability: 'access',
+      evidenceId: mismatchedEvidence.evidenceId,
+      subjectScopeId,
+      productionMode: false,
+    });
+
+    expect(result.decision).toMatchObject({
+      outcome: 'denied',
+      reasonCode: 'evidence_mismatched',
+    });
+  });
 });
 
 describe('withdrawal planning', () => {
