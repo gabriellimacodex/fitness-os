@@ -1,4 +1,5 @@
 import {
+  abandonAttemptRequestSchema,
   apiErrorResponseSchema,
   healthResponseSchema,
   inspectInvitationRequestSchema,
@@ -215,6 +216,41 @@ export function createApiClient({
       const { payload, response } = await fetchJson(
         fetchImplementation,
         new URL('v1/onboarding/invitations/inspect', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const operation = onboardingOperationResponseSchema.safeParse(payload);
+
+      if (!operation.success) {
+        throw new ApiProtocolError();
+      }
+
+      return operation.data;
+    },
+    async onboardingAbandonAttempt(
+      attemptId: string,
+      retryToken: string,
+    ): Promise<OnboardingOperationResponse> {
+      const body = abandonAttemptRequestSchema.parse({ retryToken });
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          `v1/onboarding/attempts/${encodeURIComponent(attemptId)}/abandon`,
+          parsedBaseUrl,
+        ),
         {
           body: JSON.stringify(body),
           cache: 'no-store',
