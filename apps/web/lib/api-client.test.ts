@@ -333,6 +333,116 @@ describe('createApiClient', () => {
     vi.useRealTimers();
   });
 
+  it('fetches and validates the student-invitation list with no-store', async () => {
+    const list = {
+      items: [
+        {
+          invitationId: '11111111-1111-4111-8111-111111111111',
+          purpose: 'student_onboarding',
+          state: 'issued',
+        },
+      ],
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(list),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(client.onboardingListStudentInvitations()).resolves.toEqual(
+      list,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/student-invitations',
+      ),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('throws a typed API error for an unauthenticated student-invitation list read', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-invitations-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingListStudentInvitations()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-invitations-1',
+      status: 401,
+    });
+  });
+
+  it('throws a typed API error for a forbidden student-invitation list read', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Forbidden',
+            requestId: 'req-invitations-2',
+          },
+        },
+        { status: 403 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingListStudentInvitations()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'FORBIDDEN',
+      requestId: 'req-invitations-2',
+      status: 403,
+    });
+  });
+
+  it('does not echo raw content from a malformed student-invitation list payload', async () => {
+    const rawContent = 'private-invitation-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ items: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingListStudentInvitations()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
   it('inspects an invitation with a validated claim secret and no-store', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({

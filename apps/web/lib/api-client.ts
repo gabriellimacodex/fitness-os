@@ -6,6 +6,7 @@ import {
   movementListResponseSchema,
   onboardingOperationResponseSchema,
   readinessResponseSchema,
+  studentInvitationListResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
 } from '@fitness-os/schemas';
@@ -206,6 +207,25 @@ export function createApiClient({
       }
 
       return detail.data;
+    },
+    async onboardingListStudentInvitations() {
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/onboarding/student-invitations', parsedBaseUrl),
+        { cache: 'no-store' },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const list = studentInvitationListResponseSchema.safeParse(payload);
+
+      if (!list.success) {
+        throw new ApiProtocolError();
+      }
+
+      return list.data;
     },
     async onboardingInspectInvitation(
       claimSecret: string,
