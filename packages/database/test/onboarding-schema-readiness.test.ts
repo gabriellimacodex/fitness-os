@@ -54,6 +54,7 @@ const ALL_ONBOARDING_TABLES = [
   'onboarding_attempt',
   'onboarding_operation',
   'onboarding_role_mapping',
+  'onboarding_claim_failure',
 ] as const;
 
 describe('onboarding schema readiness', () => {
@@ -73,10 +74,13 @@ describe('onboarding schema readiness', () => {
     expect(
       existsSync(join(drizzleRoot, '0010_prd07_onboarding_role_mapping.sql')),
     ).toBe(true);
+    expect(
+      existsSync(join(drizzleRoot, '0024_prd07_onboarding_claim_failure.sql')),
+    ).toBe(true);
 
     const hashes = requiredOnboardingMigrationHashes();
-    expect(hashes).toHaveLength(5);
-    expect(new Set(hashes).size).toBe(5);
+    expect(hashes).toHaveLength(6);
+    expect(new Set(hashes).size).toBe(6);
     for (const hash of hashes) {
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
     }
@@ -224,6 +228,31 @@ describe('onboarding schema readiness', () => {
     expect(result.diagnosticCodes).toContain('schema_mismatch');
   });
 
+  it('flips schema not_ready when only the claim-failure tracker table is missing', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection([
+        'onboarding_invitation',
+        'onboarding_attempt',
+        'onboarding_operation',
+        'onboarding_role_mapping',
+      ]),
+      { requiredHashes: [] },
+    ).evaluate();
+
+    expect(
+      result.components.filter(
+        (component) => component.componentId === 'schema',
+      ),
+    ).toEqual([
+      {
+        componentId: 'schema',
+        diagnosticCode: 'schema_mismatch',
+        state: 'not_ready',
+      },
+    ]);
+    expect(result.mechanismReady).toBe(false);
+  });
+
   it('normalizes omitted and duplicated base repository components and drops their stale diagnostics', async () => {
     const baseProbe: OnboardingReadinessProbe = {
       evaluate: async () => ({
@@ -281,6 +310,7 @@ describe('onboarding schema readiness', () => {
                 { tablename: 'onboarding_attempt' },
                 { tablename: 'onboarding_operation' },
                 { tablename: 'onboarding_role_mapping' },
+                { tablename: 'onboarding_claim_failure' },
               ];
         },
       },
