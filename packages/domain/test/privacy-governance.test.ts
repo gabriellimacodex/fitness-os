@@ -1793,6 +1793,79 @@ describe('synthetic expected processor inventory', () => {
       ],
     });
   });
+
+  it('flags a duplicate runtime processor id, a fully absent expected processor, a descriptor/inventory binding mismatch, and a missing category', () => {
+    const duplicate = compareExpectedInventoryToRuntime({
+      expected: inventory,
+      runtime: [processor, processor],
+    });
+    expect(duplicate).toMatchObject({
+      status: 'mismatched',
+      mismatches: [
+        {
+          diagnosticCode: 'inventory_mismatch',
+          detail: 'duplicate_runtime_processor_id',
+          processorId: processor.processorId,
+        },
+      ],
+    });
+
+    const absent = compareExpectedInventoryToRuntime({
+      expected: inventory,
+      runtime: [],
+    });
+    expect(absent).toMatchObject({
+      status: 'mismatched',
+      mismatches: [
+        {
+          diagnosticCode: 'processor_missing',
+          detail: 'expected_processor_absent_from_runtime',
+          processorId: processor.processorId,
+        },
+      ],
+    });
+
+    const bindingMismatch = compareExpectedInventoryToRuntime({
+      expected: inventory,
+      runtime: [
+        privacyProcessorDescriptorReferenceSchema.parse({
+          ...processor,
+          descriptorDigest: 'e'.repeat(64),
+        }),
+      ],
+    });
+    expect(bindingMismatch).toMatchObject({
+      status: 'mismatched',
+      mismatches: [
+        {
+          diagnosticCode: 'inventory_mismatch',
+          detail: 'descriptor_or_inventory_binding_mismatch',
+          processorId: processor.processorId,
+        },
+      ],
+    });
+
+    const missingCategory = compareExpectedInventoryToRuntime({
+      expected: inventory,
+      runtime: [
+        privacyProcessorDescriptorReferenceSchema.parse({
+          ...processor,
+          allowedCategoryIds: [],
+        }),
+      ],
+    });
+    expect(missingCategory.status).toBe('mismatched');
+    if (missingCategory.status !== 'mismatched') {
+      throw new Error('expected mismatched');
+    }
+    expect(
+      missingCategory.mismatches.some(
+        (row) =>
+          row.diagnosticCode === 'inventory_mismatch' &&
+          row.detail.startsWith('missing_category:'),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('buildRequestProcessorPlan', () => {
