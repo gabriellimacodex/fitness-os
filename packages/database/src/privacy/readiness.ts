@@ -28,7 +28,25 @@ import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
 import { createPostgresPrivacyAuditSink } from './ledger.js';
-import { privacyAuditEvent } from './tables.js';
+import { privacyAuditEvent, privacyAuthorizationEvidence } from './tables.js';
+
+function hasPostgresErrorCode(error: unknown, code: string): boolean {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === code
+  ) {
+    return true;
+  }
+
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'cause' in error &&
+    hasPostgresErrorCode(error.cause, code)
+  );
+}
 
 const drizzleRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -375,6 +393,97 @@ export async function checkPrivacyRecoveryReadiness(
   }
 }
 
+/**
+ * Thrown deliberately at the end of the functional recovery-guard probe
+ * transaction so its synthetic insert never commits. Caught explicitly in
+ * `checkPrivacyRecoveryFunctionalReadiness` and treated as success; any
+ * other thrown value is a real failure of the guard round trip.
+ */
+class PrivacyRecoveryGuardProbeRollback extends Error {}
+
+export type PrivacyRecoveryFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'guard_not_enforced' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * `checkPrivacyRecoveryReadiness` only proves the append-only guard triggers
+ * exist under their expected names — it cannot tell a genuinely enforcing
+ * trigger from one whose underlying `privacy_reject_append_only_mutation`
+ * function was altered, replaced, or otherwise silently defanged while the
+ * trigger object itself remains present. This performs the real, previously
+ * only test-covered proof (see `privacy-migration-recovery.integration.
+ * test.ts`) as a readiness check: insert one synthetic
+ * `privacy_authorization_evidence` row (no foreign-key prerequisites),
+ * attempt an ordinary `UPDATE` against it, and require Postgres to reject
+ * that statement with `insufficient_privilege` (`42501`) — the exact error
+ * `privacy_reject_append_only_mutation` raises. Every write, including the
+ * probe insert, happens inside one transaction that always rolls back, so
+ * no probe row is ever left behind in the ledger it exercises.
+ */
+export async function checkPrivacyRecoveryFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<PrivacyRecoveryFunctionalReadinessResult> {
+  const probeEvidenceId = randomUUID();
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      await tx.insert(privacyAuthorizationEvidence).values({
+        evidenceId: probeEvidenceId,
+        purposeId: randomUUID(),
+        policyVersionId: randomUUID(),
+        contentDigest: '0'.repeat(64),
+        recordedAt: new Date().toISOString(),
+      });
+
+      let updateRejected = false;
+      try {
+        await tx.execute(sql`
+          UPDATE privacy_authorization_evidence
+          SET content_digest = ${'1'.repeat(64)}
+          WHERE evidence_id = ${probeEvidenceId}
+        `);
+      } catch (error) {
+        if (!hasPostgresErrorCode(error, '42501')) {
+          throw error;
+        }
+        updateRejected = true;
+      }
+
+      if (!updateRejected) {
+        throw new Error('guard_not_enforced');
+      }
+
+      // Always abort: this is a readiness probe, not a real evidence
+      // record, and must never leave a row in the append-only ledger it
+      // wrote to.
+      throw new PrivacyRecoveryGuardProbeRollback();
+    });
+
+    return {
+      ready: false,
+      reason: 'guard_not_enforced',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof PrivacyRecoveryGuardProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    return {
+      ready: false,
+      reason:
+        message === 'guard_not_enforced'
+          ? 'guard_not_enforced'
+          : 'database_error',
+      detail: message,
+    };
+  }
+}
+
 const INVENTORY_COVERAGE_COMPONENT_IDS = [
   'expected_inventory',
   'runtime_processors',
@@ -452,7 +561,16 @@ async function evaluateInventoryCoverageComponents(
  * read from the table it found. The functional check is skipped (and
  * `audit_sink` stays `not_ready`) when the schema result itself is not
  * `ready`, since an insert would just fail for a reason `migrations`/
- * `repositories` already report. When both
+ * `repositories` already report. `recovery` is `ready` only when the static
+ * trigger-presence check is also `ready` **and**
+ * `checkPrivacyRecoveryFunctionalReadiness` confirms a real, rolled-back
+ * insert+update proves the append-only guard actually rejects a mutation —
+ * trigger-name presence alone cannot distinguish a genuinely enforcing
+ * trigger from one whose underlying function was altered or defanged while
+ * the trigger object remains present. The functional check is skipped, and
+ * `recovery` stays `not_ready`, when the trigger-presence check itself is
+ * not `ready`, since the probe would just fail for a reason `recovery`
+ * already reports. When both
  * `expectedInventory` and `runtimeProcessors` are supplied, this also
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
@@ -501,6 +619,14 @@ export function createPostgresPrivacyReadinessProbe(
       // anyway would just duplicate that diagnosis with a heavier DB call.
       const auditSinkFunctionalResult = schemaResult.ready
         ? await checkPrivacyAuditSinkFunctionalReadiness(connection)
+        : null;
+      // Only attempt the functional guard round trip once the static
+      // trigger-presence check already reports ready — otherwise the probe
+      // insert/update would just fail for a reason `recovery` already
+      // reports through `recovery_unverified`, and running it anyway would
+      // duplicate that diagnosis with a heavier DB call.
+      const recoveryFunctionalResult = recoveryResult.ready
+        ? await checkPrivacyRecoveryFunctionalReadiness(connection)
         : null;
       const inventoryCoverage =
         expectedInventory !== undefined && runtimeProcessors !== undefined
@@ -553,13 +679,14 @@ export function createPostgresPrivacyReadinessProbe(
               state: 'not_ready',
               diagnosticCode: 'governance_table_lifecycle_missing',
             };
-      const recoveryComponent: PrivacyReadinessComponent = recoveryResult.ready
-        ? { componentId: 'recovery', state: 'ready', diagnosticCode: null }
-        : {
-            componentId: 'recovery',
-            state: 'not_ready',
-            diagnosticCode: 'recovery_unverified',
-          };
+      const recoveryComponent: PrivacyReadinessComponent =
+        recoveryResult.ready && recoveryFunctionalResult?.ready === true
+          ? { componentId: 'recovery', state: 'ready', diagnosticCode: null }
+          : {
+              componentId: 'recovery',
+              state: 'not_ready',
+              diagnosticCode: 'recovery_unverified',
+            };
 
       const activeOverriddenComponentIds = new Set<PrivacyReadinessComponentId>(
         [
