@@ -3,14 +3,17 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import type {
   PrivacyReadinessComponent,
   PrivacyReadinessComponentId,
   PrivacyReadinessResult,
 } from '@fitness-os/schemas';
-import { canonicalizePrivacyReadinessDiagnosticCodes } from '@fitness-os/schemas';
+import {
+  canonicalizePrivacyReadinessDiagnosticCodes,
+  privacyAuditEventReferenceSchema,
+} from '@fitness-os/schemas';
 import type {
   PrivacyExpectedProcessorInventoryPort,
   PrivacyReadinessProbe,
@@ -24,7 +27,8 @@ import {
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
-import { privacyAuthorizationEvidence } from './tables.js';
+import { createPostgresPrivacyAuditSink } from './ledger.js';
+import { privacyAuditEvent, privacyAuthorizationEvidence } from './tables.js';
 
 function hasPostgresErrorCode(error: unknown, code: string): boolean {
   if (
@@ -216,6 +220,102 @@ export async function checkPrivacyGovernanceLifecycleDatabaseReadiness(
       ready: false,
       reason: 'database_error',
       detail: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+}
+
+/**
+ * Thrown deliberately at the end of the functional audit-sink round-trip
+ * transaction so the write never commits. Caught explicitly in
+ * `checkPrivacyAuditSinkFunctionalReadiness` and treated as success; any
+ * other thrown value is a real failure of the insert/select round trip.
+ */
+class PrivacyAuditSinkProbeRollback extends Error {}
+
+export type PrivacyAuditSinkFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'round_trip_failed' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Exercises the real `createPostgresPrivacyAuditSink` append path end to end:
+ * appends one synthetic, closed-vocabulary audit event through the actual
+ * sink implementation inside a transaction, confirms it is visible via a
+ * read-back, and always rolls back so no probe row is ever committed to the
+ * append-only ledger. This catches a broken insert/select path (column
+ * mismatch, constraint drift, permission failure) that the static
+ * migration-hash and `pg_tables` presence check in
+ * `checkPrivacyCoreDatabaseReadiness` cannot detect, since that check only
+ * proves the expected migration ran and the table exists, not that the sink
+ * can actually write to and read from it.
+ */
+export async function checkPrivacyAuditSinkFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<PrivacyAuditSinkFunctionalReadinessResult> {
+  const probeEvent = privacyAuditEventReferenceSchema.parse({
+    auditEventId: randomUUID(),
+    kind: 'data_use_evaluated',
+    outcome: 'succeeded',
+    reasonCode: null,
+    policyVersionId: null,
+    evidenceId: null,
+    requestId: null,
+    operationId: randomUUID(),
+    correlationId: randomUUID(),
+    recordedAt: new Date().toISOString(),
+  });
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      const txConnection: PostgresConnection = {
+        db: tx,
+        close: connection.close,
+      };
+      const sink = createPostgresPrivacyAuditSink(txConnection);
+      const appendResult = await sink.append(probeEvent);
+
+      if (appendResult !== 'accepted') {
+        throw new Error(`append_${appendResult}`);
+      }
+
+      const [row] = await tx
+        .select({ auditEventId: privacyAuditEvent.auditEventId })
+        .from(privacyAuditEvent)
+        .where(eq(privacyAuditEvent.auditEventId, probeEvent.auditEventId))
+        .limit(1);
+
+      if (row?.auditEventId !== probeEvent.auditEventId) {
+        throw new Error('round_trip_read_back_missing');
+      }
+
+      // Always abort: this is a readiness probe, not a real audit event, and
+      // must never leave a row in the append-only ledger.
+      throw new PrivacyAuditSinkProbeRollback();
+    });
+
+    // The transaction above always throws before reaching a commit; getting
+    // here without an error means the sentinel rollback was swallowed
+    // somewhere, which is itself not a verified round trip.
+    return {
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof PrivacyAuditSinkProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    const isRoundTripFailure =
+      message.startsWith('append_') ||
+      message === 'round_trip_read_back_missing';
+    return {
+      ready: false,
+      reason: isRoundTripFailure ? 'round_trip_failed' : 'database_error',
+      detail: message,
     };
   }
 }
@@ -452,21 +552,25 @@ async function evaluateInventoryCoverageComponents(
  * `repositories`, `audit_sink`, `governance_lifecycle`, and `recovery`
  * components with a real evaluation of `checkPrivacyCoreDatabaseReadiness`,
  * `checkPrivacyGovernanceLifecycleDatabaseReadiness`, and
- * `checkPrivacyRecoveryReadiness` against `connection`. `audit_sink` reuses
- * the core schema result: `privacy_audit_event` is already one of
- * `REQUIRED_TABLES`, so the same migration/table evidence that backs
- * `repositories` also backs the audit ledger's own table — mirroring the
- * exact override pattern already used for the other bound components, not a
- * functional round-trip through `createPostgresPrivacyAuditSink`. `recovery`
- * is `ready` only when the static trigger-presence check is also `ready`
- * **and** `checkPrivacyRecoveryFunctionalReadiness` confirms a real,
- * rolled-back insert+update proves the append-only guard actually rejects a
- * mutation — trigger-name presence alone cannot distinguish a genuinely
- * enforcing trigger from one whose underlying function was altered or
- * defanged while the trigger object remains present. The functional check
- * is skipped, and `recovery` stays `not_ready`, when the trigger-presence
- * check itself is not `ready`, since the probe would just fail for a reason
- * `recovery` already reports. When both
+ * `checkPrivacyRecoveryReadiness` against `connection`. `audit_sink` is
+ * `ready` only when the core schema result is `ready` (`privacy_audit_event`
+ * is already one of `REQUIRED_TABLES`) **and**
+ * `checkPrivacyAuditSinkFunctionalReadiness` confirms a real, rolled-back
+ * append+read-back through `createPostgresPrivacyAuditSink` succeeds — the
+ * static schema check alone cannot prove the sink can actually write to and
+ * read from the table it found. The functional check is skipped (and
+ * `audit_sink` stays `not_ready`) when the schema result itself is not
+ * `ready`, since an insert would just fail for a reason `migrations`/
+ * `repositories` already report. `recovery` is `ready` only when the static
+ * trigger-presence check is also `ready` **and**
+ * `checkPrivacyRecoveryFunctionalReadiness` confirms a real, rolled-back
+ * insert+update proves the append-only guard actually rejects a mutation —
+ * trigger-name presence alone cannot distinguish a genuinely enforcing
+ * trigger from one whose underlying function was altered or defanged while
+ * the trigger object remains present. The functional check is skipped, and
+ * `recovery` stays `not_ready`, when the trigger-presence check itself is
+ * not `ready`, since the probe would just fail for a reason `recovery`
+ * already reports. When both
  * `expectedInventory` and `runtimeProcessors` are supplied, this also
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
@@ -508,6 +612,14 @@ export function createPostgresPrivacyReadinessProbe(
           requiredHashes: options.governanceLifecycleRequiredHashes,
         });
       const recoveryResult = await checkPrivacyRecoveryReadiness(connection);
+      // Only attempt the functional round trip once the static schema check
+      // already reports the required migrations/tables present — otherwise
+      // the insert would fail on a missing table for a reason this probe
+      // already reports through `migrations`/`repositories`, and running it
+      // anyway would just duplicate that diagnosis with a heavier DB call.
+      const auditSinkFunctionalResult = schemaResult.ready
+        ? await checkPrivacyAuditSinkFunctionalReadiness(connection)
+        : null;
       // Only attempt the functional guard round trip once the static
       // trigger-presence check already reports ready — otherwise the probe
       // insert/update would just fail for a reason `recovery` already
@@ -547,13 +659,14 @@ export function createPostgresPrivacyReadinessProbe(
               state: 'not_ready',
               diagnosticCode: 'repository_unavailable',
             };
-      const auditSinkComponent: PrivacyReadinessComponent = schemaResult.ready
-        ? { componentId: 'audit_sink', state: 'ready', diagnosticCode: null }
-        : {
-            componentId: 'audit_sink',
-            state: 'not_ready',
-            diagnosticCode: 'audit_unavailable',
-          };
+      const auditSinkComponent: PrivacyReadinessComponent =
+        schemaResult.ready && auditSinkFunctionalResult?.ready === true
+          ? { componentId: 'audit_sink', state: 'ready', diagnosticCode: null }
+          : {
+              componentId: 'audit_sink',
+              state: 'not_ready',
+              diagnosticCode: 'audit_unavailable',
+            };
       const governanceLifecycleComponent: PrivacyReadinessComponent =
         governanceLifecycleResult.ready
           ? {
