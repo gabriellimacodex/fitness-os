@@ -13,6 +13,7 @@ import type {
 import {
   canonicalizePrivacyReadinessDiagnosticCodes,
   privacyAuditEventReferenceSchema,
+  privacyProcessorDescriptorReferenceSchema,
 } from '@fitness-os/schemas';
 import type {
   PrivacyExpectedProcessorInventoryPort,
@@ -28,6 +29,7 @@ import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
 import { createPostgresPrivacyAuditSink } from './ledger.js';
+import { createPostgresPrivacyRuntimeProcessorRegistry } from './registries.js';
 import { privacyAuditEvent } from './tables.js';
 
 const drizzleRoot = join(
@@ -302,6 +304,111 @@ export async function checkPrivacyAuditSinkFunctionalReadiness(
   }
 }
 
+/**
+ * Thrown deliberately at the end of the functional repositories round-trip
+ * transaction so the write never commits. Caught explicitly in
+ * `checkPrivacyRepositoriesFunctionalReadiness` and treated as success; any
+ * other thrown value is a real failure of the put/read-back round trip.
+ */
+class PrivacyRepositoriesProbeRollback extends Error {}
+
+export type PrivacyRepositoriesFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'round_trip_failed' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Exercises the real `createPostgresPrivacyRuntimeProcessorRegistry` put/
+ * read path end to end: registers one synthetic, closed-vocabulary processor
+ * descriptor through the actual registry implementation inside a
+ * transaction, confirms it is visible via a read-back, and always rolls back
+ * so no probe row is ever committed to `privacy_processor_registration`.
+ * `privacy_processor_registration` carries no foreign-key prerequisite,
+ * making it a representative, self-contained round trip for the broader
+ * `repositories` component — which also backs `privacy_policy_package_version`,
+ * `privacy_purpose_version`, `privacy_authorization_evidence`,
+ * `privacy_withdrawal`, `privacy_subject_request`, and
+ * `privacy_subject_request_transition` — without needing the multi-table
+ * foreign-key chain `governance_lifecycle`'s functional check requires. This
+ * catches a broken insert/select path (column mismatch, constraint drift,
+ * permission failure) that the static migration-hash and `pg_tables`
+ * presence check in `checkPrivacyCoreDatabaseReadiness` cannot detect, since
+ * that check only proves the expected migration ran and the table exists,
+ * not that a repository can actually write to and read from it.
+ */
+export async function checkPrivacyRepositoriesFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<PrivacyRepositoriesFunctionalReadinessResult> {
+  const probeDescriptor = privacyProcessorDescriptorReferenceSchema.parse({
+    processorId: randomUUID(),
+    inventoryId: randomUUID(),
+    descriptorDigest: createHash('sha256')
+      .update(`repositories-readiness-probe-descriptor-${randomUUID()}`)
+      .digest('hex'),
+    inventoryVersionDigest: createHash('sha256')
+      .update(`repositories-readiness-probe-inventory-${randomUUID()}`)
+      .digest('hex'),
+    allowedPurposeIds: [],
+    allowedCategoryIds: [],
+    capabilities: [],
+    supportsSubjectLookup: false,
+    codeOwner: 'privacy-readiness-probe',
+    synthetic: true,
+  });
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      const txConnection: PostgresConnection = {
+        db: tx,
+        close: connection.close,
+      };
+      const registry =
+        createPostgresPrivacyRuntimeProcessorRegistry(txConnection);
+      const putResult = await registry.put(probeDescriptor);
+
+      if (putResult !== 'accepted') {
+        throw new Error(`put_${putResult}`);
+      }
+
+      const readBack = await registry.getDescriptor(
+        probeDescriptor.processorId,
+      );
+
+      if (readBack?.processorId !== probeDescriptor.processorId) {
+        throw new Error('round_trip_read_back_missing');
+      }
+
+      // Always abort: this is a readiness probe, not a real processor
+      // registration, and must never leave a row in the table.
+      throw new PrivacyRepositoriesProbeRollback();
+    });
+
+    // The transaction above always throws before reaching a commit; getting
+    // here without an error means the sentinel rollback was swallowed
+    // somewhere, which is itself not a verified round trip.
+    return {
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof PrivacyRepositoriesProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    const isRoundTripFailure =
+      message.startsWith('put_') || message === 'round_trip_read_back_missing';
+    return {
+      ready: false,
+      reason: isRoundTripFailure ? 'round_trip_failed' : 'database_error',
+      detail: message,
+    };
+  }
+}
+
 const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
   'migrations',
   'repositories',
@@ -447,12 +554,16 @@ async function evaluateInventoryCoverageComponents(
  * `ready` only when the core schema result is `ready` (`privacy_audit_event`
  * is already one of `REQUIRED_TABLES`) **and**
  * `checkPrivacyAuditSinkFunctionalReadiness` confirms a real, rolled-back
- * append+read-back through `createPostgresPrivacyAuditSink` succeeds — the
- * static schema check alone cannot prove the sink can actually write to and
- * read from the table it found. The functional check is skipped (and
- * `audit_sink` stays `not_ready`) when the schema result itself is not
- * `ready`, since an insert would just fail for a reason `migrations`/
- * `repositories` already report. When both
+ * append+read-back through `createPostgresPrivacyAuditSink` succeeds, and
+ * `repositories` is `ready` only when the same schema result is `ready`
+ * **and** `checkPrivacyRepositoriesFunctionalReadiness` confirms a real,
+ * rolled-back put+read-back through
+ * `createPostgresPrivacyRuntimeProcessorRegistry` succeeds — the static
+ * schema check alone cannot prove either mechanism can actually write to and
+ * read from the tables it found. Both functional checks are skipped (and
+ * `audit_sink`/`repositories` stay `not_ready`) when the schema result
+ * itself is not `ready`, since an insert would just fail for a reason
+ * `migrations`/`repositories` already report. When both
  * `expectedInventory` and `runtimeProcessors` are supplied, this also
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
@@ -502,6 +613,9 @@ export function createPostgresPrivacyReadinessProbe(
       const auditSinkFunctionalResult = schemaResult.ready
         ? await checkPrivacyAuditSinkFunctionalReadiness(connection)
         : null;
+      const repositoriesFunctionalResult = schemaResult.ready
+        ? await checkPrivacyRepositoriesFunctionalReadiness(connection)
+        : null;
       const inventoryCoverage =
         expectedInventory !== undefined && runtimeProcessors !== undefined
           ? await evaluateInventoryCoverageComponents(
@@ -522,7 +636,7 @@ export function createPostgresPrivacyReadinessProbe(
                   : 'repository_unavailable',
             };
       const repositoriesComponent: PrivacyReadinessComponent =
-        schemaResult.ready
+        schemaResult.ready && repositoriesFunctionalResult?.ready === true
           ? {
               componentId: 'repositories',
               state: 'ready',
