@@ -32,4 +32,34 @@ describe('SyntheticPrincipalReferenceDeriver', () => {
       );
     }
   });
+
+  it('denies a blank subject digest', async () => {
+    const deriver = new SyntheticPrincipalReferenceDeriver();
+    await expect(
+      deriver.derive({
+        environment: 'disposable',
+        issuer: 'synthetic.identity.v1',
+        productionMode: false,
+        subjectDigest: '   ',
+      }),
+    ).resolves.toEqual({
+      reason: 'missing_subject',
+      status: 'denied',
+    });
+  });
+
+  it('denies a blank issuer', async () => {
+    const deriver = new SyntheticPrincipalReferenceDeriver();
+    await expect(
+      deriver.derive({
+        environment: 'disposable',
+        issuer: '   ',
+        productionMode: false,
+        subjectDigest: 'abc',
+      }),
+    ).resolves.toEqual({
+      reason: 'unapproved_issuer',
+      status: 'denied',
+    });
+  });
 });
