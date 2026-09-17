@@ -12,6 +12,7 @@ import {
 
 import { createPostgresConnection } from '../src/connection.js';
 import {
+  checkPrivacyAuditSinkFunctionalReadiness,
   checkPrivacyGovernanceLifecycleFunctionalReadiness,
   createPostgresPrivacyReadinessProbe,
 } from '../src/privacy/readiness.js';
@@ -136,6 +137,23 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(result.diagnosticCodes).toContain(
         'legal_privacy_decision_required',
       );
+    });
+
+    it('checkPrivacyAuditSinkFunctionalReadiness performs a real append+read-back through createPostgresPrivacyAuditSink and leaves no row behind', async () => {
+      const before = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_audit_event`,
+      );
+
+      const result = await checkPrivacyAuditSinkFunctionalReadiness(connection);
+
+      expect(result.ready).toBe(true);
+
+      const after = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_audit_event`,
+      );
+      // The probe transaction always rolls back, so it must never leave a row
+      // in the append-only audit ledger, no matter how many times it runs.
+      expect(after[0]?.count).toBe(before[0]?.count);
     });
 
     it('reports migrations not_ready with migration_missing and flips mechanismReady false on a missing required migration', async () => {
