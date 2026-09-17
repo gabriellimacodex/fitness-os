@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 import { movementDetailSchema } from '@fitness-os/schemas';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ApiClientError, ApiProtocolError } from '../../../lib/api-client';
 import { MovementDetailView } from '../movement-views';
-import { loadMovement } from './page';
+import MovementDetailPage, { loadMovement } from './page';
 
 const squat = movementDetailSchema.parse({
   movementId: 'bodyweight-squat',
@@ -96,6 +96,56 @@ describe('loadMovement', () => {
 
     expect(state).toEqual({ status: 'unavailable' });
     expect(JSON.stringify(state)).not.toContain('protocol');
+  });
+});
+
+describe('MovementDetailPage', () => {
+  it('renders the detail view produced by the real request pipeline', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(squat, { status: 200 })),
+    );
+
+    try {
+      const markup = renderToStaticMarkup(
+        await MovementDetailPage({
+          params: Promise.resolve({ movementId: 'bodyweight-squat' }),
+        }),
+      );
+
+      expect(markup).toContain('Bodyweight Squat');
+      expect(markup).toContain('Content version 1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('invokes the Next.js not-found fallback for a missing movement', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Resource not found',
+              requestId: 'req-1',
+            },
+          },
+          { status: 404 },
+        ),
+      ),
+    );
+
+    try {
+      await expect(
+        MovementDetailPage({
+          params: Promise.resolve({ movementId: 'missing-movement' }),
+        }),
+      ).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
