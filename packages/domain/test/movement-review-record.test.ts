@@ -79,6 +79,102 @@ describe('review record verification', () => {
     ).toThrow(/does not match the public key/);
   });
 
+  it('rejects a receipt with unmet scope, humanness, or independence guarantees', () => {
+    const { authority, record } = signedRecord();
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], scopeFit: 'fail' },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/required fields failed/);
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], verifiedHumanness: false },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/required fields failed/);
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], verifiedIndependence: false },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/required fields failed/);
+  });
+
+  it('rejects an unrecognized qualification category', () => {
+    const { authority, record } = signedRecord();
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], qualificationCategory: 'unqualified' },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/qualification category is invalid/);
+  });
+
+  it('rejects malformed receipt issuance data', () => {
+    const { authority, record } = signedRecord();
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], issuedAt: 'not-an-instant' },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/issuance data is invalid/);
+
+    expect(() =>
+      verifyReviewRecord(
+        {
+          ...record,
+          receipts: [
+            { ...record.receipts[0], nonce: 'too-short' },
+            record.receipts[1],
+          ],
+        } as never,
+        authority,
+        { allowTestAuthority: true },
+      ),
+    ).toThrow(/issuance data is invalid/);
+  });
+
   it('rejects identifying fields', () => {
     const { authority, record } = signedRecord();
 
