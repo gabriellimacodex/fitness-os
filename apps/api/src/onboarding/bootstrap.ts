@@ -12,6 +12,7 @@ import {
 import { digestUtf8JsonSha256V1 } from './canonical.js';
 import {
   persistInvitation,
+  persistOperation,
   type OnboardingPgPersistence,
 } from './pg-persistence.js';
 import {
@@ -19,6 +20,7 @@ import {
   digestRetryToken,
   type OnboardingStore,
   type StoredInvitation,
+  type StoredOperation,
 } from './store.js';
 
 export type CoachBootstrapEnvironment = 'synthetic' | 'production';
@@ -66,15 +68,16 @@ type CoachBootstrapLedgerEntry =
 /**
  * Dedicated idempotency ledger for the non-public coach-bootstrap command.
  * Deliberately not the shared onboarding `store.operations` ledger/table:
- * the `onboarding_operation_namespace_check` database constraint now allows
- * `issue_coach_bootstrap_invitation` (migration
- * `0026_prd07_onboarding_coach_bootstrap_namespace`), but the typed
- * `OnboardingMutationNamespace`/`OnboardingOperationRepository` surface in
- * `@fitness-os/domain` and `./store.js` does not yet include it — widening
- * that typed port is a separate, reviewed follow-up. Until then this ledger
- * stays in-memory only for this slice and is never written through
- * `persistOperation`. Callers create one instance and reuse it across calls
- * the same way an `OnboardingStore` is created once.
+ * `issue_coach_bootstrap_invitation` is now a recognized
+ * `OnboardingMutationNamespace` value at every layer (database CHECK
+ * constraint, `@fitness-os/domain`'s `OnboardingOperationRepository` port,
+ * and `./store.js`), and each committed operation is written through
+ * `persistOperation` the same way `issueStudentInvitation` and friends are —
+ * but it stays a separate `Map`/`bindingKey` space rather than merging into
+ * `store.operations`, since the coach-bootstrap command is keyed by an
+ * attributable operator identity, not an onboarding principal. Callers
+ * create one instance and reuse it across calls the same way an
+ * `OnboardingStore` is created once.
  */
 export function createCoachBootstrapLedger(): Map<
   string,
@@ -87,9 +90,10 @@ export interface IssueCoachBootstrapInvitationOptions {
   store: OnboardingStore;
   ledger: Map<string, CoachBootstrapLedgerEntry>;
   /**
-   * Optional PG write-through for the issued invitation only (the invitation
-   * table's `purpose` check already allows `coach_bootstrap`). The operation
-   * ledger above is never persisted through this connection in this slice.
+   * Optional PG write-through for the issued invitation and its idempotency
+   * operation record (the invitation table's `purpose` check already allows
+   * `coach_bootstrap`, and `onboarding_operation_namespace_check` allows
+   * `issue_coach_bootstrap_invitation`).
    */
   persistence?: OnboardingPgPersistence;
   idFactory: OnboardingIdFactory;
@@ -268,6 +272,21 @@ export async function issueCoachBootstrapInvitation(
       retryDigest,
     };
     options.ledger.set(bindingKey, { kind: 'settled', operation });
+    if (options.persistence !== undefined) {
+      const persistableOperation: StoredOperation = {
+        digest,
+        namespace: 'issue_coach_bootstrap_invitation',
+        operationId,
+        result,
+        retryDigest,
+      };
+      await persistOperation(
+        options.persistence,
+        bindingKey,
+        authorityScope,
+        persistableOperation,
+      );
+    }
     settlePending(operation);
 
     return {
