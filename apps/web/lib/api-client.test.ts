@@ -333,6 +333,88 @@ describe('createApiClient', () => {
     vi.useRealTimers();
   });
 
+  it('fetches and validates an onboarding attempt detail with no-store', async () => {
+    const attempt = {
+      attemptId: '11111111-1111-4111-8111-111111111111',
+      invitationId: '22222222-2222-4222-8222-222222222222',
+      proposedRole: 'student',
+      purpose: 'student_onboarding',
+      lifecycle: 'policy_pending',
+      ordinal: 1,
+      predecessorAttemptId: null,
+      terminalReason: null,
+      policy: null,
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(attempt),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingAttempt('11111111-1111-4111-8111-111111111111'),
+    ).resolves.toEqual(attempt);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/v1/onboarding/attempts/11111111-1111-4111-8111-111111111111',
+      ),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('throws a typed API error for an unknown onboarding attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Resource not found',
+            requestId: 'req-attempt-1',
+          },
+        },
+        { status: 404 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingAttempt('11111111-1111-4111-8111-111111111111')
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: 'req-attempt-1',
+      status: 404,
+    });
+  });
+
+  it('does not echo raw content from a malformed onboarding-attempt payload', async () => {
+    const rawContent = 'private-attempt-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ attemptId: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingAttempt('11111111-1111-4111-8111-111111111111')
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
   it('inspects an invitation with a validated claim secret and no-store', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({
