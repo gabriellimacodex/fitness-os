@@ -90,5 +90,37 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         bindings.getByPrincipalKey('issuer:no-such-subject'),
       ).resolves.toBeNull();
     });
+
+    it('resolves concurrent establishers of the same principalKey to one binding', async () => {
+      const [first, second] = await Promise.all([
+        bindings.resolveOrEstablish({
+          nowUtcMs: '2026-08-27T00:00:00.000Z',
+          principalKey: 'issuer:concurrent-subject',
+          productionMode: false,
+        }),
+        bindings.resolveOrEstablish({
+          nowUtcMs: '2026-08-27T00:00:00.001Z',
+          principalKey: 'issuer:concurrent-subject',
+          productionMode: false,
+        }),
+      ]);
+
+      const statuses = [first.status, second.status].sort();
+      expect(statuses).toEqual(['established', 'resolved']);
+
+      const established = first.status === 'established' ? first : second;
+      const resolved = first.status === 'resolved' ? first : second;
+      if (
+        established.status !== 'established' ||
+        resolved.status !== 'resolved'
+      ) {
+        throw new Error('expected one established and one resolved outcome');
+      }
+      expect(resolved.binding).toEqual(established.binding);
+
+      await expect(
+        bindings.getByPrincipalKey('issuer:concurrent-subject'),
+      ).resolves.toEqual(established.binding);
+    });
   },
 );
