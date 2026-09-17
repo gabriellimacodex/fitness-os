@@ -493,6 +493,31 @@ describe('POST /v1/privacy/synthetic/data-use-evaluate', () => {
     await app.close();
   });
 
+  it('sets no-store on unexpected privacy failures', async () => {
+    const app = buildSyntheticPrivacyApp();
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        '/v1/privacy/synthetic/data-use-evaluate'
+      ) {
+        throw new Error('private privacy failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/data-use-evaluate',
+      payload: evaluatePayload,
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private privacy failure');
+    await app.close();
+  });
+
   it('denies synthetic actor when productionMode is true', async () => {
     const app = buildSyntheticPrivacyApp();
 
