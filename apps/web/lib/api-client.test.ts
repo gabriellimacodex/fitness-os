@@ -441,4 +441,146 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('issues a student invitation with a validated retry token and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'issue_student_invitation',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          command: 'issue_student_invitation',
+          issued: {
+            claimSecret: 'a'.repeat(24),
+            invitationId: '22222222-2222-4222-8222-222222222222',
+            purpose: 'student_onboarding',
+            state: 'issued',
+          },
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingIssueStudentInvitation(
+      'b'.repeat(16),
+    );
+
+    expect(response.result).toMatchObject({
+      command: 'issue_student_invitation',
+      outcome: 'command_succeeded',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/student-invitations',
+      ),
+      {
+        body: JSON.stringify({ retryToken: 'b'.repeat(16) }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid retry token before issuing a student invitation', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingIssueStudentInvitation('too-short'),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when issuing a student invitation is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-issue-invitation-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingIssueStudentInvitation('b'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-issue-invitation-1',
+      status: 401,
+    });
+  });
+
+  it('throws a typed API error when a coach lacks permission to issue an invitation', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Forbidden',
+            requestId: 'req-issue-invitation-2',
+          },
+        },
+        { status: 403 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingIssueStudentInvitation('b'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'FORBIDDEN',
+      requestId: 'req-issue-invitation-2',
+      status: 403,
+    });
+  });
+
+  it('does not echo raw content from a malformed issue-invitation payload', async () => {
+    const rawContent = 'private-invitation-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingIssueStudentInvitation('b'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
