@@ -394,4 +394,31 @@ describe('deriveManifestState', () => {
       /retain the preceding version and digest/,
     );
   });
+
+  it('derives current entries from the latest record per movement and reserves withdrawn IDs', () => {
+    const squatPublish = publishRecord(SQUAT, 1);
+    const hingePublish = publishRecord(HINGE, 1);
+    const squatWithdraw: MovementManifestRecord = {
+      action: 'withdraw',
+      contentVersion: squatPublish.contentVersion,
+      digest: squatPublish.digest,
+      movementId: SQUAT.movementId,
+      reviewRecordPath: null,
+      sequence: 2,
+    };
+
+    const { current, reservedIds } = deriveManifestState([
+      squatPublish,
+      hingePublish,
+      squatWithdraw,
+    ]);
+
+    expect(reservedIds).toEqual(new Set([SQUAT.movementId, HINGE.movementId]));
+    expect(current.has(SQUAT.movementId)).toBe(false);
+    expect(current.get(HINGE.movementId)).toEqual({
+      action: 'publish',
+      contentVersion: hingePublish.contentVersion,
+      digest: hingePublish.digest,
+    });
+  });
 });
