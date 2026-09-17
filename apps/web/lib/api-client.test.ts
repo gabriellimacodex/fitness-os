@@ -441,4 +441,172 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('refreshes policy status with a validated retry token and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'refresh_policy',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          attempt: {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            invitationId: '33333333-3333-4333-8333-333333333333',
+            lifecycle: 'ready_to_claim',
+            ordinal: 1,
+            policy: null,
+            predecessorAttemptId: null,
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            terminalReason: null,
+          },
+          command: 'attempt',
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingRefreshPolicy(
+      '44444444-4444-4444-8444-444444444444',
+      'b'.repeat(16),
+    );
+
+    expect(response.result).toMatchObject({
+      outcome: 'command_succeeded',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/attempts/44444444-4444-4444-8444-444444444444/policy-refresh',
+      ),
+      {
+        body: JSON.stringify({ retryToken: 'b'.repeat(16) }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('encodes the attempt identifier as one URL segment when refreshing policy status', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'refresh_policy',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          attempt: {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            invitationId: '33333333-3333-4333-8333-333333333333',
+            lifecycle: 'ready_to_claim',
+            ordinal: 1,
+            policy: null,
+            predecessorAttemptId: null,
+            proposedRole: 'coach',
+            purpose: 'coach_bootstrap',
+            terminalReason: null,
+          },
+          command: 'attempt',
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingRefreshPolicy('attempt/with-slash', 'b'.repeat(16));
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/v1/onboarding/attempts/attempt%2Fwith-slash/policy-refresh',
+      ),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('rejects an invalid retry token before refreshing policy status', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingRefreshPolicy(
+        '44444444-4444-4444-8444-444444444444',
+        'too-short',
+      ),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when refreshing policy status is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-refresh-policy-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingRefreshPolicy(
+        '44444444-4444-4444-8444-444444444444',
+        'b'.repeat(16),
+      )
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-refresh-policy-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed policy-refresh payload', async () => {
+    const rawContent = 'private-attempt-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingRefreshPolicy(
+        '44444444-4444-4444-8444-444444444444',
+        'b'.repeat(16),
+      )
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
