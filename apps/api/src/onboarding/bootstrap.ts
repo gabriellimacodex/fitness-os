@@ -66,12 +66,15 @@ type CoachBootstrapLedgerEntry =
 /**
  * Dedicated idempotency ledger for the non-public coach-bootstrap command.
  * Deliberately not the shared onboarding `store.operations` ledger/table:
- * `issue_coach_bootstrap_invitation` is not yet an allowed
- * `onboarding_operation` namespace at the database boundary (widening the
- * `onboarding_operation_namespace_check` constraint is a separate, reviewed
- * migration), so this ledger stays in-memory only for this slice and is
- * never written through `persistOperation`. Callers create one instance and
- * reuse it across calls the same way an `OnboardingStore` is created once.
+ * the `onboarding_operation_namespace_check` database constraint now allows
+ * `issue_coach_bootstrap_invitation` (migration
+ * `0026_prd07_onboarding_coach_bootstrap_namespace`), but the typed
+ * `OnboardingMutationNamespace`/`OnboardingOperationRepository` surface in
+ * `@fitness-os/domain` and `./store.js` does not yet include it — widening
+ * that typed port is a separate, reviewed follow-up. Until then this ledger
+ * stays in-memory only for this slice and is never written through
+ * `persistOperation`. Callers create one instance and reuse it across calls
+ * the same way an `OnboardingStore` is created once.
  */
 export function createCoachBootstrapLedger(): Map<
   string,
