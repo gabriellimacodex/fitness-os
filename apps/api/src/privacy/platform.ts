@@ -30,10 +30,7 @@ export interface PrivacyPlatformHandles {
  *
  * This does not set `allowSyntheticPrivacy` — that gate, and whether to also
  * inject `ids`, `clock`, or any other still-synthetic-only option, remains the
- * caller's decision when building the app. Like
- * `createCatalogPlatformFromEnv`, this function is not wired into
- * `bootstrap.ts` or any production server-startup path; no call site
- * currently constructs it.
+ * caller's decision when building the app.
  */
 export function createPrivacyPlatformFromEnv(
   env: NodeJS.ProcessEnv,
