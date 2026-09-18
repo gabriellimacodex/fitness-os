@@ -138,6 +138,10 @@ describe('movement public read contracts', () => {
       { ...detail, name: 'Cafe\u0301' },
       { ...detail, name: 'Control\u0000character' },
       { ...detail, name: '<strong>Markup</strong>' },
+      { ...detail, summary: 'See https://example.com for a demo.' },
+      { ...detail, summary: 'See http://example.com for a demo.' },
+      { ...detail, summary: 'Visit www.example.com for more.' },
+      { ...detail, summary: 'Visit WWW.EXAMPLE.COM for more.' },
     ];
 
     for (const invalid of invalidDetails) {
