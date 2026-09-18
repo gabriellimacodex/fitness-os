@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
   FixedTrustedClock,
   SyntheticClaimFailureTracker,
   SyntheticOnboardingTransitionSink,
@@ -39,6 +40,7 @@ const RETRY_TOKEN = retryTokenSchema.parse('synthetic-retry-01');
 function buildSyntheticApp(input?: {
   claimFailureTracker?: ClaimFailureTracker;
   claimThrottleWindow?: ClaimThrottleWindow;
+  clock?: InstanceType<typeof FixedTrustedClock>;
   mappedRoles?: readonly ('student' | 'coach')[];
   principalKey?: string;
   store?: ReturnType<typeof createOnboardingStore>;
@@ -53,6 +55,7 @@ function buildSyntheticApp(input?: {
       onboarding: {
         claimFailureTracker: input?.claimFailureTracker,
         claimThrottleWindow: input?.claimThrottleWindow,
+        clock: input?.clock,
         resolveContext: () => ({
           mappedRoles,
           principalKey,
@@ -792,6 +795,95 @@ describe('POST /v1/onboarding/attempts', () => {
     expect(body.result).toMatchObject({
       outcome: 'active_attempt_limit_reached',
     });
+    expect(store.attempts.size).toBe(4);
+
+    await app.close();
+  });
+
+  it('terminalizes an absolute-expired attempt in scope when creating a new one', async () => {
+    const store = createOnboardingStore();
+    const priorSecret = secretAt(1);
+    const newSecret = secretAt(2);
+    const fixedUtc = '2026-08-20T12:00:00.000Z';
+    const expiredCreatedAt = new Date(
+      Date.parse(fixedUtc) - DEFAULT_ATTEMPT_TIMEOUT_BOUNDS.absoluteTtlMs - 1,
+    ).toISOString();
+
+    const priorInvitation = seedIssuedInvitation(store, {
+      claimSecret: priorSecret,
+    });
+    const priorRecord = createStoredAttempt(
+      priorInvitation,
+      1,
+      'principal-a',
+      expiredCreatedAt,
+    );
+    store.attempts.set(priorRecord.detail.attemptId, priorRecord);
+    seedIssuedInvitation(store, { claimSecret: newSecret });
+
+    const { app } = buildSyntheticApp({
+      clock: new FixedTrustedClock(fixedUtc),
+      store,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: newSecret, retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toMatchObject({ outcome: 'command_succeeded' });
+    expect(
+      store.attempts.get(priorRecord.detail.attemptId)?.detail.lifecycle,
+    ).toBe('terminal');
+    expect(
+      store.attempts.get(priorRecord.detail.attemptId)?.detail.terminalReason,
+    ).toBe('expired');
+    expect(store.attempts.size).toBe(2);
+
+    await app.close();
+  });
+
+  it('does not terminalize an attempt still within the absolute TTL and still enforces the cap', async () => {
+    const store = createOnboardingStore();
+    const secrets = [1, 2, 3, 4, 5].map((index) => secretAt(index));
+    const fixedUtc = '2026-08-20T12:00:00.000Z';
+    const freshCreatedAt = new Date(
+      Date.parse(fixedUtc) - DEFAULT_ATTEMPT_TIMEOUT_BOUNDS.absoluteTtlMs + 1,
+    ).toISOString();
+
+    for (const [index, secret] of secrets.entries()) {
+      const invitation = seedIssuedInvitation(store, { claimSecret: secret });
+      if (index < 4) {
+        const record = createStoredAttempt(
+          invitation,
+          index + 1,
+          'principal-a',
+          freshCreatedAt,
+        );
+        store.attempts.set(record.detail.attemptId, record);
+      }
+    }
+
+    const { app } = buildSyntheticApp({
+      clock: new FixedTrustedClock(fixedUtc),
+      store,
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: secrets[4], retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toMatchObject({
+      outcome: 'active_attempt_limit_reached',
+    });
+    expect(
+      [...store.attempts.values()].every(
+        (record) => record.detail.lifecycle !== 'terminal',
+      ),
+    ).toBe(true);
     expect(store.attempts.size).toBe(4);
 
     await app.close();
