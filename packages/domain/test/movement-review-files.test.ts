@@ -20,4 +20,25 @@ sourceCommitSha: ${'b'.repeat(40)}
   it('rejects a file without bindings', () => {
     expect(() => parseReviewRecordMarkdown('# empty')).toThrow(/missing/);
   });
+
+  it('rejects a file missing only contentVersion', () => {
+    expect(() =>
+      parseReviewRecordMarkdown(`
+movementId: bodyweight-squat
+digest: ${'a'.repeat(64)}
+sourceCommitSha: ${'b'.repeat(40)}
+`),
+    ).toThrow(/missing/);
+  });
+
+  it('rejects a non-numeric contentVersion', () => {
+    expect(() =>
+      parseReviewRecordMarkdown(`
+movementId: bodyweight-squat
+contentVersion: not-a-number
+digest: ${'a'.repeat(64)}
+sourceCommitSha: ${'b'.repeat(40)}
+`),
+    ).toThrow(/missing/);
+  });
 });
