@@ -648,9 +648,6 @@ describe('POST /v1/onboarding/attempts', () => {
     });
     const firstBody = onboardingOperationResponseSchema.parse(first.json());
     const replayBody = onboardingOperationResponseSchema.parse(replay.json());
-    const mismatchBody = onboardingOperationResponseSchema.parse(
-      mismatch.json(),
-    );
 
     expect(firstBody.operation.state).toBe('operation_committed');
     expect(replayBody.operation.state).toBe('operation_replayed');
@@ -659,11 +656,10 @@ describe('POST /v1/onboarding/attempts', () => {
     );
     expect(replayBody.operation.digest).toBe(firstBody.operation.digest);
     expect(replayBody.result).toEqual(firstBody.result);
-    expect(mismatchBody.operation.state).toBe('operation_input_mismatch');
-    expect(mismatchBody.operation.operationId).toBe(
-      firstBody.operation.operationId,
+    expect(mismatch.statusCode).toBe(409);
+    expect(apiErrorResponseSchema.parse(mismatch.json()).error.code).toBe(
+      'CONFLICT',
     );
-    expect(mismatchBody.result).toBeNull();
     expect(store.attempts.size).toBe(1);
 
     await app.close();
@@ -1074,37 +1070,15 @@ describe('claim-secret brute-force throttle', () => {
       });
     }
 
-    const changedInput = onboardingOperationResponseSchema.parse(
-      (
-        await app.inject({
-          method: 'POST',
-          url: '/v1/onboarding/attempts',
-          payload: { claimSecret: OTHER_SECRET, retryToken: RETRY_TOKEN },
-        })
-      ).json(),
-    );
-    const freshGenericDenial = onboardingOperationResponseSchema.parse(
-      (
-        await app.inject({
-          method: 'POST',
-          url: '/v1/onboarding/attempts',
-          payload: {
-            claimSecret: OTHER_SECRET,
-            retryToken: retryTokenSchema.parse(
-              'synthetic-retry-throttle-fresh',
-            ),
-          },
-        })
-      ).json(),
-    );
+    const changedInput = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: OTHER_SECRET, retryToken: RETRY_TOKEN },
+    });
 
-    expect(changedInput.operation.state).toBe('operation_input_mismatch');
-    expect(changedInput.operation.digest).toBe(
-      freshGenericDenial.operation.digest,
-    );
-    expect(changedInput.result).toBeNull();
-    expect(changedInput.result).not.toEqual(
-      onboardingOperationResponseSchema.parse(successful.json()).result,
+    expect(changedInput.statusCode).toBe(409);
+    expect(apiErrorResponseSchema.parse(changedInput.json()).error.code).toBe(
+      'CONFLICT',
     );
     expect(store.attempts.size).toBe(1);
 
@@ -1566,7 +1540,7 @@ describe('student invitation list/issue/revoke', () => {
     await app.close();
   });
 
-  it('returns operation_input_mismatch when a revoke retry token targets a different invitation', async () => {
+  it('returns 409 CONFLICT when a revoke retry token targets a different invitation', async () => {
     const store = createOnboardingStore();
     const { app } = buildSyntheticApp({ mappedRoles: ['coach'], store });
 
@@ -1619,18 +1593,12 @@ describe('student invitation list/issue/revoke', () => {
     const firstRevokeBody = onboardingOperationResponseSchema.parse(
       firstRevoke.json(),
     );
-    const mismatchedRevokeBody = onboardingOperationResponseSchema.parse(
-      mismatchedRevoke.json(),
-    );
 
     expect(firstRevokeBody.operation.state).toBe('operation_committed');
-    expect(mismatchedRevokeBody.operation.state).toBe(
-      'operation_input_mismatch',
-    );
-    expect(mismatchedRevokeBody.operation.operationId).toBe(
-      firstRevokeBody.operation.operationId,
-    );
-    expect(mismatchedRevokeBody.result).toBeNull();
+    expect(mismatchedRevoke.statusCode).toBe(409);
+    expect(
+      apiErrorResponseSchema.parse(mismatchedRevoke.json()).error.code,
+    ).toBe('CONFLICT');
 
     await app.close();
   });
@@ -1715,7 +1683,7 @@ describe('resume and abandon', () => {
     await app.close();
   });
 
-  it('returns operation_input_mismatch when a resume retry token targets a different attempt', async () => {
+  it('returns 409 CONFLICT when a resume retry token targets a different attempt', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
@@ -1753,23 +1721,17 @@ describe('resume and abandon', () => {
     const firstResumeBody = onboardingOperationResponseSchema.parse(
       firstResume.json(),
     );
-    const mismatchedResumeBody = onboardingOperationResponseSchema.parse(
-      mismatchedResume.json(),
-    );
 
     expect(firstResumeBody.operation.state).toBe('operation_committed');
-    expect(mismatchedResumeBody.operation.state).toBe(
-      'operation_input_mismatch',
-    );
-    expect(mismatchedResumeBody.operation.operationId).toBe(
-      firstResumeBody.operation.operationId,
-    );
-    expect(mismatchedResumeBody.result).toBeNull();
+    expect(mismatchedResume.statusCode).toBe(409);
+    expect(
+      apiErrorResponseSchema.parse(mismatchedResume.json()).error.code,
+    ).toBe('CONFLICT');
 
     await app.close();
   });
 
-  it('returns operation_input_mismatch when an abandon retry token targets a different attempt', async () => {
+  it('returns 409 CONFLICT when an abandon retry token targets a different attempt', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
@@ -1807,18 +1769,12 @@ describe('resume and abandon', () => {
     const firstAbandonBody = onboardingOperationResponseSchema.parse(
       firstAbandon.json(),
     );
-    const mismatchedAbandonBody = onboardingOperationResponseSchema.parse(
-      mismatchedAbandon.json(),
-    );
 
     expect(firstAbandonBody.operation.state).toBe('operation_committed');
-    expect(mismatchedAbandonBody.operation.state).toBe(
-      'operation_input_mismatch',
-    );
-    expect(mismatchedAbandonBody.operation.operationId).toBe(
-      firstAbandonBody.operation.operationId,
-    );
-    expect(mismatchedAbandonBody.result).toBeNull();
+    expect(mismatchedAbandon.statusCode).toBe(409);
+    expect(
+      apiErrorResponseSchema.parse(mismatchedAbandon.json()).error.code,
+    ).toBe('CONFLICT');
 
     await app.close();
   });
@@ -1999,7 +1955,7 @@ describe('policy-refresh and claim', () => {
     await app.close();
   });
 
-  it('returns operation_input_mismatch when a policy-refresh retry token targets a different attempt', async () => {
+  it('returns 409 CONFLICT when a policy-refresh retry token targets a different attempt', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
@@ -2037,23 +1993,17 @@ describe('policy-refresh and claim', () => {
     const firstRefreshBody = onboardingOperationResponseSchema.parse(
       firstRefresh.json(),
     );
-    const mismatchedRefreshBody = onboardingOperationResponseSchema.parse(
-      mismatchedRefresh.json(),
-    );
 
     expect(firstRefreshBody.operation.state).toBe('operation_committed');
-    expect(mismatchedRefreshBody.operation.state).toBe(
-      'operation_input_mismatch',
-    );
-    expect(mismatchedRefreshBody.operation.operationId).toBe(
-      firstRefreshBody.operation.operationId,
-    );
-    expect(mismatchedRefreshBody.result).toBeNull();
+    expect(mismatchedRefresh.statusCode).toBe(409);
+    expect(
+      apiErrorResponseSchema.parse(mismatchedRefresh.json()).error.code,
+    ).toBe('CONFLICT');
 
     await app.close();
   });
 
-  it('returns operation_input_mismatch when a claim retry token is reused with a different claim secret', async () => {
+  it('returns 409 CONFLICT when a claim retry token is reused with a different claim secret', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     const { app } = buildSyntheticApp({ store });
@@ -2088,18 +2038,12 @@ describe('policy-refresh and claim', () => {
     const firstClaimBody = onboardingOperationResponseSchema.parse(
       firstClaim.json(),
     );
-    const mismatchedClaimBody = onboardingOperationResponseSchema.parse(
-      mismatchedClaim.json(),
-    );
 
     expect(firstClaimBody.operation.state).toBe('operation_committed');
-    expect(mismatchedClaimBody.operation.state).toBe(
-      'operation_input_mismatch',
-    );
-    expect(mismatchedClaimBody.operation.operationId).toBe(
-      firstClaimBody.operation.operationId,
-    );
-    expect(mismatchedClaimBody.result).toBeNull();
+    expect(mismatchedClaim.statusCode).toBe(409);
+    expect(
+      apiErrorResponseSchema.parse(mismatchedClaim.json()).error.code,
+    ).toBe('CONFLICT');
     expect(mismatchedClaim.body).not.toContain(OTHER_SECRET);
 
     await app.close();
