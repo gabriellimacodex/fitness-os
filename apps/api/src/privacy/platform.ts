@@ -4,6 +4,7 @@ import {
   createPostgresPrivacyReadinessProbe,
   type PostgresConnection,
 } from '@fitness-os/database';
+import type { PrivacyExpectedProcessorInventoryPort } from '@fitness-os/domain';
 
 import type { PlatformOptions } from '../app.js';
 import { createPrivacyPgPersistence } from './pg-persistence.js';
@@ -26,7 +27,25 @@ export interface PrivacyPlatformHandles {
  * append-only ledger this platform writes to (not a disconnected duplicate) —
  * the same reasoning `createOnboardingPlatformFromEnv` applied when binding
  * its readiness probe's mechanism components to the same instances used for
- * real operations.
+ * real operations. `readiness` is bound the same way: its `runtimeProcessors`
+ * comparison target is `persistence.processors`, the exact same real
+ * PG-backed registry `platform.privacy.processors` exposes for actual
+ * processor registration — not a disconnected duplicate — so a caller who
+ * registers a processor through this platform sees that registration reflect
+ * in the readiness evaluation of the same composition.
+ *
+ * `expectedInventory` has no real, reviewed content anywhere in this
+ * codebase yet — only synthetic fixtures exist (`SyntheticPrivacyExpected-
+ * ProcessorInventory`) — so this helper cannot supply one on its own without
+ * inventing production-authoritative content, exactly like `identity_adapter`
+ * and `policy_gateway` are left unset by `createOnboardingPlatformFromEnv`
+ * pending a separate decision. `options.expectedInventory` exists so a future
+ * caller who does have a reviewed inventory port can inject it; until then,
+ * omitting it keeps `expected_inventory`/`runtime_processors` exactly at the
+ * base probe's synthetic defaults (unchanged from before this parameter
+ * existed), since `createPostgresPrivacyReadinessProbe` only overrides that
+ * pair when both `expectedInventory` and `runtimeProcessors` are supplied
+ * together.
  *
  * This does not set `allowSyntheticPrivacy` — that gate, and whether to also
  * inject `ids`, `clock`, or any other still-synthetic-only option, remains the
@@ -37,6 +56,9 @@ export interface PrivacyPlatformHandles {
  */
 export function createPrivacyPlatformFromEnv(
   env: NodeJS.ProcessEnv,
+  options: {
+    expectedInventory?: PrivacyExpectedProcessorInventoryPort;
+  } = {},
 ): PrivacyPlatformHandles | null {
   const databaseUrl = env.PRIVACY_DATABASE_URL;
   if (!databaseUrl) {
@@ -47,7 +69,10 @@ export function createPrivacyPlatformFromEnv(
   const persistence = createPrivacyPgPersistence(connection);
   const governanceLifecycleVerifier =
     createPostgresPrivacyGovernanceLifecycleBindingVerifier(connection);
-  const readiness = createPostgresPrivacyReadinessProbe(connection);
+  const readiness = createPostgresPrivacyReadinessProbe(connection, {
+    runtimeProcessors: persistence.processors,
+    expectedInventory: options.expectedInventory,
+  });
 
   return {
     connection,
