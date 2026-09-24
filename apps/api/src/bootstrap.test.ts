@@ -6,6 +6,19 @@ import {
   parsePort,
   readServerConfig,
 } from './bootstrap.js';
+import type { PrivacyPlatformHandles } from './privacy/platform.js';
+
+const LOGGER_OPTIONS_FOR_TESTS = {
+  redact: {
+    censor: '[REDACTED]',
+    paths: [
+      'req.headers.authorization',
+      "req.headers['proxy-authorization']",
+      'req.body.claimSecret',
+      'req.body.retryToken',
+    ],
+  },
+};
 
 describe('parsePort', () => {
   it('rejects values that are not integer literals', () => {
@@ -226,6 +239,95 @@ describe('bootstrapApi', () => {
     expect(runtime.exitCode).toBe(1);
   });
 
+  it('closes a composed privacy platform connection when app construction fails', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const closeConnection = vi.fn(async () => undefined);
+    const fakePrivacyPlatform = {
+      connection: { close: closeConnection },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => {
+          throw new Error('construction failed');
+        },
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('construction failed');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(closeConnection).toHaveBeenCalledOnce();
+  });
+
+  it('closes a composed privacy platform connection when app.listen fails', async () => {
+    const startupError = new Error('EADDRINUSE');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => Promise.reject(startupError)),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const closeConnection = vi.fn(async () => undefined);
+    const fakePrivacyPlatform = {
+      connection: { close: closeConnection },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => app,
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('EADDRINUSE');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(closeConnection).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a secondary close failure mask the original startup error', async () => {
+    const startupError = new Error('construction failed');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const fakePrivacyPlatform = {
+      connection: {
+        close: vi.fn(async () => Promise.reject(new Error('close failed'))),
+      },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => {
+          throw startupError;
+        },
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('construction failed');
+
+    expect(runtime.exitCode).toBe(1);
+  });
+
   it('closes only once when multiple shutdown signals arrive', async () => {
     const signalHandlers = new Map<string, () => Promise<void>>();
     const runtime = {
@@ -278,5 +380,108 @@ describe('bootstrapApi', () => {
       { err: shutdownError, signal: 'SIGTERM' },
       'API shutdown failed',
     );
+  });
+
+  it('omits privacy platform options when no privacy platform is composed', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const createApp = vi.fn(() => app);
+    const createPrivacyPlatform = vi.fn(() => null);
+
+    await bootstrapApi({ createApp, createPrivacyPlatform, env: {}, runtime });
+
+    expect(createPrivacyPlatform).toHaveBeenCalledWith({});
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: LOGGER_OPTIONS_FOR_TESTS },
+      { corsAllowedOrigins: ['http://localhost:3000'] },
+    );
+  });
+
+  it('wires a composed privacy platform into app options and closes its connection on shutdown', async () => {
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const createApp = vi.fn(() => app);
+    const privacyOptions = { audit: 'fake-audit-persistence' };
+    const closeConnection = vi.fn(async () => undefined);
+    const fakePrivacyPlatform = {
+      connection: { close: closeConnection },
+      platform: { privacy: privacyOptions },
+    } as unknown as PrivacyPlatformHandles;
+    const createPrivacyPlatform = vi.fn(() => fakePrivacyPlatform);
+
+    await bootstrapApi({
+      createApp,
+      createPrivacyPlatform,
+      env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+      runtime,
+    });
+
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: LOGGER_OPTIONS_FOR_TESTS },
+      {
+        allowSyntheticPrivacy: true,
+        corsAllowedOrigins: ['http://localhost:3000'],
+        privacy: privacyOptions,
+      },
+    );
+
+    await signalHandlers.get('SIGTERM')?.();
+
+    expect(app.close).toHaveBeenCalledOnce();
+    expect(closeConnection).toHaveBeenCalledOnce();
+  });
+
+  it('does not attempt to close a privacy platform connection when none was composed', async () => {
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+
+    await bootstrapApi({
+      createApp: () => app,
+      createPrivacyPlatform: () => null,
+      env: {},
+      runtime,
+    });
+    await signalHandlers.get('SIGTERM')?.();
+
+    expect(app.close).toHaveBeenCalledOnce();
   });
 });
