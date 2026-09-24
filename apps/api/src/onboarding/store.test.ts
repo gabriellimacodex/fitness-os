@@ -16,6 +16,7 @@ import {
   findInvitationBySecret,
   isAfterCursor,
   mappingIdFor,
+  nextOrdinalForRole,
 } from './store.js';
 import { seedInvitation, seedIssuedInvitation } from './test-store.js';
 
@@ -129,5 +130,110 @@ describe('onboarding store', () => {
 
     expect(isAfterCursor(later, cursor)).toBe(true);
     expect(isAfterCursor(earlier, cursor)).toBe(false);
+  });
+
+  describe('nextOrdinalForRole', () => {
+    it('returns 1 for the first attempt for a principal/role', () => {
+      const store = createOnboardingStore();
+
+      expect(nextOrdinalForRole(store, 'principal-a', 'student')).toBe(1);
+    });
+
+    it('returns one past the highest nonterminal ordinal while attempts remain active', () => {
+      const store = createOnboardingStore();
+      const invitation = seedInvitation(store, {
+        claimSecret: invitationClaimSecretSchema.parse(
+          'synthetic-claim-secret-03',
+        ),
+      });
+      const first = createStoredAttempt(invitation, 1, 'principal-a');
+      const second = createStoredAttempt(invitation, 2, 'principal-a');
+      store.attempts.set(first.detail.attemptId, first);
+      store.attempts.set(second.detail.attemptId, second);
+
+      expect(nextOrdinalForRole(store, 'principal-a', 'student')).toBe(3);
+    });
+
+    it('reuses a freed ordinal slot from a terminal attempt instead of counting it', () => {
+      const store = createOnboardingStore();
+      const invitation = seedInvitation(store, {
+        claimSecret: invitationClaimSecretSchema.parse(
+          'synthetic-claim-secret-04',
+        ),
+      });
+      const terminal = createStoredAttempt(invitation, 2, 'principal-a');
+      terminal.detail = {
+        ...terminal.detail,
+        lifecycle: 'terminal',
+        terminalReason: 'expired',
+      };
+      store.attempts.set(terminal.detail.attemptId, terminal);
+
+      // Ordinal 2 belongs to a terminal attempt, so it is free to reuse; a
+      // lifetime-monotonic counter would incorrectly return 3 here instead.
+      expect(nextOrdinalForRole(store, 'principal-a', 'student')).toBe(1);
+    });
+
+    it('never returns an ordinal above ATTEMPT_ACTIVE_CAP after many attempts have terminated over time', () => {
+      const store = createOnboardingStore();
+      const invitation = seedInvitation(store, {
+        claimSecret: invitationClaimSecretSchema.parse(
+          'synthetic-claim-secret-05',
+        ),
+      });
+
+      // Simulate four successive attempts for the same principal/role, each
+      // completing (terminating) before the next is created — the exact
+      // history that made the previous "highest ordinal ever + 1"
+      // implementation grow past the schema's max(4) bound.
+      for (let round = 0; round < 4; round += 1) {
+        const ordinal = nextOrdinalForRole(store, 'principal-a', 'student');
+        expect(ordinal).toBeGreaterThanOrEqual(1);
+        expect(ordinal).toBeLessThanOrEqual(4);
+        const attempt = createStoredAttempt(invitation, ordinal, 'principal-a');
+        attempt.detail = {
+          ...attempt.detail,
+          lifecycle: 'terminal',
+          terminalReason: 'expired',
+        };
+        store.attempts.set(attempt.detail.attemptId, attempt);
+      }
+
+      const fifthOrdinal = nextOrdinalForRole(store, 'principal-a', 'student');
+      expect(fifthOrdinal).toBeGreaterThanOrEqual(1);
+      expect(fifthOrdinal).toBeLessThanOrEqual(4);
+    });
+
+    it('scopes occupied ordinals to the exact principal and role, never sharing slots', () => {
+      const store = createOnboardingStore();
+      const invitation = seedInvitation(store, {
+        claimSecret: invitationClaimSecretSchema.parse(
+          'synthetic-claim-secret-06',
+        ),
+      });
+      const otherPrincipal = createStoredAttempt(invitation, 1, 'principal-b');
+      store.attempts.set(otherPrincipal.detail.attemptId, otherPrincipal);
+
+      expect(nextOrdinalForRole(store, 'principal-a', 'student')).toBe(1);
+      expect(nextOrdinalForRole(store, 'principal-a', 'coach')).toBe(1);
+    });
+
+    it('throws instead of silently exceeding the cap if every slot is somehow already nonterminal', () => {
+      const store = createOnboardingStore();
+      const invitation = seedInvitation(store, {
+        claimSecret: invitationClaimSecretSchema.parse(
+          'synthetic-claim-secret-07',
+        ),
+      });
+
+      for (let ordinal = 1; ordinal <= 4; ordinal += 1) {
+        const attempt = createStoredAttempt(invitation, ordinal, 'principal-a');
+        store.attempts.set(attempt.detail.attemptId, attempt);
+      }
+
+      expect(() => nextOrdinalForRole(store, 'principal-a', 'student')).toThrow(
+        /no ordinal slot available/i,
+      );
+    });
   });
 });
