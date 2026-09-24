@@ -394,4 +394,20 @@ describe('deriveManifestState', () => {
       /retain the preceding version and digest/,
     );
   });
+
+  it('rejects a revise action whose digest matches the preceding version', () => {
+    const first = publishRecord(SQUAT, 1);
+    const noOpRevise: MovementManifestRecord = {
+      action: 'revise',
+      contentVersion: first.contentVersion + 1,
+      digest: first.digest,
+      movementId: SQUAT.movementId,
+      reviewRecordPath: `docs/execution/content-reviews/movements/${SQUAT.movementId}-v2.md`,
+      sequence: 2,
+    };
+
+    expect(() => deriveManifestState([first, noOpRevise])).toThrow(
+      /must change the movement content digest/,
+    );
+  });
 });
