@@ -1438,7 +1438,12 @@ export function registerOnboardingRoutes(
       });
 
       if (claimResult.status !== 'committed') {
-        return await commit({ outcome: 'invalid_or_unavailable' });
+        return await commit({
+          outcome:
+            claimResult.reason === 'mapping_conflict'
+              ? 'mapping_conflict'
+              : 'invalid_or_unavailable',
+        });
       }
 
       const completed = transitionAttempt(record.detail, 'completed');
