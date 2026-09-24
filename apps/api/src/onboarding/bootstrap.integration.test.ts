@@ -58,6 +58,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     beforeEach(async () => {
       await connection.db.execute(sql`TRUNCATE onboarding_invitation CASCADE`);
+      await connection.db.execute(sql`TRUNCATE onboarding_operation CASCADE`);
     });
 
     afterAll(async () => {
@@ -128,6 +129,56 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       const rows = await connection.db.execute<{ count: string }>(sql`
         SELECT COUNT(*)::text AS count FROM onboarding_invitation
         WHERE purpose = 'coach_bootstrap'
+      `);
+      expect(rows[0]?.count).toBe('1');
+    });
+
+    it('writes the committed operation through to onboarding_operation under the issue_coach_bootstrap_invitation namespace', async () => {
+      const options = buildOptions();
+
+      const result = await issueCoachBootstrapInvitation(options, {
+        operatorId: 'operator-pg-3',
+        retryToken: RETRY_TOKEN,
+      });
+
+      expect(result.state).toBe('operation_committed');
+      if (result.state !== 'operation_committed') {
+        throw new Error('expected operation_committed');
+      }
+
+      const rows = await connection.db.execute<{
+        namespace: string;
+        operation_id: string;
+        digest: string;
+      }>(sql`
+        SELECT namespace, operation_id, digest
+        FROM onboarding_operation
+        WHERE operation_id = ${result.operationId}
+      `);
+
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.namespace).toBe('issue_coach_bootstrap_invitation');
+      expect(rows[0]?.digest).toBe(result.digest);
+    });
+
+    it('does not write a second operation row when a repeat operator/retry token replays', async () => {
+      const options = buildOptions();
+
+      const first = await issueCoachBootstrapInvitation(options, {
+        operatorId: 'operator-pg-4',
+        retryToken: RETRY_TOKEN,
+      });
+      const second = await issueCoachBootstrapInvitation(options, {
+        operatorId: 'operator-pg-4',
+        retryToken: RETRY_TOKEN,
+      });
+
+      expect(first.state).toBe('operation_committed');
+      expect(second.state).toBe('operation_replayed');
+
+      const rows = await connection.db.execute<{ count: string }>(sql`
+        SELECT COUNT(*)::text AS count FROM onboarding_operation
+        WHERE namespace = 'issue_coach_bootstrap_invitation'
       `);
       expect(rows[0]?.count).toBe('1');
     });
