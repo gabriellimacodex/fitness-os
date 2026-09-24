@@ -113,6 +113,25 @@ export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   };
 }
 
+// A composed privacy platform holds a live `postgres()` client, which keeps
+// the event loop alive even before it ever connects. If startup fails after
+// composition, that connection must be closed here or the process can hang
+// instead of exiting with the fatal `runtime.exitCode` this function sets.
+async function closePrivacyPlatformOnStartupFailure(
+  privacyPlatform: PrivacyPlatformHandles | null,
+): Promise<void> {
+  if (privacyPlatform === null) {
+    return;
+  }
+
+  try {
+    await privacyPlatform.connection.close();
+  } catch {
+    // Best-effort cleanup while already failing startup; the original
+    // startup error is what gets reported and rethrown by the caller.
+  }
+}
+
 export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
@@ -140,6 +159,7 @@ export async function bootstrapApi(
     );
   } catch (error) {
     runtime.exitCode = 1;
+    await closePrivacyPlatformOnStartupFailure(privacyPlatform);
     throw error;
   }
 
@@ -148,6 +168,7 @@ export async function bootstrapApi(
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
+    await closePrivacyPlatformOnStartupFailure(privacyPlatform);
     throw error;
   }
 

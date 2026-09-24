@@ -239,6 +239,95 @@ describe('bootstrapApi', () => {
     expect(runtime.exitCode).toBe(1);
   });
 
+  it('closes a composed privacy platform connection when app construction fails', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const closeConnection = vi.fn(async () => undefined);
+    const fakePrivacyPlatform = {
+      connection: { close: closeConnection },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => {
+          throw new Error('construction failed');
+        },
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('construction failed');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(closeConnection).toHaveBeenCalledOnce();
+  });
+
+  it('closes a composed privacy platform connection when app.listen fails', async () => {
+    const startupError = new Error('EADDRINUSE');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => Promise.reject(startupError)),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const closeConnection = vi.fn(async () => undefined);
+    const fakePrivacyPlatform = {
+      connection: { close: closeConnection },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => app,
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('EADDRINUSE');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(closeConnection).toHaveBeenCalledOnce();
+  });
+
+  it('does not let a secondary close failure mask the original startup error', async () => {
+    const startupError = new Error('construction failed');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const fakePrivacyPlatform = {
+      connection: {
+        close: vi.fn(async () => Promise.reject(new Error('close failed'))),
+      },
+      platform: { privacy: {} },
+    } as unknown as PrivacyPlatformHandles;
+
+    await expect(
+      bootstrapApi({
+        createApp: () => {
+          throw startupError;
+        },
+        createPrivacyPlatform: () => fakePrivacyPlatform,
+        env: { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/db' },
+        runtime,
+      }),
+    ).rejects.toThrow('construction failed');
+
+    expect(runtime.exitCode).toBe(1);
+  });
+
   it('closes only once when multiple shutdown signals arrive', async () => {
     const signalHandlers = new Map<string, () => Promise<void>>();
     const runtime = {
