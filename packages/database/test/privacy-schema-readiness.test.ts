@@ -153,6 +153,28 @@ describe('privacy schema readiness', () => {
   });
 
   it('flips repositories/migrations not_ready when only the processor-step/retention tables are missing, even though core tables are present', async () => {
+    let lastInsertedAuditEventId: string | undefined;
+    // Minimal stand-in for the drizzle query-builder chain
+    // `checkPrivacyAuditSinkFunctionalReadiness` exercises through the real
+    // `createPostgresPrivacyAuditSink`, so the core-schema-only round trip
+    // below succeeds and this test can isolate the processor-retention gap.
+    const tx = {
+      insert: () => ({
+        values: async (row: { auditEventId: string }) => {
+          lastInsertedAuditEventId = row.auditEventId;
+        },
+      }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () =>
+              lastInsertedAuditEventId
+                ? [{ auditEventId: lastInsertedAuditEventId }]
+                : [],
+          }),
+        }),
+      }),
+    };
     const connection = {
       close: async () => undefined,
       db: {
@@ -166,6 +188,7 @@ describe('privacy schema readiness', () => {
           { tablename: 'privacy_subject_request' },
           { tablename: 'privacy_subject_request_transition' },
         ],
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
       },
     } as unknown as PostgresConnection;
 
@@ -185,8 +208,10 @@ describe('privacy schema readiness', () => {
       diagnosticCode: 'repository_unavailable',
       state: 'not_ready',
     });
-    // audit_sink depends only on the core schema result, which is fully
-    // present here, so it stays ready even though repositories does not.
+    // audit_sink depends only on the core schema result and a working
+    // functional round trip, both fully satisfied here, so it stays ready
+    // even though repositories does not (the processor-retention gap is
+    // unrelated to the core-only audit_sink table/round trip).
     expect(result.components).toContainEqual({
       componentId: 'audit_sink',
       diagnosticCode: null,
