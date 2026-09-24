@@ -220,6 +220,54 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       ).resolves.toEqual([]);
     });
 
+    it('reports not_found when transitioning an attempt that was never put', async () => {
+      const attemptId = onboardingAttemptIdSchema.parse(
+        '11111111-1111-4111-8111-111111111111',
+      );
+
+      await expect(
+        attempts.applyTransition({
+          attemptId,
+          next: 'ready_to_claim',
+          updatedAt: '2026-08-19T12:00:00.000Z',
+        }),
+      ).resolves.toEqual({ reason: 'not_found', status: 'invalid' });
+    });
+
+    it('reports illegal_transition for a forward move the lifecycle graph disallows', async () => {
+      const attemptId = onboardingAttemptIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      );
+      await attempts.put({
+        createdAt: '2026-08-19T12:00:00.000Z',
+        principalKey: 'principal-3',
+        updatedAt: '2026-08-19T12:00:00.000Z',
+        detail: {
+          attemptId,
+          invitationId,
+          proposedRole: 'student',
+          purpose: 'student_onboarding',
+          lifecycle: 'policy_pending',
+          ordinal: 1,
+          predecessorAttemptId: null,
+          terminalReason: null,
+          policy: null,
+        },
+      });
+
+      await expect(
+        attempts.applyTransition({
+          attemptId,
+          next: 'completed',
+          updatedAt: '2026-08-19T12:01:00.000Z',
+        }),
+      ).resolves.toEqual({ reason: 'illegal_transition', status: 'invalid' });
+
+      await expect(attempts.get(attemptId)).resolves.toMatchObject({
+        detail: { lifecycle: 'policy_pending' },
+      });
+    });
+
     it('serializes concurrent transitions on one attempt', async () => {
       const attemptId = onboardingAttemptIdSchema.parse(
         'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
