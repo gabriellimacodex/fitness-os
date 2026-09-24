@@ -4,6 +4,8 @@ import {
   createPostgresPrivacyReadinessProbe,
   type PostgresConnection,
 } from '@fitness-os/database';
+import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
+import { loadReviewedSyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/schemas/privacy-fixtures';
 
 import type { PlatformOptions } from '../app.js';
 import { createPrivacyPgPersistence } from './pg-persistence.js';
@@ -34,6 +36,17 @@ export interface PrivacyPlatformHandles {
  * `createCatalogPlatformFromEnv`, this function is not wired into
  * `bootstrap.ts` or any production server-startup path; no call site
  * currently constructs it.
+ *
+ * The readiness probe's `expected_inventory` and `runtime_processors`
+ * components are evaluated for real: `expectedInventory` wraps the reviewed
+ * synthetic fixture `@fitness-os/schemas/privacy-fixtures` ships (the one
+ * PRD 21 Gate A evidence, #210, confirms maps every declared governance
+ * record family exactly once), and `runtimeProcessors` is the same
+ * `persistence.processors` registry this platform exposes for product use —
+ * not a disconnected duplicate. Because no call site currently registers a
+ * descriptor into that registry, this composition correctly reports
+ * `runtime_processors` as `not_ready`/`processor_missing` (fail-closed) until
+ * a future slice adds real processor registration.
  */
 export function createPrivacyPlatformFromEnv(
   env: NodeJS.ProcessEnv,
@@ -47,7 +60,13 @@ export function createPrivacyPlatformFromEnv(
   const persistence = createPrivacyPgPersistence(connection);
   const governanceLifecycleVerifier =
     createPostgresPrivacyGovernanceLifecycleBindingVerifier(connection);
-  const readiness = createPostgresPrivacyReadinessProbe(connection);
+  const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+    loadReviewedSyntheticPrivacyExpectedProcessorInventory(),
+  );
+  const readiness = createPostgresPrivacyReadinessProbe(connection, {
+    expectedInventory,
+    runtimeProcessors: persistence.processors,
+  });
 
   return {
     connection,

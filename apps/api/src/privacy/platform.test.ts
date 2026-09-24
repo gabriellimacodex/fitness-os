@@ -29,6 +29,15 @@ describe('privacy platform env composition', () => {
       'function',
     );
     expect(typeof privacy?.readiness?.evaluate).toBe('function');
+    // Reaching this assertion already proves the reviewed inventory fixture
+    // loaded and validated: SyntheticPrivacyExpectedProcessorInventory's
+    // constructor parses it synchronously during composition, above, and
+    // would have thrown before this point if the fixture were missing or
+    // schema-invalid. `.evaluate()` itself is intentionally not called here —
+    // with a real connection and the real PG runtime-processor registry now
+    // wired in, it performs a live query and cannot be safely exercised
+    // against this fake, unreachable database, matching this file's existing
+    // no-live-connection pattern for the other readiness components.
 
     // Does not decide the route-gating flag or any option this helper does
     // not itself set — that stays the caller's decision.
