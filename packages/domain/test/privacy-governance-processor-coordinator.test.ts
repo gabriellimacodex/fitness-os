@@ -2,6 +2,7 @@ import {
   privacyExpectedProcessorInventorySchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyProcessorExecutionReceiptSchema,
+  privacyProcessorStepReferenceSchema,
   privacySubjectRequestReferenceSchema,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
@@ -551,5 +552,112 @@ describe('synthetic processor coordinator', () => {
 
     expect(result).toEqual({ status: 'request_not_executable' });
     expect(executions).toBe(0);
+  });
+
+  it('replays an operation whose matching step is already recorded as already_terminal', async () => {
+    const requestId = '66666666-6666-4666-8666-666666666666';
+    const processorId = '99999999-9999-4999-8999-999999999999';
+    const operationId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const correlationId = '55555555-5555-4555-8555-555555555555';
+    const inventory = privacyExpectedProcessorInventorySchema.parse({
+      schemaVersion: 'privacy.processor-inventory.v1',
+      inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      inventoryVersionDigest: '1'.repeat(64),
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      sourceCommit: '2a59a47',
+      processors: [
+        {
+          processorId,
+          registrationVersion: 1,
+          inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          descriptorDigest: '2'.repeat(64),
+          codeOwner: 'packages.domain.privacy',
+          adapterPackage: '@fitness-os/domain',
+          storageKind: 'in_memory_synthetic',
+          allowedPurposeIds: [],
+          allowedCategoryIds: [],
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: ['export'],
+          unsupportedCapabilities: [],
+          recordFamilies: [
+            {
+              family: 'privacy_export_metadata',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          environmentApplicability: 'synthetic_only',
+          requiredReadiness: 'mechanism_only',
+          synthetic: true,
+        },
+      ],
+    });
+    // A step already recorded for this operationId, with a matching stepId
+    // (the shape this coordinator's own writer always produces).
+    const priorStep = privacyProcessorStepReferenceSchema.parse({
+      stepId: operationId,
+      requestId,
+      processorId,
+      capability: 'export',
+      outcome: 'completed',
+      operationId,
+      correlationId,
+      recordedAt: '2026-08-18T12:00:00.000Z',
+    });
+
+    let executions = 0;
+    const result = await coordinateSyntheticProcessorStep({
+      clock: new SyntheticPrivacyTrustedClock('2026-08-18T12:03:00.000Z'),
+      execution: {
+        execute: async () => {
+          executions += 1;
+          return { status: 'executed' };
+        },
+      },
+      expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+        inventory,
+      ),
+      operationId,
+      productionMode: false,
+      receipts: {
+        listByOperationId: async () => [
+          privacyProcessorExecutionReceiptSchema.parse({
+            requestId,
+            processorId,
+            capability: 'export',
+            outcome: 'completed',
+            operationId,
+            correlationId,
+          }),
+        ],
+      },
+      requestId,
+      requests: {
+        get: async () =>
+          privacySubjectRequestReferenceSchema.parse({
+            requestId,
+            requestType: 'export',
+            state: 'completed',
+            subjectScopeId: '22222222-2222-4222-8222-222222222222',
+            verification: null,
+            policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            inventoryVersionDigest: inventory.inventoryVersionDigest,
+            correlationId,
+            updatedAt: '2026-08-18T12:00:00.000Z',
+          }),
+      } as never,
+      steps: {
+        append: async () => 'conflict',
+        listForRequest: async () => [priorStep],
+      },
+    });
+
+    expect(result).toEqual({
+      status: 'already_terminal',
+      completion: 'completed',
+      request: expect.objectContaining({ requestId, state: 'completed' }),
+    });
+    // The replay still re-verifies the receipt through the same coordinator
+    // seam (idempotent by construction downstream).
+    expect(executions).toBe(1);
   });
 });
