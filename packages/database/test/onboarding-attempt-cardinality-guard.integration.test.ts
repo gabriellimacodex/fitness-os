@@ -196,9 +196,16 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
       // Bypass the repository/application layer entirely with a raw INSERT,
       // proving the cap is enforced by the database itself, not only by
-      // `canAllocateAttempt`'s application-level pre-check.
-      await expect(
-        connection.db.execute(sql`
+      // `canAllocateAttempt`'s application-level pre-check. The ordinal
+      // (1, a legal duplicate — nothing enforces ordinal uniqueness) is
+      // deliberately kept inside `onboarding_attempt`'s own pre-existing
+      // `ordinal BETWEEN 1 AND 4` range: an out-of-range ordinal (e.g. 5)
+      // would be rejected by that unrelated constraint before the
+      // cardinality-guard trigger's own logic is exercised at all, which
+      // would pass this assertion for the wrong reason.
+      let bypassError: unknown;
+      try {
+        await connection.db.execute(sql`
           INSERT INTO onboarding_attempt (
             attempt_id, invitation_id, principal_key, proposed_role, purpose,
             lifecycle, ordinal, created_at, updated_at
@@ -209,12 +216,23 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             'student',
             'student_onboarding',
             'policy_pending',
-            5,
+            1,
             now(),
             now()
           )
-        `),
-      ).rejects.toThrow();
+        `);
+      } catch (error) {
+        bypassError = error;
+      }
+      expect(bypassError).toBeDefined();
+      expect(
+        bypassError instanceof Error && 'cause' in bypassError
+          ? String(
+              (bypassError.cause as { constraint_name?: string })
+                ?.constraint_name,
+            )
+          : undefined,
+      ).toBe('onboarding_attempt_cardinality_guard_active_count_check');
 
       expect(
         (await readGuard(connection, principalKey, 'student'))?.active_count,
