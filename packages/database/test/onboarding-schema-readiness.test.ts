@@ -15,6 +15,7 @@ import {
 
 import type { PostgresConnection } from '../src/connection.js';
 import {
+  checkOnboardingOperationRepositoryFunctionalReadiness,
   createPostgresOnboardingReadinessProbe,
   requiredOnboardingMigrationHashes,
 } from '../src/onboarding/readiness.js';
@@ -31,10 +32,15 @@ const REPOSITORY_COMPONENT_IDS = [
 /**
  * First `execute` answers the migration-journal query, later ones answer the
  * `pg_tables` query, so a caller can control migration and table evidence
- * independently.
+ * independently. `transaction` is a minimal stand-in for the drizzle
+ * query-builder chain `checkOnboardingOperationRepositoryFunctionalReadiness`
+ * exercises through the real `createPostgresOnboardingOperationRepository`:
+ * it captures the inserted row and hands it back on read-back, mirroring
+ * what a real transaction would return.
  */
 function stubConnection(tables: readonly string[]): PostgresConnection {
   let executeCount = 0;
+  let insertedRow: Record<string, unknown> | undefined;
 
   return {
     close: async () => undefined,
@@ -45,6 +51,21 @@ function stubConnection(tables: readonly string[]): PostgresConnection {
           ? []
           : tables.map((tablename) => ({ tablename }));
       },
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          insert: () => ({
+            values: async (row: Record<string, unknown>) => {
+              insertedRow = row;
+            },
+          }),
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: async () => (insertedRow ? [insertedRow] : []),
+              }),
+            }),
+          }),
+        }),
     },
   } as unknown as PostgresConnection;
 }
@@ -269,6 +290,7 @@ describe('onboarding schema readiness', () => {
 
   it('removes stale base schema diagnostics after the database schema is ready', async () => {
     let executeCount = 0;
+    let insertedRow: Record<string, unknown> | undefined;
     const connection = {
       close: async () => undefined,
       db: {
@@ -283,6 +305,21 @@ describe('onboarding schema readiness', () => {
                 { tablename: 'onboarding_role_mapping' },
               ];
         },
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async (row: Record<string, unknown>) => {
+                insertedRow = row;
+              },
+            }),
+            select: () => ({
+              from: () => ({
+                where: () => ({
+                  limit: async () => (insertedRow ? [insertedRow] : []),
+                }),
+              }),
+            }),
+          }),
       },
     } as unknown as PostgresConnection;
     const baseProbe: OnboardingReadinessProbe = {
@@ -313,6 +350,136 @@ describe('onboarding schema readiness', () => {
       diagnosticCode: null,
       state: 'ready',
     });
+  });
+
+  it('flips operation_repository ready once the schema is ready and the functional put+read-back round trip succeeds', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      { requiredHashes: [] },
+    ).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'operation_repository',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+  });
+
+  it('keeps operation_repository not_ready with configuration_mismatch when the schema is ready but the functional round trip fails', async () => {
+    let executeCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : ALL_ONBOARDING_TABLES.map((tablename) => ({ tablename }));
+        },
+        // No `transaction` implementation: the functional round trip cannot
+        // run, so it must fail closed rather than silently reporting ready.
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresOnboardingReadinessProbe(connection, {
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'operation_repository',
+      diagnosticCode: 'configuration_mismatch',
+      state: 'not_ready',
+    });
+    expect(result.mechanismReady).toBe(false);
+  });
+});
+
+describe('checkOnboardingOperationRepositoryFunctionalReadiness (mocked)', () => {
+  it('reports round_trip_failed when the put itself reports a conflict', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                const error = new Error('duplicate key value') as Error & {
+                  code: string;
+                  constraint_name: string;
+                };
+                error.code = '23505';
+                error.constraint_name =
+                  'onboarding_operation_binding_key_unique';
+                throw error;
+              },
+            }),
+            select: () => ({
+              from: () => ({
+                where: () => ({
+                  limit: async () => [
+                    {
+                      bindingKey: 'existing',
+                      createdAt: '2026-08-31T00:00:00.000Z',
+                      digest: 'a'.repeat(64),
+                      namespace: 'create_attempt',
+                      operationId: '00000000-0000-4000-8000-000000000000',
+                      principalKey: 'existing',
+                      result: {},
+                      retryDigest: `hmac-sha256.v1:${'a'.repeat(64)}`,
+                    },
+                  ],
+                }),
+              }),
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingOperationRepositoryFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'put_conflict',
+    });
+  });
+
+  it('reports round_trip_failed when the read-back cannot find the put probe operation', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            select: () => ({
+              from: () => ({ where: () => ({ limit: async () => [] }) }),
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingOperationRepositoryFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'round_trip_read_back_missing',
+    });
+  });
+
+  it('reports database_error when the transaction itself is unavailable', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {},
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingOperationRepositoryFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
   });
 });
 

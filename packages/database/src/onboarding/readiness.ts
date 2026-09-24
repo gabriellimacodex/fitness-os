@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,10 +16,15 @@ import {
   createSelfTestOnboardingReadinessProbe,
   SyntheticOnboardingReadinessProbe,
 } from '@fitness-os/domain';
+import { onboardingOperationIdSchema } from '@fitness-os/schemas';
 
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
+import {
+  createPostgresOnboardingOperationRepository,
+  type StoredOnboardingOperation,
+} from './operations.js';
 
 const drizzleRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -71,14 +76,20 @@ const REQUIRED_TABLES = [
  * them rather than an invented equivalence:
  * `invitation_repository` → `onboarding_invitation`,
  * `attempt_repository` → `onboarding_attempt`,
- * `operation_repository` → `onboarding_operation`,
  * `role_mapping_repository` → `onboarding_role_mapping`.
+ * `operation_repository` (→ `onboarding_operation`) is handled separately
+ * below: it additionally requires a real functional round trip, not just
+ * table presence — see `checkOnboardingOperationRepositoryFunctionalReadiness`.
  */
-const REPOSITORY_COMPONENT_IDS = [
+const SCHEMA_ONLY_REPOSITORY_COMPONENT_IDS = [
   'invitation_repository',
   'attempt_repository',
-  'operation_repository',
   'role_mapping_repository',
+] as const satisfies readonly OnboardingReadinessComponentId[];
+
+const REPOSITORY_COMPONENT_IDS = [
+  ...SCHEMA_ONLY_REPOSITORY_COMPONENT_IDS,
+  'operation_repository',
 ] as const satisfies readonly OnboardingReadinessComponentId[];
 
 const OVERRIDDEN_COMPONENT_IDS = new Set<OnboardingReadinessComponentId>([
@@ -143,20 +154,125 @@ export async function checkOnboardingSchemaReadiness(
 }
 
 /**
+ * Thrown deliberately at the end of the functional operation-ledger
+ * round-trip transaction so the write never commits. Caught explicitly in
+ * `checkOnboardingOperationRepositoryFunctionalReadiness` and treated as
+ * success; any other thrown value is a real failure of the put/read-back
+ * round trip.
+ */
+class OnboardingOperationProbeRollback extends Error {}
+
+export type OnboardingOperationRepositoryFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'round_trip_failed' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Exercises the real `createPostgresOnboardingOperationRepository` put/get
+ * path end to end: puts one synthetic operation-ledger row through the
+ * actual repository inside a transaction, confirms it is visible via a
+ * read-back, and always rolls back so no probe row is ever committed to the
+ * append-only ledger. This catches a broken insert/select path (column
+ * mismatch, constraint drift, permission failure) that the static
+ * migration-hash and `pg_tables` presence check in
+ * `checkOnboardingSchemaReadiness` cannot detect, since that check only
+ * proves the expected migration ran and the table exists, not that the
+ * repository can actually write to and read from it.
+ */
+export async function checkOnboardingOperationRepositoryFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<OnboardingOperationRepositoryFunctionalReadinessResult> {
+  const probeRecord: StoredOnboardingOperation = {
+    bindingKey: `readiness-probe:${randomUUID()}`,
+    createdAt: new Date().toISOString(),
+    digest: createHash('sha256').update(randomUUID()).digest('hex'),
+    namespace: 'create_attempt',
+    operationId: onboardingOperationIdSchema.parse(randomUUID()),
+    principalKey: `readiness-probe:${randomUUID()}`,
+    result: { probe: true },
+    retryDigest: `hmac-sha256.v1:${createHash('sha256').update(randomUUID()).digest('hex')}`,
+  };
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      const txConnection: PostgresConnection = {
+        db: tx,
+        close: connection.close,
+      };
+      const repository =
+        createPostgresOnboardingOperationRepository(txConnection);
+      const putResult = await repository.put(probeRecord);
+
+      if (putResult.status !== 'accepted') {
+        throw new Error(`put_${putResult.status}`);
+      }
+
+      const readBack = await repository.getByOperationId(
+        probeRecord.operationId,
+      );
+
+      if (readBack?.operationId !== probeRecord.operationId) {
+        throw new Error('round_trip_read_back_missing');
+      }
+
+      // Always abort: this is a readiness probe, not a real operation, and
+      // must never leave a row in the append-only operation ledger.
+      throw new OnboardingOperationProbeRollback();
+    });
+
+    // The transaction above always throws before reaching a commit; getting
+    // here without an error means the sentinel rollback was swallowed
+    // somewhere, which is itself not a verified round trip.
+    return {
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof OnboardingOperationProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    const isRoundTripFailure =
+      message.startsWith('put_') || message === 'round_trip_read_back_missing';
+    return {
+      ready: false,
+      reason: isRoundTripFailure ? 'round_trip_failed' : 'database_error',
+      detail: message,
+    };
+  }
+}
+
+/**
  * Wraps a base `OnboardingReadinessProbe` (defaults to the domain synthetic
  * probe) and replaces its `schema` component plus the four repository
  * components with a real evaluation of `checkOnboardingSchemaReadiness`
  * against `connection`, per PRD 07's "Readiness" section ("Mechanism
  * readiness requires: exact required migration and schema markers").
  *
- * The repository components reuse that same result because every table they
- * are backed by is already one of `REQUIRED_TABLES` (see
- * `REPOSITORY_COMPONENT_IDS`), so the check is real evidence for them and not
- * an invented equivalence. They are bound as one combined, fail-closed check:
- * any missing required migration or table flips all four `not_ready`
+ * `invitation_repository`, `attempt_repository`, and `role_mapping_repository`
+ * reuse that same result because every table they are backed by is already
+ * one of `REQUIRED_TABLES` (see `SCHEMA_ONLY_REPOSITORY_COMPONENT_IDS`), so
+ * the check is real evidence for them and not an invented equivalence. They
+ * are bound as one combined, fail-closed check alongside `schema`: any
+ * missing required migration or table flips all of them `not_ready`
  * together, rather than inferring a finer per-repository split from partial
- * schema state. This is table/migration presence only — it does not exercise
- * a read/write round-trip through the repositories themselves.
+ * schema state. This is table/migration presence only for those three — it
+ * does not exercise a read/write round-trip through the repositories
+ * themselves.
+ *
+ * `operation_repository` is `ready` only when that same schema result is
+ * `ready` **and** `checkOnboardingOperationRepositoryFunctionalReadiness`
+ * confirms a real, rolled-back put+read-back through
+ * `createPostgresOnboardingOperationRepository` succeeds — the static schema
+ * check alone cannot prove the repository can actually write to and read
+ * from the table it found. The functional check is skipped (and
+ * `operation_repository` stays `not_ready`, with `schema`'s diagnostic code)
+ * when the schema result itself is not `ready`, since a write would just
+ * fail for a reason `schema` already reports.
  *
  * When `mechanismComponents` is also supplied, this first composes
  * `createSelfTestOnboardingReadinessProbe` from `@fitness-os/domain` around
@@ -212,8 +328,8 @@ export function createPostgresOnboardingReadinessProbe(
             state: 'not_ready',
           };
 
-      const repositoryComponents: OnboardingReadinessComponent[] =
-        REPOSITORY_COMPONENT_IDS.map((componentId) =>
+      const schemaOnlyRepositoryComponents: OnboardingReadinessComponent[] =
+        SCHEMA_ONLY_REPOSITORY_COMPONENT_IDS.map((componentId) =>
           schemaResult.ready
             ? { componentId, diagnosticCode: null, state: 'ready' }
             : {
@@ -222,6 +338,36 @@ export function createPostgresOnboardingReadinessProbe(
                 state: 'not_ready',
               },
         );
+      // Only attempt the functional round trip once the static schema check
+      // already reports the required migration/table present — otherwise the
+      // insert would fail on a missing table for a reason `schema` already
+      // reports, and running it anyway would just duplicate that diagnosis
+      // with a heavier DB call.
+      const operationRepositoryFunctionalResult = schemaResult.ready
+        ? await checkOnboardingOperationRepositoryFunctionalReadiness(
+            connection,
+          )
+        : null;
+      const operationRepositoryComponent: OnboardingReadinessComponent =
+        schemaResult.ready &&
+        operationRepositoryFunctionalResult?.ready === true
+          ? {
+              componentId: 'operation_repository',
+              diagnosticCode: null,
+              state: 'ready',
+            }
+          : {
+              componentId: 'operation_repository',
+              diagnosticCode: schemaResult.ready
+                ? 'configuration_mismatch'
+                : schemaComponent.diagnosticCode,
+              state: 'not_ready',
+            };
+
+      const repositoryComponents = [
+        ...schemaOnlyRepositoryComponents,
+        operationRepositoryComponent,
+      ];
 
       const overriddenComponents = [schemaComponent, ...repositoryComponents];
       const remainingComponents = base.components.filter(
