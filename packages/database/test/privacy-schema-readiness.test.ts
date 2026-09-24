@@ -453,6 +453,9 @@ describe('privacy recovery readiness', () => {
           { tgname: 'privacy_policy_package_version_append_only_guard' },
           { tgname: 'privacy_purpose_version_append_only_guard' },
           { tgname: 'privacy_processor_registration_append_only_guard' },
+          { tgname: 'privacy_processor_step_append_only_guard' },
+          { tgname: 'privacy_governance_lifecycle_proof_append_only_guard' },
+          { tgname: 'privacy_retention_rule_append_only_guard' },
           // An unrelated trigger must not be required or otherwise affect
           // the result.
           { tgname: 'some_other_unrelated_guard' },
