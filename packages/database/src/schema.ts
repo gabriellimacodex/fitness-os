@@ -40,6 +40,7 @@ export {
 
 export {
   onboardingAttempt,
+  onboardingAttemptCardinalityGuard,
   onboardingClaimFailure,
   onboardingInvitation,
   onboardingOperation,
