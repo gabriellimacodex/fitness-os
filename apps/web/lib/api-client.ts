@@ -1,5 +1,6 @@
 import {
   apiErrorResponseSchema,
+  claimAttemptRequestSchema,
   healthResponseSchema,
   inspectInvitationRequestSchema,
   movementDetailResponseSchema,
@@ -215,6 +216,45 @@ export function createApiClient({
       const { payload, response } = await fetchJson(
         fetchImplementation,
         new URL('v1/onboarding/invitations/inspect', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const operation = onboardingOperationResponseSchema.safeParse(payload);
+
+      if (!operation.success) {
+        throw new ApiProtocolError();
+      }
+
+      return operation.data;
+    },
+    async onboardingClaimAttempt(
+      attemptId: string,
+      claimSecret: string,
+      retryToken: string,
+    ): Promise<OnboardingOperationResponse> {
+      const body = claimAttemptRequestSchema.parse({
+        claimSecret,
+        retryToken,
+      });
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          `v1/onboarding/attempts/${encodeURIComponent(attemptId)}/claim`,
+          parsedBaseUrl,
+        ),
         {
           body: JSON.stringify(body),
           cache: 'no-store',
