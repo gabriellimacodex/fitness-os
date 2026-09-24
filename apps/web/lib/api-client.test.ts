@@ -13,6 +13,12 @@ describe('createApiClient', () => {
     );
   });
 
+  it('rejects a non-HTTP(S) absolute base URL', () => {
+    expect(() => createApiClient({ baseUrl: 'ftp://api.example.com' })).toThrow(
+      'API base URL must be an absolute HTTP(S) URL.',
+    );
+  });
+
   it('fetches and validates the health response', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({ status: 'ok' }),
@@ -185,6 +191,18 @@ describe('createApiClient', () => {
     await expect(client.readiness()).rejects.toBeInstanceOf(ApiProtocolError);
   });
 
+  it('throws a protocol error when a 503 response claims to be ready', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: 'ready' }, { status: 503 }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.readiness()).rejects.toBeInstanceOf(ApiProtocolError);
+  });
+
   it('fetches and validates a movement list with no-store', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({ items: [] }),
@@ -261,6 +279,24 @@ describe('createApiClient', () => {
     });
 
     const error = await client.movements().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  it('does not echo raw content from a malformed movement detail payload', async () => {
+    const rawContent = 'private-provider-notes';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ movementId: 'bodyweight-squat', notes: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .movement('bodyweight-squat')
+      .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
