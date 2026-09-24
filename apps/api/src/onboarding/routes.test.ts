@@ -1937,7 +1937,7 @@ describe('policy-refresh and claim', () => {
     await app.close();
   });
 
-  it('denies claim when OnboardingClaimRepository rejects the commit', async () => {
+  it('returns the typed mapping_conflict outcome when OnboardingClaimRepository denies the commit as a mapping conflict', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     const app = buildApp(
@@ -1948,6 +1948,68 @@ describe('policy-refresh and claim', () => {
           claimRepository: {
             commit: async () => ({
               reason: 'mapping_conflict' as const,
+              status: 'denied' as const,
+            }),
+          },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-policy') },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-deny'),
+      },
+    });
+    const claimedBody = onboardingOperationResponseSchema.parse(claimed.json());
+    expect(claimedBody.result).toMatchObject({
+      outcome: 'mapping_conflict',
+    });
+    expect(store.mappings.get('principal-a') ?? []).toEqual([]);
+
+    await app.close();
+  });
+
+  it('returns the generic invalid_or_unavailable outcome for a non-mapping-conflict commit denial', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          claimRepository: {
+            commit: async () => ({
+              reason: 'invalid_or_unavailable' as const,
               status: 'denied' as const,
             }),
           },
