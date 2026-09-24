@@ -1822,6 +1822,40 @@ describe('resume and abandon', () => {
 
     await app.close();
   });
+
+  it('sets no-store on unexpected onboarding abandon failures', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+    app.addHook('preHandler', async (request) => {
+      if ((request.url.split('?')[0] ?? '').endsWith('/abandon')) {
+        throw new Error('private onboarding abandon failure');
+      }
+    });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/abandon`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-abandon-failure'),
+      },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private onboarding abandon failure');
+
+    await app.close();
+  });
 });
 
 describe('policy-refresh and claim', () => {
