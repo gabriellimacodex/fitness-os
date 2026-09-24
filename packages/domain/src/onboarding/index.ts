@@ -1,6 +1,7 @@
 export {
   ATTEMPT_ACTIVE_CAP,
   canAllocateAttempt,
+  DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
   evaluateAttemptTimeout,
   isNonterminal,
   selectAttempt,
