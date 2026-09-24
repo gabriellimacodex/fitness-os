@@ -59,6 +59,92 @@ describe('privacy governance execution-receipt verifier', () => {
       });
     }
   });
+
+  it('verifies a denied outcome without requiring a proofId', async () => {
+    const denied = privacyGovernanceLifecycleBindingSchema.parse({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      processorId: '22222222-2222-4222-8222-222222222222',
+      operationId: '66666666-6666-4666-8666-666666666666',
+      result: { outcome: 'denied' },
+    });
+    const verifier = createPrivacyGovernanceExecutionReceiptVerifier({
+      listByOperationId: async () => [denied],
+    });
+
+    await expect(verifier.verify(denied)).resolves.toEqual({
+      status: 'verified',
+      binding: denied,
+    });
+  });
+
+  it('verifies a partially_failed outcome when the proofId matches', async () => {
+    const partiallyFailed = privacyGovernanceLifecycleBindingSchema.parse({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      processorId: '22222222-2222-4222-8222-222222222222',
+      operationId: '77777777-7777-4777-8777-777777777777',
+      result: {
+        outcome: 'partially_failed',
+        proofId: '44444444-4444-4444-8444-444444444444',
+      },
+    });
+    const verifier = createPrivacyGovernanceExecutionReceiptVerifier({
+      listByOperationId: async () => [partiallyFailed],
+    });
+
+    await expect(verifier.verify(partiallyFailed)).resolves.toEqual({
+      status: 'verified',
+      binding: partiallyFailed,
+    });
+  });
+
+  it('rejects a partially_failed outcome whose proofId does not match the stored receipt', async () => {
+    const stored = privacyGovernanceLifecycleBindingSchema.parse({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      processorId: '22222222-2222-4222-8222-222222222222',
+      operationId: '77777777-7777-4777-8777-777777777777',
+      result: {
+        outcome: 'partially_failed',
+        proofId: '44444444-4444-4444-8444-444444444444',
+      },
+    });
+    const presented = privacyGovernanceLifecycleBindingSchema.parse({
+      ...stored,
+      result: {
+        outcome: 'partially_failed',
+        proofId: '88888888-8888-4888-8888-888888888888',
+      },
+    });
+    const verifier = createPrivacyGovernanceExecutionReceiptVerifier({
+      listByOperationId: async () => [stored],
+    });
+
+    await expect(verifier.verify(presented)).resolves.toEqual({
+      status: 'invalid',
+    });
+  });
+
+  it('rejects a presented outcome that disagrees with the stored outcome', async () => {
+    const denied = privacyGovernanceLifecycleBindingSchema.parse({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      processorId: '22222222-2222-4222-8222-222222222222',
+      operationId: '66666666-6666-4666-8666-666666666666',
+      result: { outcome: 'denied' },
+    });
+    const presentedAsCompleted = privacyGovernanceLifecycleBindingSchema.parse({
+      ...denied,
+      result: {
+        outcome: 'completed',
+        proofId: '44444444-4444-4444-8444-444444444444',
+      },
+    });
+    const verifier = createPrivacyGovernanceExecutionReceiptVerifier({
+      listByOperationId: async () => [denied],
+    });
+
+    await expect(verifier.verify(presentedAsCompleted)).resolves.toEqual({
+      status: 'invalid',
+    });
+  });
 });
 
 describe('privacy processor execution-receipt verifier', () => {
