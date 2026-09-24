@@ -58,14 +58,14 @@ export function planWithdrawal(input: {
       };
     }
 
-    if (input.existing.state === 'withdrawn') {
-      return {
-        status: 'already_withdrawn',
-        withdrawal: input.existing,
-      };
-    }
-
-    return { status: 'conflict' };
+    // privacyWithdrawalReferenceSchema's `state` field is `z.literal('withdrawn')`
+    // (packages/schemas/src/privacy-governance.ts), so any non-null `existing`
+    // reaching here is always already withdrawn — there is no other reachable
+    // state for it to conflict with.
+    return {
+      status: 'already_withdrawn',
+      withdrawal: input.existing,
+    };
   }
 
   const withdrawal = privacyWithdrawalReferenceSchema.parse({
