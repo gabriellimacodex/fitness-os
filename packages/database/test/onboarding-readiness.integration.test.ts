@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPostgresConnection } from '../src/connection.js';
 import {
+  checkOnboardingOperationRepositoryFunctionalReadiness,
   checkOnboardingSchemaReadiness,
   createPostgresOnboardingReadinessProbe,
 } from '../src/onboarding/readiness.js';
@@ -116,6 +117,27 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
             },
           ]);
         }
+      });
+
+      it('checkOnboardingOperationRepositoryFunctionalReadiness performs a real put+read-back through createPostgresOnboardingOperationRepository and leaves no row behind', async () => {
+        const before = await connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM onboarding_operation`,
+        );
+
+        const result =
+          await checkOnboardingOperationRepositoryFunctionalReadiness(
+            connection,
+          );
+
+        expect(result).toEqual({ ready: true });
+
+        const after = await connection.db.execute<{ count: string }>(
+          sql`SELECT count(*)::text AS count FROM onboarding_operation`,
+        );
+        // The probe transaction always rolls back, so it must never leave a
+        // row in the append-only operation ledger, no matter how many times
+        // it runs.
+        expect(after[0]?.count).toBe(before[0]?.count);
       });
 
       it('reports the schema component not_ready with migration_missing and flips mechanismReady false on a missing required migration', async () => {
