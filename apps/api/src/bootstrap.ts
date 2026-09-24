@@ -1,6 +1,10 @@
 import type { FastifyServerOptions } from 'fastify';
 
 import { buildApp, type PlatformOptions } from './app.js';
+import {
+  createPrivacyPlatformFromEnv,
+  type PrivacyPlatformHandles,
+} from './privacy/platform.js';
 
 const DEFAULT_PORT = '3001';
 
@@ -27,6 +31,9 @@ interface BootstrapDependencies {
     options: FastifyServerOptions,
     platform: PlatformOptions,
   ) => BootstrapApp;
+  createPrivacyPlatform?: (
+    env: NodeJS.ProcessEnv,
+  ) => PrivacyPlatformHandles | null;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -110,14 +117,26 @@ export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const createPrivacyPlatform =
+    dependencies.createPrivacyPlatform ?? createPrivacyPlatformFromEnv;
   const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
+  let privacyPlatform: PrivacyPlatformHandles | null = null;
 
   try {
+    privacyPlatform = createPrivacyPlatform(env);
     app = createApp(
       { logger: LOGGER_OPTIONS },
-      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+      {
+        corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+        ...(privacyPlatform !== null
+          ? {
+              allowSyntheticPrivacy: true,
+              privacy: privacyPlatform.platform.privacy,
+            }
+          : {}),
+      },
     );
   } catch (error) {
     runtime.exitCode = 1;
@@ -144,6 +163,9 @@ export async function bootstrapApi(
     app.log.info({ signal }, 'API shutdown started');
     try {
       await app.close();
+      if (privacyPlatform !== null) {
+        await privacyPlatform.connection.close();
+      }
     } catch (error) {
       runtime.exitCode = 1;
       app.log.error({ err: error, signal }, 'API shutdown failed');
