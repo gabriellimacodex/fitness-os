@@ -86,7 +86,6 @@ import {
   decodeAttemptCursor,
   digestRetryToken,
   encodeAttemptCursor,
-  getAttemptForPrincipal,
   isAfterCursor,
   mappingIdFor,
   mappedRolesFor,
@@ -858,17 +857,13 @@ export function registerOnboardingRoutes(
       return;
     }
 
-    const attempt = getAttemptForPrincipal(
-      store,
-      params.data.attemptId,
-      context.principalKey,
-    );
+    const record = await loadAttempt(store, persistence, params.data.attemptId);
 
-    if (attempt === undefined) {
+    if (record === undefined || record.principalKey !== context.principalKey) {
       return sendError(request, reply, 404, 'NOT_FOUND', 'Resource not found');
     }
 
-    return attemptDetailSchema.parse(attempt);
+    return attemptDetailSchema.parse(record.detail);
   });
 
   app.post(
