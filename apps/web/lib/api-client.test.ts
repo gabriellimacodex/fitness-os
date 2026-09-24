@@ -333,6 +333,125 @@ describe('createApiClient', () => {
     vi.useRealTimers();
   });
 
+  it('fetches and validates the current onboarding state with no-store', async () => {
+    const current = {
+      mappings: [
+        {
+          mappingId: '33333333-3333-4333-8333-333333333333',
+          role: 'student',
+        },
+      ],
+      attempts: [
+        {
+          attemptId: '11111111-1111-4111-8111-111111111111',
+          proposedRole: 'student',
+          purpose: 'student_onboarding',
+          lifecycle: 'policy_pending',
+          ordinal: 1,
+        },
+      ],
+      nextCursor: null,
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(current),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.onboardingCurrentState()).resolves.toEqual(current);
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/v1/onboarding/current'),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('sends a validated cursor as a query parameter for the current onboarding state', async () => {
+    const current = { mappings: [], attempts: [], nextCursor: null };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(current),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingCurrentState('a'.repeat(8));
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        `https://api.example.com/v1/onboarding/current?cursor=${'a'.repeat(8)}`,
+      ),
+      expect.objectContaining({
+        cache: 'no-store',
+        method: 'GET',
+      }),
+    );
+  });
+
+  it('rejects an invalid cursor before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.onboardingCurrentState('short')).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when the current onboarding state is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-current-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCurrentState()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-current-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed current-state payload', async () => {
+    const rawContent = 'private-current-state-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ mappings: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCurrentState()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
   it('inspects an invitation with a validated claim secret and no-store', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () =>
       Response.json({

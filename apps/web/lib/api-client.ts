@@ -1,9 +1,11 @@
 import {
   apiErrorResponseSchema,
+  currentOnboardingResponseSchema,
   healthResponseSchema,
   inspectInvitationRequestSchema,
   movementDetailResponseSchema,
   movementListResponseSchema,
+  onboardingCurrentQuerySchema,
   onboardingOperationResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
@@ -206,6 +208,33 @@ export function createApiClient({
       }
 
       return detail.data;
+    },
+    async onboardingCurrentState(cursor?: string) {
+      const query = onboardingCurrentQuerySchema.parse(
+        cursor === undefined ? {} : { cursor },
+      );
+
+      const url = new URL('v1/onboarding/current', parsedBaseUrl);
+
+      if (query.cursor !== undefined) {
+        url.searchParams.set('cursor', query.cursor);
+      }
+
+      const { payload, response } = await fetchJson(fetchImplementation, url, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const current = currentOnboardingResponseSchema.safeParse(payload);
+
+      if (!current.success) {
+        throw new ApiProtocolError();
+      }
+
+      return current.data;
     },
     async onboardingInspectInvitation(
       claimSecret: string,
