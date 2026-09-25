@@ -54,6 +54,8 @@ const ALL_ONBOARDING_TABLES = [
   'onboarding_attempt',
   'onboarding_operation',
   'onboarding_role_mapping',
+  'onboarding_principal_binding',
+  'onboarding_transition',
 ] as const;
 
 describe('onboarding schema readiness', () => {
@@ -73,10 +75,18 @@ describe('onboarding schema readiness', () => {
     expect(
       existsSync(join(drizzleRoot, '0010_prd07_onboarding_role_mapping.sql')),
     ).toBe(true);
+    expect(
+      existsSync(
+        join(drizzleRoot, '0013_prd07_onboarding_principal_binding.sql'),
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(join(drizzleRoot, '0016_prd07_onboarding_transition.sql')),
+    ).toBe(true);
 
     const hashes = requiredOnboardingMigrationHashes();
-    expect(hashes).toHaveLength(5);
-    expect(new Set(hashes).size).toBe(5);
+    expect(hashes).toHaveLength(7);
+    expect(new Set(hashes).size).toBe(7);
     for (const hash of hashes) {
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
     }
@@ -224,6 +234,25 @@ describe('onboarding schema readiness', () => {
     expect(result.diagnosticCodes).toContain('schema_mismatch');
   });
 
+  it('flips schema not_ready when only the principal-binding and transition tables are missing', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection([
+        'onboarding_invitation',
+        'onboarding_attempt',
+        'onboarding_operation',
+        'onboarding_role_mapping',
+      ]),
+      { requiredHashes: [] },
+    ).evaluate();
+
+    expect(result.components.find((c) => c.componentId === 'schema')).toEqual({
+      componentId: 'schema',
+      diagnosticCode: 'schema_mismatch',
+      state: 'not_ready',
+    });
+    expect(result.mechanismReady).toBe(false);
+  });
+
   it('normalizes omitted and duplicated base repository components and drops their stale diagnostics', async () => {
     const baseProbe: OnboardingReadinessProbe = {
       evaluate: async () => ({
@@ -276,12 +305,7 @@ describe('onboarding schema readiness', () => {
           executeCount += 1;
           return executeCount === 1
             ? []
-            : [
-                { tablename: 'onboarding_invitation' },
-                { tablename: 'onboarding_attempt' },
-                { tablename: 'onboarding_operation' },
-                { tablename: 'onboarding_role_mapping' },
-              ];
+            : ALL_ONBOARDING_TABLES.map((tablename) => ({ tablename }));
         },
       },
     } as unknown as PostgresConnection;
