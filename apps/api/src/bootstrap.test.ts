@@ -251,6 +251,196 @@ describe('bootstrapApi', () => {
     expect(app.close).toHaveBeenCalledOnce();
   });
 
+  it('wires a composed catalog platform into the app when configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: {
+        error: vi.fn(),
+        info: vi.fn(),
+      },
+    };
+    const createApp = vi.fn(() => app);
+    const readinessCheck = vi.fn(async () => true);
+    const exerciseCatalog = {
+      isInvalidRequest: () => false,
+      isStorageUnavailable: () => false,
+      reader: {} as never,
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createCatalogPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: { exerciseCatalog, readinessCheck },
+    }));
+
+    await bootstrapApi({
+      createApp,
+      createCatalogPlatform,
+      env: { CATALOG_DATABASE_URL: 'postgresql://catalog' },
+      runtime,
+    });
+
+    expect(createCatalogPlatform).toHaveBeenCalledWith({
+      CATALOG_DATABASE_URL: 'postgresql://catalog',
+    });
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      {
+        corsAllowedOrigins: ['http://localhost:3000'],
+        exerciseCatalog,
+        readinessCheck,
+      },
+    );
+  });
+
+  it('omits catalog platform composition when it is not configured', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createApp = vi.fn(() => app);
+    const createCatalogPlatform = vi.fn(() => null);
+
+    await bootstrapApi({ createApp, createCatalogPlatform, env: {}, runtime });
+
+    expect(createApp).toHaveBeenCalledWith(
+      { logger: expect.any(Object) },
+      { corsAllowedOrigins: ['http://localhost:3000'] },
+    );
+  });
+
+  it('closes the composed catalog connection on graceful shutdown', async () => {
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createCatalogPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createCatalogPlatform,
+      env: {},
+      runtime,
+    });
+    await signalHandlers.get('SIGTERM')?.();
+
+    expect(app.close).toHaveBeenCalledOnce();
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks a catalog connection close failure on shutdown as fatal without leaking a rejection', async () => {
+    const closeError = new Error('catalog close failed');
+    const signalHandlers = new Map<string, () => Promise<void>>();
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn((signal: string, handler: () => Promise<void>) => {
+        signalHandlers.set(signal, handler);
+      }),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => 'http://127.0.0.1:3001'),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const createCatalogPlatform = vi.fn(() => ({
+      connection: {
+        close: vi.fn(async () => Promise.reject(closeError)),
+        db: {} as never,
+      },
+      platform: {},
+    }));
+
+    await bootstrapApi({
+      createApp: () => app,
+      createCatalogPlatform,
+      env: {},
+      runtime,
+    });
+
+    await expect(signalHandlers.get('SIGTERM')?.()).resolves.toBeUndefined();
+    expect(runtime.exitCode).toBe(1);
+    expect(app.log.error).toHaveBeenCalledWith(
+      { err: closeError, signal: 'SIGTERM' },
+      'Catalog connection close failed',
+    );
+  });
+
+  it('closes a composed catalog connection when startup fails and marks the failure fatal', async () => {
+    const startupError = new Error('bind failed');
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const app = {
+      close: vi.fn(async () => undefined),
+      listen: vi.fn(async () => Promise.reject(startupError)),
+      log: { error: vi.fn(), info: vi.fn() },
+    };
+    const connectionClose = vi.fn(async () => undefined);
+    const createCatalogPlatform = vi.fn(() => ({
+      connection: { close: connectionClose, db: {} as never },
+      platform: {},
+    }));
+
+    await expect(
+      bootstrapApi({
+        createApp: () => app,
+        createCatalogPlatform,
+        env: {},
+        runtime,
+      }),
+    ).rejects.toThrow('bind failed');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(connectionClose).toHaveBeenCalledOnce();
+  });
+
+  it('marks catalog platform composition failure as fatal before creating the app', async () => {
+    const runtime = {
+      exitCode: undefined as number | undefined,
+      off: vi.fn(),
+      once: vi.fn(),
+    };
+    const compositionError = new Error('CATALOG_LEDGER_SECRET_HEX invalid');
+    const createApp = vi.fn();
+    const createCatalogPlatform = vi.fn(() => {
+      throw compositionError;
+    });
+
+    await expect(
+      bootstrapApi({ createApp, createCatalogPlatform, env: {}, runtime }),
+    ).rejects.toThrow('CATALOG_LEDGER_SECRET_HEX invalid');
+
+    expect(runtime.exitCode).toBe(1);
+    expect(createApp).not.toHaveBeenCalled();
+  });
+
   it('marks a shutdown failure as fatal without leaking a rejection', async () => {
     const shutdownError = new Error('close failed');
     const signalHandlers = new Map<string, () => Promise<void>>();
