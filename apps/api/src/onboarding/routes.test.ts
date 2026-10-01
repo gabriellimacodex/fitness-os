@@ -1110,6 +1110,77 @@ describe('claim-secret brute-force throttle', () => {
 
     await app.close();
   });
+
+  it('throttles POST /attempts/:id/claim after repeated wrong guesses without completing the claim', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const claimFailureTracker = new SyntheticClaimFailureTracker();
+    const { app } = buildSyntheticApp({
+      claimFailureTracker,
+      claimThrottleWindow: throttleWindow,
+      store,
+    });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse(
+          'synthetic-retry-policy-claim-throttle',
+        ),
+      },
+    });
+
+    for (let i = 0; i < 2; i += 1) {
+      await app.inject({
+        method: 'POST',
+        url: `/v1/onboarding/attempts/${attemptId}/claim`,
+        payload: {
+          claimSecret: OTHER_SECRET,
+          retryToken: retryTokenSchema.parse(
+            `synthetic-retry-claim-throttle-${i}`,
+          ),
+        },
+      });
+    }
+
+    const correctWhileThrottled = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse(
+          'synthetic-retry-claim-throttle-correct',
+        ),
+      },
+    });
+
+    expect(correctWhileThrottled.statusCode).toBe(200);
+    expect(
+      onboardingOperationResponseSchema.parse(correctWhileThrottled.json())
+        .result,
+    ).toEqual({ outcome: 'invalid_or_unavailable' });
+    expect(store.attempts.get(attemptId)?.detail.lifecycle).toBe(
+      'ready_to_claim',
+    );
+
+    await app.close();
+  });
 });
 
 describe('GET /v1/onboarding/attempts/:attemptId', () => {

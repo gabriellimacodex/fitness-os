@@ -1310,16 +1310,6 @@ export function registerOnboardingRoutes(
         );
       }
 
-      const digest = semanticDigest({
-        attemptId: params.data.attemptId,
-        authority: context.principalKey,
-        invitationRef: invitationReference(
-          store,
-          body.data.claimSecret,
-          digestSecret,
-        ),
-        namespace: 'claim_attempt',
-      });
       const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
       const bindingKey = operationBindingKey(
         context.principalKey,
@@ -1331,6 +1321,63 @@ export function registerOnboardingRoutes(
         persistence,
         bindingKey,
       );
+
+      if ((await claimThrottleGuard(context.principalKey)) === 'throttled') {
+        const throttledDigest = semanticDigest({
+          attemptId: params.data.attemptId,
+          authority: context.principalKey,
+          claimStatus: 'throttled',
+          namespace: 'claim_attempt',
+        });
+
+        if (existingOperation !== undefined) {
+          if (existingOperation.digest !== throttledDigest) {
+            return operationEnvelope({
+              digest: existingOperation.digest,
+              namespace: 'claim_attempt',
+              operationId: existingOperation.operationId,
+              result: null,
+              state: 'operation_input_mismatch',
+            });
+          }
+
+          return operationEnvelope({
+            digest: existingOperation.digest,
+            namespace: 'claim_attempt',
+            operationId: existingOperation.operationId,
+            result: existingOperation.result,
+            state: 'operation_replayed',
+          });
+        }
+
+        const throttledOperationId = idFactory.operationId();
+        const throttledResult = { outcome: 'invalid_or_unavailable' };
+        await rememberOperation(bindingKey, context.principalKey, {
+          digest: throttledDigest,
+          namespace: 'claim_attempt',
+          operationId: throttledOperationId,
+          result: throttledResult,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest: throttledDigest,
+          namespace: 'claim_attempt',
+          operationId: throttledOperationId,
+          result: throttledResult,
+          state: 'operation_committed',
+        });
+      }
+
+      const digest = semanticDigest({
+        attemptId: params.data.attemptId,
+        authority: context.principalKey,
+        invitationRef: invitationReference(
+          store,
+          body.data.claimSecret,
+          digestSecret,
+        ),
+        namespace: 'claim_attempt',
+      });
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
@@ -1404,6 +1451,7 @@ export function registerOnboardingRoutes(
         secretVerifier.verify(body.data.claimSecret, invitation.claimDigest)
           .status !== 'matched'
       ) {
+        await recordClaimFailure(context.principalKey);
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
