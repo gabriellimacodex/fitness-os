@@ -441,4 +441,167 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('claims an attempt with a validated body and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'claim_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          command: 'attempt',
+          outcome: 'command_succeeded',
+          attempt: {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            invitationId: '33333333-3333-4333-8333-333333333333',
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            lifecycle: 'completed',
+            ordinal: 1,
+            predecessorAttemptId: null,
+            terminalReason: null,
+            policy: null,
+          },
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingClaim(
+      '22222222-2222-4222-8222-222222222222',
+      { claimSecret: 'a'.repeat(24), retryToken: 'b'.repeat(16) },
+    );
+
+    expect(response.result).toMatchObject({
+      command: 'attempt',
+      outcome: 'command_succeeded',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/attempts/22222222-2222-4222-8222-222222222222/claim',
+      ),
+      {
+        body: JSON.stringify({
+          retryToken: 'b'.repeat(16),
+          claimSecret: 'a'.repeat(24),
+        }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid claim body before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingClaim('22222222-2222-4222-8222-222222222222', {
+        claimSecret: 'too-short',
+        retryToken: 'b'.repeat(16),
+      }),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('encodes the attempt identifier as one URL segment when claiming', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'claim_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          outcome: 'invalid_or_unavailable',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingClaim('attempt id/with slash', {
+      claimSecret: 'a'.repeat(24),
+      retryToken: 'b'.repeat(16),
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/v1/onboarding/attempts/attempt%20id%2Fwith%20slash/claim',
+      ),
+      expect.objectContaining({ cache: 'no-store', method: 'POST' }),
+    );
+  });
+
+  it('throws a typed API error when a claim is rejected', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'CONFLICT',
+            message: 'Request could not be completed',
+            requestId: 'req-claim-1',
+          },
+        },
+        { status: 409 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingClaim('22222222-2222-4222-8222-222222222222', {
+        claimSecret: 'a'.repeat(24),
+        retryToken: 'b'.repeat(16),
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'CONFLICT',
+      requestId: 'req-claim-1',
+      status: 409,
+    });
+  });
+
+  it('does not echo raw content from a malformed claim payload', async () => {
+    const rawContent = 'private-claim-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingClaim('22222222-2222-4222-8222-222222222222', {
+        claimSecret: 'a'.repeat(24),
+        retryToken: 'b'.repeat(16),
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
