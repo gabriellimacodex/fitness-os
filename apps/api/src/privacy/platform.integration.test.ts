@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
+import { createPostgresConnection } from '@fitness-os/database';
 import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
 import {
   privacyExpectedProcessorInventorySchema,
@@ -7,7 +8,15 @@ import {
 } from '@fitness-os/schemas';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { createPrivacyPlatformFromEnv } from './platform.js';
 
@@ -105,27 +114,32 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
   'privacy platform env composition (disposable PG)',
   () => {
     let handles: ReturnType<typeof createPrivacyPlatformFromEnv> = null;
+    let connection: ReturnType<typeof createPostgresConnection>;
 
     beforeAll(async () => {
-      const databaseUrl = requireDisposableDatabaseUrl();
-      const bootstrap = createPrivacyPlatformFromEnv({
-        PRIVACY_DATABASE_URL: databaseUrl,
-      });
-      if (!bootstrap) {
-        throw new Error('expected a composed privacy platform');
-      }
-      await bootstrap.connection.db.execute(
-        sql`DROP SCHEMA IF EXISTS drizzle CASCADE`,
-      );
-      await bootstrap.connection.db.execute(sql`DROP SCHEMA public CASCADE`);
-      await bootstrap.connection.db.execute(sql`CREATE SCHEMA public`);
-      await migrate(bootstrap.connection.db, { migrationsFolder });
-      await bootstrap.connection.close();
+      connection = createPostgresConnection(requireDisposableDatabaseUrl());
+      await connection.db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
+      await connection.db.execute(sql`DROP SCHEMA public CASCADE`);
+      await connection.db.execute(sql`CREATE SCHEMA public`);
+      await migrate(connection.db, { migrationsFolder });
+    });
+
+    // Each test registers a processor under the same fixed processorId
+    // (`99999999-...`, the reviewed fixture's own declared ID) either directly
+    // or via an `expectedInventory` override — truncate between tests so an
+    // earlier test's registration can't collide with (or mask) a later test's
+    // "not yet registered" assertion.
+    beforeEach(async () => {
+      await connection.db.execute(sql`TRUNCATE privacy_processor_registration`);
     });
 
     afterEach(async () => {
       await handles?.connection.close();
       handles = null;
+    });
+
+    afterAll(async () => {
+      await connection.close();
     });
 
     it('compares against the default reviewed-fixture inventory when no expectedInventory override is supplied, reporting not_ready before registration', async () => {
