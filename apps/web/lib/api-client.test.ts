@@ -441,4 +441,86 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('fetches and validates the privacy synthetic expected inventory', async () => {
+    const inventoryResponse = {
+      inventory: {
+        schemaVersion: 'privacy.processor-inventory.v1',
+        inventoryId: '11111111-1111-4111-8111-111111111111',
+        inventoryVersionDigest: 'a'.repeat(64),
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        sourceCommit: 'b'.repeat(40),
+        processors: [],
+      },
+      evaluatedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(inventoryResponse),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(client.privacyExpectedInventory()).resolves.toEqual(
+      inventoryResponse,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/expected-inventory',
+      ),
+      {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+      },
+    );
+  });
+
+  it('throws a typed API error for an unexpected expected-inventory failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Resource not found',
+            requestId: 'req-expected-inventory-1',
+          },
+        },
+        { status: 404 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyExpectedInventory()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: 'req-expected-inventory-1',
+      status: 404,
+    });
+  });
+
+  it('does not echo raw content from a malformed expected-inventory payload', async () => {
+    const rawContent = 'private-inventory-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ inventory: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyExpectedInventory()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });

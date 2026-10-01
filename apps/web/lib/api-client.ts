@@ -5,9 +5,11 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticExpectedInventoryResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticExpectedInventoryResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +239,25 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyExpectedInventory(): Promise<PrivacySyntheticExpectedInventoryResponse> {
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/expected-inventory', parsedBaseUrl),
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const inventory =
+        privacySyntheticExpectedInventoryResponseSchema.safeParse(payload);
+
+      if (!inventory.success) {
+        throw new ApiProtocolError();
+      }
+
+      return inventory.data;
     },
   };
 }
