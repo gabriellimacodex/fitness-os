@@ -1634,6 +1634,87 @@ describe('student invitation list/issue/revoke', () => {
 
     await app.close();
   });
+
+  it('sets no-store on unexpected student-invitations list failures', async () => {
+    const { app } = buildSyntheticApp({ mappedRoles: ['coach'] });
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        '/v1/onboarding/student-invitations'
+      ) {
+        throw new Error('private student-invitations list failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/student-invitations',
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain(
+      'private student-invitations list failure',
+    );
+    await app.close();
+  });
+
+  it('sets no-store on unexpected student-invitation issue failures', async () => {
+    const { app } = buildSyntheticApp({ mappedRoles: ['coach'] });
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        '/v1/onboarding/student-invitations'
+      ) {
+        throw new Error('private student-invitation issue failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/student-invitations',
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain(
+      'private student-invitation issue failure',
+    );
+    await app.close();
+  });
+
+  it('sets no-store on unexpected student-invitation revoke failures', async () => {
+    const { app } = buildSyntheticApp({ mappedRoles: ['coach'] });
+    const invitationId = '66666666-6666-4666-8666-666666666666';
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        `/v1/onboarding/student-invitations/${invitationId}/revoke`
+      ) {
+        throw new Error('private student-invitation revoke failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${invitationId}/revoke`,
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain(
+      'private student-invitation revoke failure',
+    );
+    await app.close();
+  });
 });
 
 describe('resume and abandon', () => {
