@@ -42,12 +42,11 @@ export class SyntheticPrincipalRoleMappingRepository implements PrincipalRoleMap
 
     const byId = this.#byId.get(record.mappingId);
     if (byId !== undefined) {
-      if (
-        byId.principalKey === record.principalKey &&
-        byId.role === record.role
-      ) {
-        return { mapping: byId, status: 'replay' };
-      }
+      // A prior accepted put() always sets #byPrincipalRole for its own
+      // principalKey/role in the same step, so if byId's principalKey/role
+      // matched record's, the existingId lookup above would already have
+      // returned. Reaching here always means mappingId collides with a
+      // record scoped to a different principal or role.
       return { mapping: byId, status: 'conflict' };
     }
 

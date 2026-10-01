@@ -59,4 +59,34 @@ describe('SyntheticPrincipalRoleMappingRepository', () => {
       coach,
     ]);
   });
+
+  it('conflicts when a different principal/role reuses an existing mappingId', async () => {
+    const repo = new SyntheticPrincipalRoleMappingRepository();
+    const mappingId = principalRoleMappingIdSchema.parse(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    const record = {
+      createdAt: '2026-08-19T12:00:00.000Z',
+      mappingId,
+      principalKey: 'principal-1',
+      role: 'student' as const,
+    };
+    await expect(repo.put(record)).resolves.toEqual({
+      mapping: record,
+      status: 'accepted',
+    });
+
+    // No mapping is indexed yet for principal-2/coach, so this reaches the
+    // mappingId-keyed lookup and finds the unrelated principal-1/student
+    // record instead.
+    await expect(
+      repo.put({
+        createdAt: '2026-08-19T12:08:00.000Z',
+        mappingId,
+        principalKey: 'principal-2',
+        role: 'coach' as const,
+      }),
+    ).resolves.toEqual({ mapping: record, status: 'conflict' });
+    await expect(repo.listByPrincipal('principal-2')).resolves.toEqual([]);
+  });
 });
