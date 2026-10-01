@@ -9,6 +9,7 @@ import {
   ATTEMPT_ACTIVE_CAP,
   canAllocateAttempt,
   checkClaimThrottle,
+  DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
   DEFAULT_CLAIM_THROTTLE_WINDOW,
   evaluateAttemptTimeout,
   evaluateClaimEligibility,
@@ -197,6 +198,19 @@ describe('attempt timeout evaluation', () => {
         nowUtcMs: 5,
       }),
     ).toThrow(RangeError);
+  });
+
+  it('DEFAULT_ATTEMPT_TIMEOUT_BOUNDS is a positive, sane default', () => {
+    expect(DEFAULT_ATTEMPT_TIMEOUT_BOUNDS.absoluteTtlMs).toBeGreaterThan(0);
+    expect(DEFAULT_ATTEMPT_TIMEOUT_BOUNDS.inactivityTtlMs).toBeGreaterThan(0);
+    expect(() =>
+      evaluateAttemptTimeout({
+        bounds: DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
+        createdAtMs: 0,
+        lastActivityAtMs: 0,
+        nowUtcMs: 0,
+      }),
+    ).not.toThrow();
   });
 });
 
