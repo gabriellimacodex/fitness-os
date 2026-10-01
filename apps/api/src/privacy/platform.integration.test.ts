@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
+import { createPostgresConnection } from '@fitness-os/database';
 import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
 import {
   privacyExpectedProcessorInventorySchema,
@@ -7,7 +8,15 @@ import {
 } from '@fitness-os/schemas';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
 
 import { createPrivacyPlatformFromEnv } from './platform.js';
 
@@ -31,6 +40,25 @@ function requireDisposableDatabaseUrl(): string {
   }
   return value;
 }
+
+// Matches the default reviewed fixture's own declared digests
+// (`packages/schemas/fixtures/privacy/processor-inventory.v1.json`), not the
+// hand-rolled `expectedInventoryArtifact` below — registering this descriptor
+// is what satisfies coverage when no `expectedInventory` override is supplied.
+const defaultFixtureProcessor = privacyProcessorDescriptorReferenceSchema.parse(
+  {
+    processorId: '99999999-9999-4999-8999-999999999999',
+    inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    descriptorDigest: 'd'.repeat(64),
+    inventoryVersionDigest: '2'.repeat(64),
+    allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+    allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+    capabilities: ['access', 'inventory'],
+    supportsSubjectLookup: true,
+    codeOwner: 'packages.domain.privacy',
+    synthetic: true,
+  },
+);
 
 const processor = privacyProcessorDescriptorReferenceSchema.parse({
   processorId: '99999999-9999-4999-8999-999999999999',
@@ -86,22 +114,23 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
   'privacy platform env composition (disposable PG)',
   () => {
     let handles: ReturnType<typeof createPrivacyPlatformFromEnv> = null;
+    let connection: ReturnType<typeof createPostgresConnection>;
 
     beforeAll(async () => {
-      const databaseUrl = requireDisposableDatabaseUrl();
-      const bootstrap = createPrivacyPlatformFromEnv({
-        PRIVACY_DATABASE_URL: databaseUrl,
-      });
-      if (!bootstrap) {
-        throw new Error('expected a composed privacy platform');
-      }
-      await bootstrap.connection.db.execute(
-        sql`DROP SCHEMA IF EXISTS drizzle CASCADE`,
-      );
-      await bootstrap.connection.db.execute(sql`DROP SCHEMA public CASCADE`);
-      await bootstrap.connection.db.execute(sql`CREATE SCHEMA public`);
-      await migrate(bootstrap.connection.db, { migrationsFolder });
-      await bootstrap.connection.close();
+      connection = createPostgresConnection(requireDisposableDatabaseUrl());
+      await connection.db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
+      await connection.db.execute(sql`DROP SCHEMA public CASCADE`);
+      await connection.db.execute(sql`CREATE SCHEMA public`);
+      await migrate(connection.db, { migrationsFolder });
+    });
+
+    // Each test registers a processor under the same fixed processorId
+    // (`99999999-...`, the reviewed fixture's own declared ID) either directly
+    // or via an `expectedInventory` override — truncate between tests so an
+    // earlier test's registration can't collide with (or mask) a later test's
+    // "not yet registered" assertion.
+    beforeEach(async () => {
+      await connection.db.execute(sql`TRUNCATE privacy_processor_registration`);
     });
 
     afterEach(async () => {
@@ -109,7 +138,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       handles = null;
     });
 
-    it('leaves expected_inventory/runtime_processors at the base synthetic defaults when no expectedInventory override is supplied', async () => {
+    afterAll(async () => {
+      await connection.close();
+    });
+
+    it('compares against the default reviewed-fixture inventory when no expectedInventory override is supplied, reporting not_ready before registration', async () => {
       handles = createPrivacyPlatformFromEnv({
         PRIVACY_DATABASE_URL: requireDisposableDatabaseUrl(),
       });
@@ -124,6 +157,30 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         componentId: 'runtime_processors',
         state: 'not_ready',
         diagnosticCode: 'processor_missing',
+      });
+    });
+
+    it('reports expected_inventory/runtime_processors ready once the default reviewed-fixture processor is registered, without supplying any override', async () => {
+      handles = createPrivacyPlatformFromEnv({
+        PRIVACY_DATABASE_URL: requireDisposableDatabaseUrl(),
+      });
+
+      const putResult = await handles?.platform.privacy?.processors?.put(
+        defaultFixtureProcessor,
+      );
+      expect(putResult).toBe('accepted');
+
+      const result = await handles?.platform.privacy?.readiness?.evaluate();
+
+      expect(result?.components).toContainEqual({
+        componentId: 'expected_inventory',
+        state: 'ready',
+        diagnosticCode: null,
+      });
+      expect(result?.components).toContainEqual({
+        componentId: 'runtime_processors',
+        state: 'ready',
+        diagnosticCode: null,
       });
     });
 
