@@ -1171,6 +1171,38 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
     );
     await app.close();
   });
+
+  it('sets no-store on an unexpected attempt-lookup failure', async () => {
+    const store = createOnboardingStore();
+    const invitation = seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+    });
+    const attempt = createStoredAttempt(invitation, 1, 'principal-a');
+    store.attempts.set(attempt.detail.attemptId, attempt);
+
+    const { app } = buildSyntheticApp({ store });
+    app.addHook('preHandler', async (request) => {
+      if (
+        request.method === 'GET' &&
+        (request.url.split('?')[0] ?? '') ===
+          `/v1/onboarding/attempts/${attempt.detail.attemptId}`
+      ) {
+        throw new Error('private attempt lookup failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/onboarding/attempts/${attempt.detail.attemptId}`,
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private attempt lookup failure');
+    await app.close();
+  });
 });
 
 describe('student invitation list/issue/revoke', () => {
