@@ -1486,6 +1486,41 @@ export function registerOnboardingRoutes(
         recordedAt,
       });
 
+      // The winning attempt above is already `completed`, so it no longer
+      // appears here; every other nonterminal attempt this principal holds
+      // for the same proposed role (across other invitations) now targets a
+      // role already mapped and must stop competing. Terminalize each with
+      // the closed, non-disclosing `mapping_conflict` reason per the PRD's
+      // "competing invitations complete the same role" rule.
+      const supersededSiblings = attemptsForPrincipalRole(
+        store,
+        context.principalKey,
+        record.detail.proposedRole,
+      );
+      for (const sibling of supersededSiblings) {
+        const superseded = transitionAttempt(
+          sibling.detail,
+          'terminal',
+          'mapping_conflict',
+        );
+        if (superseded.status !== 'advanced') {
+          continue;
+        }
+        await rememberAttempt({
+          ...sibling,
+          detail: superseded.attempt,
+        });
+        await transitionSink.append({
+          aggregate: 'attempt',
+          aggregateId: sibling.detail.attemptId,
+          nextState: superseded.attempt.lifecycle,
+          operationId,
+          previousState: sibling.detail.lifecycle,
+          reason: 'claim_attempt',
+          recordedAt,
+        });
+      }
+
       const result = {
         completionId: onboardingCompletionIdSchema.parse(randomUUID()),
         mappingId,
