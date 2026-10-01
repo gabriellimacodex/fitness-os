@@ -441,4 +441,132 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('fetches and validates the privacy synthetic readiness result', async () => {
+    const readinessResult = {
+      mechanismReady: false,
+      productionReady: false,
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      schemaDigest: 'a'.repeat(64),
+      inventoryVersionDigest: 'b'.repeat(64),
+      components: [
+        { componentId: 'contracts', state: 'ready', diagnosticCode: null },
+        {
+          componentId: 'migrations',
+          state: 'not_ready',
+          diagnosticCode: 'migration_missing',
+        },
+        {
+          componentId: 'repositories',
+          state: 'unavailable',
+          diagnosticCode: 'repository_unavailable',
+        },
+        {
+          componentId: 'audit_sink',
+          state: 'unavailable',
+          diagnosticCode: 'audit_unavailable',
+        },
+        {
+          componentId: 'expected_inventory',
+          state: 'not_ready',
+          diagnosticCode: 'inventory_mismatch',
+        },
+        {
+          componentId: 'runtime_processors',
+          state: 'not_ready',
+          diagnosticCode: 'processor_missing',
+        },
+        {
+          componentId: 'governance_lifecycle',
+          state: 'not_ready',
+          diagnosticCode: 'governance_table_lifecycle_missing',
+        },
+        {
+          componentId: 'identity_boundary',
+          state: 'not_ready',
+          diagnosticCode: 'identity_boundary_missing',
+        },
+        {
+          componentId: 'policy_package',
+          state: 'not_ready',
+          diagnosticCode: 'policy_missing',
+        },
+        {
+          componentId: 'recovery',
+          state: 'not_ready',
+          diagnosticCode: 'recovery_unverified',
+        },
+      ],
+      diagnosticCodes: ['legal_privacy_decision_required'],
+      evaluatedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(readinessResult),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(client.privacySyntheticReadiness()).resolves.toEqual(
+      readinessResult,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/readiness',
+      ),
+      {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+      },
+    );
+  });
+
+  it('throws a typed API error for an unexpected privacy readiness failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-privacy-readiness-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacySyntheticReadiness()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-privacy-readiness-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed privacy readiness payload', async () => {
+    const rawContent = 'private-readiness-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ components: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacySyntheticReadiness()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
