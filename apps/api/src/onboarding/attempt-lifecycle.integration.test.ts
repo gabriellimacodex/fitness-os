@@ -224,5 +224,46 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       `);
       expect(operationRows[0]?.count).toBe('1');
     });
+
+    it('hydrates the single-attempt locator from Postgres on a fresh in-memory store', async () => {
+      const writeStore = createOnboardingStore();
+      const persistence = createOnboardingPgPersistence(connection);
+      const { attemptId, studentApp } = await issueAndCreateAttempt(
+        writeStore,
+        persistence,
+        'coach-lifecycle-3',
+        'student-lifecycle-3',
+      );
+      await studentApp.close();
+
+      const freshStore = createOnboardingStore();
+      const ownerApp = buildOnboardingApp({
+        mappedRoles: [],
+        persistence,
+        principalKey: 'student-lifecycle-3',
+        store: freshStore,
+      });
+      const foreignApp = buildOnboardingApp({
+        mappedRoles: [],
+        persistence,
+        principalKey: 'student-lifecycle-other',
+        store: freshStore,
+      });
+
+      const found = await ownerApp.inject({
+        method: 'GET',
+        url: `/v1/onboarding/attempts/${attemptId}`,
+      });
+      const hidden = await foreignApp.inject({
+        method: 'GET',
+        url: `/v1/onboarding/attempts/${attemptId}`,
+      });
+      await ownerApp.close();
+      await foreignApp.close();
+
+      expect(found.statusCode).toBe(200);
+      expect((found.json() as { attemptId: string }).attemptId).toBe(attemptId);
+      expect(hidden.statusCode).toBe(404);
+    });
   },
 );
