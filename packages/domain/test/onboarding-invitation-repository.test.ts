@@ -26,6 +26,12 @@ describe('SyntheticOnboardingInvitationRepository', () => {
     await expect(repo.put(record)).resolves.toBe('conflict');
     await expect(repo.get(invitationId)).resolves.toEqual(record);
     await expect(repo.listByTargetCoach('coach-1')).resolves.toEqual([record]);
+    await expect(repo.getByClaimDigest(record.claimDigest)).resolves.toEqual(
+      record,
+    );
+    await expect(
+      repo.getByClaimDigest(`hmac-sha256.v1:${'z'.repeat(64)}`),
+    ).resolves.toBeNull();
 
     const claimed = await repo.applyClaim({
       invitationId,
