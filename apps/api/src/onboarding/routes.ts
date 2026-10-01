@@ -115,7 +115,7 @@ const CURRENT_PAGE_SIZE = 4;
 function sendError(
   request: FastifyRequest,
   reply: FastifyReply,
-  statusCode: 400 | 401 | 403 | 404,
+  statusCode: 400 | 401 | 403 | 404 | 409,
   code: ApiErrorCode,
   message: string,
 ) {
@@ -653,13 +653,13 @@ export function registerOnboardingRoutes(
       });
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest,
-            namespace: 'create_attempt',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
@@ -701,13 +701,13 @@ export function registerOnboardingRoutes(
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {
-        return operationEnvelope({
-          digest: existingOperation.digest,
-          namespace: 'create_attempt',
-          operationId: existingOperation.operationId,
-          result: null,
-          state: 'operation_input_mismatch',
-        });
+        return sendError(
+          request,
+          reply,
+          409,
+          'CONFLICT',
+          'Operation input mismatch',
+        );
       }
 
       return operationEnvelope({
@@ -905,13 +905,13 @@ export function registerOnboardingRoutes(
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest: existingOperation.digest,
-            namespace: 'resume_attempt',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
@@ -1030,13 +1030,13 @@ export function registerOnboardingRoutes(
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest: existingOperation.digest,
-            namespace: 'abandon_attempt',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
@@ -1171,13 +1171,13 @@ export function registerOnboardingRoutes(
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest: existingOperation.digest,
-            namespace: 'refresh_policy',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
@@ -1334,13 +1334,13 @@ export function registerOnboardingRoutes(
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest: existingOperation.digest,
-            namespace: 'claim_attempt',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
@@ -1595,13 +1595,13 @@ export function registerOnboardingRoutes(
 
     if (existingOperation !== undefined) {
       if (existingOperation.digest !== digest) {
-        return operationEnvelope({
-          digest: existingOperation.digest,
-          namespace: 'issue_student_invitation',
-          operationId: existingOperation.operationId,
-          result: null,
-          state: 'operation_input_mismatch',
-        });
+        return sendError(
+          request,
+          reply,
+          409,
+          'CONFLICT',
+          'Operation input mismatch',
+        );
       }
 
       return operationEnvelope({
@@ -1709,13 +1709,13 @@ export function registerOnboardingRoutes(
 
       if (existingOperation !== undefined) {
         if (existingOperation.digest !== digest) {
-          return operationEnvelope({
-            digest: existingOperation.digest,
-            namespace: 'revoke_student_invitation',
-            operationId: existingOperation.operationId,
-            result: null,
-            state: 'operation_input_mismatch',
-          });
+          return sendError(
+            request,
+            reply,
+            409,
+            'CONFLICT',
+            'Operation input mismatch',
+          );
         }
 
         return operationEnvelope({
