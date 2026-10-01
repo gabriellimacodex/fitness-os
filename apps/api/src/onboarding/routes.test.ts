@@ -1877,6 +1877,64 @@ describe('policy-refresh and claim', () => {
     await app.close();
   });
 
+  it('terminalizes a sibling attempt for the same principal/role as mapping_conflict once another attempt completes the claim', async () => {
+    const store = createOnboardingStore();
+    const winningSecret = secretAt(1);
+    const siblingSecret = secretAt(2);
+    seedIssuedInvitation(store, { claimSecret: winningSecret });
+    const siblingInvitation = seedIssuedInvitation(store, {
+      claimSecret: siblingSecret,
+    });
+    const siblingAttempt = createStoredAttempt(
+      siblingInvitation,
+      1,
+      'principal-a',
+    );
+    store.attempts.set(siblingAttempt.detail.attemptId, siblingAttempt);
+
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: winningSecret, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-policy-sibling'),
+      },
+    });
+
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: winningSecret,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-sibling'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(claimed.json()),
+    ).toMatchObject({ result: { outcome: 'completed' } });
+    expect(claimed.body).not.toContain(siblingAttempt.detail.attemptId);
+    expect(claimed.body).not.toContain(siblingInvitation.invitationId);
+
+    const siblingRead = await app.inject({
+      method: 'GET',
+      url: `/v1/onboarding/attempts/${siblingAttempt.detail.attemptId}`,
+    });
+    expect(attemptDetailSchema.parse(siblingRead.json())).toMatchObject({
+      lifecycle: 'terminal',
+      terminalReason: 'mapping_conflict',
+    });
+
+    await app.close();
+  });
+
   it('denies claim when InvitationSecretVerifier reports mismatch', async () => {
     const store = createOnboardingStore();
     seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
