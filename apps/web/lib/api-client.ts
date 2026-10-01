@@ -63,15 +63,20 @@ export type ApiClientOptions = {
   fetch?: typeof globalThis.fetch;
 };
 
+type FetchJsonInit = Omit<RequestInit, 'headers'> & {
+  headers?: Record<string, string>;
+};
+
 async function fetchJson(
   fetchImplementation: typeof globalThis.fetch,
   url: URL,
-  init: RequestInit = {},
+  init: FetchJsonInit = {},
 ): Promise<{ payload: unknown; response: Response }> {
+  const { headers, ...rest } = init;
   const response = await fetchImplementation(url, {
-    headers: { accept: 'application/json' },
     method: 'GET',
-    ...init,
+    ...rest,
+    headers: { accept: 'application/json', ...headers },
   });
   const payload = await readJson(response);
 
@@ -218,10 +223,7 @@ export function createApiClient({
         {
           body: JSON.stringify(body),
           cache: 'no-store',
-          headers: {
-            accept: 'application/json',
-            'content-type': 'application/json',
-          },
+          headers: { 'content-type': 'application/json' },
           method: 'POST',
         },
       );
