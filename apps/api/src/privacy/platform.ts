@@ -59,16 +59,27 @@ export interface PrivacyPlatformHandles {
  * append-only ledger this platform writes to (not a disconnected duplicate) —
  * the same reasoning `createOnboardingPlatformFromEnv` applied when binding
  * its readiness probe's mechanism components to the same instances used for
- * real operations.
+ * real operations. `readiness` is bound the same way: its `runtimeProcessors`
+ * comparison target is `persistence.processors`, the exact same real
+ * PG-backed registry `platform.privacy.processors` exposes for actual
+ * processor registration — not a disconnected duplicate — so a caller who
+ * registers a processor through this platform sees that registration reflect
+ * in the readiness evaluation of the same composition.
  *
- * `expectedInventory` is the reviewed fixture loaded by
- * `loadReviewedPrivacyExpectedProcessorInventory`; `readiness`'s
- * `runtimeProcessors` is this same connection's `persistence.processors`, so
- * inventory-coverage compares the reviewed inventory against this exact
- * database's processor-registration rows, not a disconnected or synthetic
- * substitute. No row seeds itself: until a processor is actually registered
- * through `persistence.processors.put`, coverage correctly reports
- * `not_ready` for the declared processor rather than silently passing.
+ * `expectedInventory` defaults to the version-controlled, independently
+ * reviewed processor inventory loaded by
+ * `loadReviewedPrivacyExpectedProcessorInventory` (established in #210 and
+ * referenced by `docs/technical-design/021-privacy-data-governance.md`'s
+ * "Inventory artifact" section). `options.expectedInventory` lets a caller
+ * override that default — for example with a different reviewed inventory,
+ * or a synthetic port in a test — without inventing production-authoritative
+ * content here. `readiness`'s `runtimeProcessors` is this same connection's
+ * `persistence.processors`, so inventory-coverage compares the effective
+ * expected inventory against this exact database's processor-registration
+ * rows, not a disconnected or synthetic substitute. No row seeds itself:
+ * until a processor is actually registered through
+ * `persistence.processors.put`, coverage correctly reports `not_ready` for
+ * the declared processor rather than silently passing.
  *
  * This does not set `allowSyntheticPrivacy` — that gate, and whether to also
  * inject `ids`, `clock`, or any other still-synthetic-only option, remains the
@@ -79,6 +90,9 @@ export interface PrivacyPlatformHandles {
  */
 export function createPrivacyPlatformFromEnv(
   env: NodeJS.ProcessEnv,
+  options: {
+    expectedInventory?: PrivacyExpectedProcessorInventoryPort;
+  } = {},
 ): PrivacyPlatformHandles | null {
   const databaseUrl = env.PRIVACY_DATABASE_URL;
   if (!databaseUrl) {
@@ -89,7 +103,8 @@ export function createPrivacyPlatformFromEnv(
   const persistence = createPrivacyPgPersistence(connection);
   const governanceLifecycleVerifier =
     createPostgresPrivacyGovernanceLifecycleBindingVerifier(connection);
-  const expectedInventory = loadReviewedPrivacyExpectedProcessorInventory();
+  const expectedInventory =
+    options.expectedInventory ?? loadReviewedPrivacyExpectedProcessorInventory();
   const readiness = createPostgresPrivacyReadinessProbe(connection, {
     expectedInventory,
     runtimeProcessors: persistence.processors,
