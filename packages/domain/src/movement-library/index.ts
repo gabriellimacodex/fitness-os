@@ -34,6 +34,12 @@ export {
   type ReviewAuthority,
   type RoleApprovalReceipt,
 } from './review-record.js';
+export {
+  assertReviewRecordFileMatchesManifest,
+  parseReviewRecordMarkdown,
+  ReviewRecordFileBindingError,
+  REVIEW_RECORD_DIRECTORY,
+} from './review-files.js';
 
 export function listMovements() {
   return movementCatalog.listMovements();
