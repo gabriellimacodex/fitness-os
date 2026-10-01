@@ -2,7 +2,9 @@ import {
   privacyExpectedProcessorInventorySchema,
   privacyProcessorDescriptorReferenceSchema,
   privacyProcessorExecutionReceiptSchema,
+  privacyProcessorStepReferenceSchema,
   privacySubjectRequestReferenceSchema,
+  type PrivacyExpectedProcessorInventory,
 } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
@@ -551,5 +553,399 @@ describe('synthetic processor coordinator', () => {
 
     expect(result).toEqual({ status: 'request_not_executable' });
     expect(executions).toBe(0);
+  });
+});
+
+describe('coordinateSyntheticProcessorStep remaining branch guards', () => {
+  const REQUEST_ID = '66666666-6666-4666-8666-666666666666';
+  const PROCESSOR_ID = '99999999-9999-4999-8999-999999999999';
+  const OPERATION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  const OTHER_OPERATION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const CORRELATION_ID = '55555555-5555-4555-8555-555555555555';
+  const SUBJECT_SCOPE_ID = '22222222-2222-4222-8222-222222222222';
+  const INVENTORY_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const INVENTORY_DIGEST = '1'.repeat(64);
+  const DESCRIPTOR_DIGEST = '2'.repeat(64);
+  const RECORDED_AT = '2026-08-18T12:00:00.000Z';
+
+  function buildInventory(
+    overrides: Partial<{
+      inventoryVersionDigest: string;
+      processors: readonly Record<string, unknown>[];
+    }> = {},
+  ): PrivacyExpectedProcessorInventory {
+    return privacyExpectedProcessorInventorySchema.parse({
+      schemaVersion: 'privacy.processor-inventory.v1',
+      inventoryId: INVENTORY_ID,
+      inventoryVersionDigest:
+        overrides.inventoryVersionDigest ?? INVENTORY_DIGEST,
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      sourceCommit: '2a59a47',
+      processors: overrides.processors ?? [
+        {
+          processorId: PROCESSOR_ID,
+          registrationVersion: 1,
+          inventoryId: INVENTORY_ID,
+          descriptorDigest: DESCRIPTOR_DIGEST,
+          codeOwner: 'packages.domain.privacy',
+          adapterPackage: '@fitness-os/domain',
+          storageKind: 'in_memory_synthetic',
+          allowedPurposeIds: [],
+          allowedCategoryIds: [],
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: ['export'],
+          unsupportedCapabilities: [],
+          recordFamilies: [
+            {
+              family: 'privacy_export_metadata',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          environmentApplicability: 'synthetic_only',
+          requiredReadiness: 'mechanism_only',
+          synthetic: true,
+        },
+      ],
+    });
+  }
+
+  function buildRequest(
+    overrides: Partial<{
+      inventoryVersionDigest: string;
+      state: 'in_progress' | 'partially_failed' | 'completed';
+    }> = {},
+  ) {
+    return privacySubjectRequestReferenceSchema.parse({
+      requestId: REQUEST_ID,
+      requestType: 'export',
+      state: overrides.state ?? 'in_progress',
+      subjectScopeId: SUBJECT_SCOPE_ID,
+      verification: null,
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      inventoryVersionDigest:
+        overrides.inventoryVersionDigest ?? INVENTORY_DIGEST,
+      correlationId: CORRELATION_ID,
+      updatedAt: RECORDED_AT,
+    });
+  }
+
+  function baseInput(
+    overrides: Partial<{
+      expectedInventory: { getInventory: () => Promise<unknown> };
+      execution: { execute: (input: unknown) => Promise<unknown> };
+      receipts: { listByOperationId: (id: string) => Promise<unknown> };
+      requests: { get: (id: string) => Promise<unknown> };
+      steps: {
+        append: (step: unknown) => Promise<unknown>;
+        listForRequest: (id: string) => Promise<unknown>;
+      };
+    }> = {},
+  ) {
+    return {
+      clock: new SyntheticPrivacyTrustedClock(RECORDED_AT),
+      execution: overrides.execution ?? {
+        execute: async () => {
+          throw new Error('execution must not be invoked');
+        },
+      },
+      expectedInventory:
+        overrides.expectedInventory ??
+        new SyntheticPrivacyExpectedProcessorInventory(buildInventory()),
+      operationId: OPERATION_ID,
+      productionMode: false,
+      receipts: overrides.receipts ?? {
+        listByOperationId: async () => {
+          throw new Error('receipts must not be read');
+        },
+      },
+      requestId: REQUEST_ID,
+      requests: overrides.requests ?? {
+        get: async () => buildRequest(),
+      },
+      steps: overrides.steps ?? {
+        append: async () => 'accepted' as const,
+        listForRequest: async () => [],
+      },
+    } as never;
+  }
+
+  it('rejects an execution attempt whose request pins a different inventory version', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+          buildInventory({ inventoryVersionDigest: '9'.repeat(64) }),
+        ),
+        requests: { get: async () => buildRequest() },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'inventory_mismatch' });
+  });
+
+  it('refuses a plan with an undeclared processor/capability pairing', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+          buildInventory({
+            processors: [
+              {
+                processorId: PROCESSOR_ID,
+                registrationVersion: 1,
+                inventoryId: INVENTORY_ID,
+                descriptorDigest: DESCRIPTOR_DIGEST,
+                codeOwner: 'packages.domain.privacy',
+                adapterPackage: '@fitness-os/domain',
+                storageKind: 'in_memory_synthetic',
+                allowedPurposeIds: [],
+                allowedCategoryIds: [],
+                subjectLookupStrategy: 'synthetic_scope_id',
+                supportedCapabilities: [],
+                unsupportedCapabilities: [],
+                recordFamilies: [
+                  {
+                    family: 'privacy_export_metadata',
+                    lifecycleAction: 'retain_until_reviewed',
+                  },
+                ],
+                environmentApplicability: 'synthetic_only',
+                requiredReadiness: 'mechanism_only',
+                synthetic: true,
+              },
+            ],
+          }),
+        ),
+      }),
+    );
+
+    expect(result).toEqual({ status: 'plan_incomplete' });
+  });
+
+  it('refuses a plan built from an empty reviewed inventory', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+          buildInventory({ processors: [] }),
+        ),
+      }),
+    );
+
+    expect(result).toEqual({ status: 'plan_incomplete' });
+  });
+
+  it('treats a plan whose only processor is wholly exempted as incomplete', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+          buildInventory({
+            processors: [
+              {
+                processorId: PROCESSOR_ID,
+                registrationVersion: 1,
+                inventoryId: INVENTORY_ID,
+                descriptorDigest: DESCRIPTOR_DIGEST,
+                codeOwner: 'packages.domain.privacy',
+                adapterPackage: '@fitness-os/domain',
+                storageKind: 'in_memory_synthetic',
+                allowedPurposeIds: [],
+                allowedCategoryIds: [],
+                subjectLookupStrategy: 'synthetic_scope_id',
+                supportedCapabilities: [],
+                unsupportedCapabilities: [
+                  {
+                    capability: 'export',
+                    rationale: 'not_in_scope_for_candidate',
+                  },
+                ],
+                recordFamilies: [
+                  {
+                    family: 'privacy_export_metadata',
+                    lifecycleAction: 'retain_until_reviewed',
+                  },
+                ],
+                environmentApplicability: 'synthetic_only',
+                requiredReadiness: 'mechanism_only',
+                synthetic: true,
+              },
+            ],
+          }),
+        ),
+      }),
+    );
+
+    expect(result).toEqual({ status: 'plan_incomplete' });
+  });
+
+  it('reports no pending step when every planned pair already has a terminal success', async () => {
+    const priorStep = privacyProcessorStepReferenceSchema.parse({
+      stepId: OTHER_OPERATION_ID,
+      requestId: REQUEST_ID,
+      processorId: PROCESSOR_ID,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: OTHER_OPERATION_ID,
+      correlationId: CORRELATION_ID,
+      recordedAt: RECORDED_AT,
+    });
+
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        steps: {
+          append: async () => {
+            throw new Error('must not append a new step');
+          },
+          listForRequest: async () => [priorStep],
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'no_pending_step' });
+  });
+
+  it('refuses to execute when the recorded history already holds more than one record for this operation', async () => {
+    const duplicate = privacyProcessorStepReferenceSchema.parse({
+      stepId: OPERATION_ID,
+      requestId: REQUEST_ID,
+      processorId: PROCESSOR_ID,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: OPERATION_ID,
+      correlationId: CORRELATION_ID,
+      recordedAt: RECORDED_AT,
+    });
+
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        steps: {
+          append: async () => {
+            throw new Error('must not append a new step');
+          },
+          listForRequest: async () => [duplicate, duplicate],
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'execution_conflict' });
+  });
+
+  it('refuses to execute when a recorded step carries a stepId that does not match its own operationId', async () => {
+    const corrupted = privacyProcessorStepReferenceSchema.parse({
+      stepId: OTHER_OPERATION_ID,
+      requestId: REQUEST_ID,
+      processorId: PROCESSOR_ID,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: OPERATION_ID,
+      correlationId: CORRELATION_ID,
+      recordedAt: RECORDED_AT,
+    });
+
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        steps: {
+          append: async () => {
+            throw new Error('must not append a new step');
+          },
+          listForRequest: async () => [corrupted],
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'execution_conflict' });
+  });
+
+  it('surfaces execution-coordinator unavailability without recording a step', async () => {
+    let appended = false;
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        execution: { execute: async () => ({ status: 'unavailable' }) },
+        steps: {
+          append: async () => {
+            appended = true;
+            return 'accepted' as const;
+          },
+          listForRequest: async () => [],
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'execution_unavailable' });
+    expect(appended).toBe(false);
+  });
+
+  it('passes through an execution-coordinator reconciliation requirement', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        execution: {
+          execute: async () => ({ status: 'reconciliation_required' }),
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'reconciliation_required' });
+  });
+
+  it('rejects a claimed execution with no independently verifiable receipt', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        execution: { execute: async () => ({ status: 'executed' }) },
+        receipts: { listByOperationId: async () => [] },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'receipt_invalid' });
+  });
+
+  it('treats an unreachable independent receipt source as unavailable after a claimed execution', async () => {
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        execution: { execute: async () => ({ status: 'executed' }) },
+        receipts: {
+          listByOperationId: async () => {
+            throw new Error('receipt source unreachable');
+          },
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'execution_unavailable' });
+  });
+
+  it('rejects a replay whose stored outcome disagrees with the independently verified receipt', async () => {
+    const replayedStep = privacyProcessorStepReferenceSchema.parse({
+      stepId: OPERATION_ID,
+      requestId: REQUEST_ID,
+      processorId: PROCESSOR_ID,
+      capability: 'export',
+      outcome: 'completed',
+      operationId: OPERATION_ID,
+      correlationId: CORRELATION_ID,
+      recordedAt: RECORDED_AT,
+    });
+
+    const result = await coordinateSyntheticProcessorStep(
+      baseInput({
+        execution: { execute: async () => ({ status: 'executed' }) },
+        steps: {
+          append: async () => {
+            throw new Error('must not append a new step');
+          },
+          listForRequest: async () => [replayedStep],
+        },
+        receipts: {
+          listByOperationId: async () => [
+            privacyProcessorExecutionReceiptSchema.parse({
+              requestId: REQUEST_ID,
+              processorId: PROCESSOR_ID,
+              capability: 'export',
+              outcome: 'permanent_failure',
+              operationId: OPERATION_ID,
+              correlationId: CORRELATION_ID,
+            }),
+          ],
+        },
+      }),
+    );
+
+    expect(result).toEqual({ status: 'receipt_invalid' });
   });
 });
