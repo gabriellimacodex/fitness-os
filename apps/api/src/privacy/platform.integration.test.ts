@@ -151,10 +151,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         PRIVACY_DATABASE_URL: requireDisposableDatabaseUrl(),
       });
 
-      const putResult =
-        await handles?.platform.privacy?.processors?.put(
-          defaultFixtureProcessor,
-        );
+      const putResult = await handles?.platform.privacy?.processors?.put(
+        defaultFixtureProcessor,
+      );
       expect(putResult).toBe('accepted');
 
       const result = await handles?.platform.privacy?.readiness?.evaluate();

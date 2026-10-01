@@ -104,7 +104,8 @@ export function createPrivacyPlatformFromEnv(
   const governanceLifecycleVerifier =
     createPostgresPrivacyGovernanceLifecycleBindingVerifier(connection);
   const expectedInventory =
-    options.expectedInventory ?? loadReviewedPrivacyExpectedProcessorInventory();
+    options.expectedInventory ??
+    loadReviewedPrivacyExpectedProcessorInventory();
   const readiness = createPostgresPrivacyReadinessProbe(connection, {
     expectedInventory,
     runtimeProcessors: persistence.processors,
