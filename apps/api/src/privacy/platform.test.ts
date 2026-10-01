@@ -1,3 +1,5 @@
+import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
+import { privacyExpectedProcessorInventorySchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
 import { createPrivacyPlatformFromEnv } from './platform.js';
@@ -50,6 +52,38 @@ describe('privacy platform env composition', () => {
     expect(first?.connection).not.toBe(second?.connection);
     expect(first?.platform.privacy?.governanceLifecycle).not.toBe(
       second?.platform.privacy?.governanceLifecycle,
+    );
+  });
+
+  it('accepts an optional expectedInventory override without requiring it', () => {
+    const withoutOverride = createPrivacyPlatformFromEnv({
+      PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5999/never',
+    });
+    const withOverride = createPrivacyPlatformFromEnv(
+      { PRIVACY_DATABASE_URL: 'postgresql://user:pass@127.0.0.1:5999/never' },
+      {
+        expectedInventory: new SyntheticPrivacyExpectedProcessorInventory(
+          privacyExpectedProcessorInventorySchema.parse({
+            schemaVersion: 'privacy.processor-inventory.v1',
+            inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            inventoryVersionDigest: 'd'.repeat(64),
+            canonicalizationVersion: 'privacy-governance.canonical.v1',
+            sourceCommit: '579b735',
+            processors: [],
+          }),
+        ),
+      },
+    );
+
+    // Both compositions succeed either way, and readiness is always defined
+    // regardless of whether a caller supplies the override — only
+    // `evaluate()`'s runtime behavior (verified against a real database in
+    // `platform.integration.test.ts`) differs based on it.
+    expect(typeof withoutOverride?.platform.privacy?.readiness?.evaluate).toBe(
+      'function',
+    );
+    expect(typeof withOverride?.platform.privacy?.readiness?.evaluate).toBe(
+      'function',
     );
   });
 });
