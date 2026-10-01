@@ -223,6 +223,37 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       expect(result.diagnosticCodes).not.toContain('audit_unavailable');
     });
 
+    it('reports migrations/repositories not_ready with migration_missing on a missing required processor-step/retention migration, even though the core migrations/tables are present', async () => {
+      const probe = createPostgresPrivacyReadinessProbe(connection, {
+        evaluatedAt: '2026-08-27T00:00:00.000Z',
+        processorRetentionRequiredHashes: ['0'.repeat(64)],
+      });
+
+      const result = await probe.evaluate();
+
+      expect(result.mechanismReady).toBe(false);
+      expect(result.components).toContainEqual({
+        componentId: 'migrations',
+        state: 'not_ready',
+        diagnosticCode: 'migration_missing',
+      });
+      expect(result.components).toContainEqual({
+        componentId: 'repositories',
+        state: 'not_ready',
+        diagnosticCode: 'repository_unavailable',
+      });
+      // audit_sink depends only on the core schema result, which is
+      // unaffected by a processor-step/retention migration gap.
+      expect(result.components).toContainEqual({
+        componentId: 'audit_sink',
+        state: 'ready',
+        diagnosticCode: null,
+      });
+      expect(result.diagnosticCodes).toContain('migration_missing');
+      expect(result.diagnosticCodes).toContain('repository_unavailable');
+      expect(result.diagnosticCodes).not.toContain('audit_unavailable');
+    });
+
     // Runs before the following test seeds `privacy_processor_registration`,
     // so this exercises the real registry table while it is still empty.
     it('reports expected_inventory and runtime_processors not_ready with processor_missing when the real PG-backed runtime registry has no matching registration', async () => {
