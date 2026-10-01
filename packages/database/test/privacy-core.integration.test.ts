@@ -322,11 +322,31 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       );
 
       await expect(purposes.put(purpose)).resolves.toBe('accepted');
+      await expect(purposes.put(purpose)).resolves.toBe('conflict');
       await expect(
         purposes.getVersion(purpose.purposeVersionId),
       ).resolves.toEqual(purpose);
 
+      const secondActivePurposeVersion =
+        privacyPurposeVersionReferenceSchema.parse({
+          purposeId: purpose.purposeId,
+          purposeVersionId: '66666666-6666-4666-8666-666666666666',
+          policyVersionId: policy.versionId,
+          allowedOperationKinds: purpose.allowedOperationKinds,
+          allowedCategoryIds: purpose.allowedCategoryIds,
+          evidenceRequired: purpose.evidenceRequired,
+          activationState: 'active',
+          contentDigest: purpose.contentDigest,
+        });
+      await expect(purposes.put(secondActivePurposeVersion)).resolves.toBe(
+        'conflict',
+      );
+      await expect(
+        purposes.getVersion(secondActivePurposeVersion.purposeVersionId),
+      ).resolves.toBeNull();
+
       await expect(processors.put(processor)).resolves.toBe('accepted');
+      await expect(processors.put(processor)).resolves.toBe('conflict');
       await expect(
         processors.getDescriptor(processor.processorId),
       ).resolves.toEqual(processor);
