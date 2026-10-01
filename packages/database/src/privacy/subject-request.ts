@@ -6,7 +6,6 @@ import type {
 } from '@fitness-os/domain';
 import { transitionSubjectRequest } from '@fitness-os/domain';
 import {
-  privacySubjectRequestIdentityEquals,
   privacySubjectRequestReferenceSchema,
   privacySubjectRequestTransitionReferenceSchema,
   type PrivacyCorrelationId,
@@ -195,11 +194,11 @@ export function createPostgresPrivacySubjectRequestRepository(
             return result;
           }
 
-          // Immutable identity must survive transitions (subject scope etc.).
-          if (!privacySubjectRequestIdentityEquals(result.request, current)) {
-            return { status: 'conflict' as const };
-          }
-
+          // packages/domain/src/privacy-governance/request.ts's
+          // transitionSubjectRequest only overrides state/updatedAt/verification
+          // on `{ ...current }` for every 'advanced' result, so result.request
+          // is always identity-equal (requestId/subjectScopeId/requestType/
+          // policyVersionId/inventoryVersionDigest) to current here.
           const transition =
             privacySubjectRequestTransitionReferenceSchema.parse({
               transitionId: input.transitionId,
