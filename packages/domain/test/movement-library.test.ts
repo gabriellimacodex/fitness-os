@@ -68,6 +68,23 @@ describe('createMovementCatalog', () => {
     ).toThrow(MovementCatalogError);
   });
 
+  it('rejects the same movement listed twice in `published` under one manifest entry', () => {
+    const input = reviewedCatalogInput([SQUAT]);
+
+    expect(() =>
+      createMovementCatalog({ ...input, published: [SQUAT, SQUAT] }),
+    ).toThrow(/Published movement IDs must be unique/);
+  });
+
+  it('rejects a review record whose digest does not match the reviewed movement', () => {
+    const input = reviewedCatalogInput([SQUAT]);
+    const mismatched = { ...input.reviewRecords[0]!, digest: 'b'.repeat(64) };
+
+    expect(() =>
+      createMovementCatalog({ ...input, reviewRecords: [mismatched] }),
+    ).toThrow(/does not bind the exact movement artifact/);
+  });
+
   it('rejects a 101-item catalog', () => {
     const details = Array.from({ length: 101 }, (_, index) =>
       movementDetailSchema.parse({
