@@ -583,6 +583,31 @@ describe('POST /v1/onboarding/invitations/inspect', () => {
     );
     await app.close();
   });
+
+  it('sets no-store on unexpected onboarding failures', async () => {
+    const { app } = buildSyntheticApp();
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        '/v1/onboarding/invitations/inspect'
+      ) {
+        throw new Error('private onboarding failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private onboarding failure');
+    await app.close();
+  });
 });
 
 describe('POST /v1/onboarding/attempts', () => {
