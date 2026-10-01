@@ -2642,6 +2642,52 @@ describe('recordProcessorStepAndAdvanceRequest', () => {
     expect(result.completion).toBe('completed');
     expect(result.request.state).toBe('completed');
   });
+
+  it('reports transition_conflict when the derived transition reuses an operationId already committed elsewhere', async () => {
+    // The synthetic repository's conflict check is global across requests,
+    // not scoped to one requestId. A step whose operationId collides with an
+    // operationId already consumed by an unrelated committed transition must
+    // surface transition_conflict rather than being silently treated as
+    // advanced or as a step-level conflict.
+    const otherRequestId = privacySubjectRequestIdSchema.parse(
+      '77777777-7777-4777-8777-777777777777',
+    );
+    const requests = new SyntheticPrivacySubjectRequestRepository();
+    requests.seedForTest(requestInState('in_progress'));
+    requests.seedForTest(
+      privacySubjectRequestReferenceSchema.parse({
+        ...requestInState('in_progress'),
+        requestId: otherRequestId,
+      }),
+    );
+    const steps = new SyntheticPrivacyProcessorStepRepository();
+
+    const preConsumed = await requests.applyTransition({
+      requestId: otherRequestId,
+      next: 'completed',
+      updatedAt: '2026-08-18T12:01:00.000Z',
+      transitionId: privacySubjectRequestTransitionIdSchema.parse(
+        'e9999999-9999-4999-8999-999999999999',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+    });
+    expect(preConsumed.status).toBe('advanced');
+
+    const result = await recordProcessorStepAndAdvanceRequest(
+      advanceInput({ requests, steps }),
+    );
+
+    expect(result).toEqual({ status: 'transition_conflict' });
+    await expect(requests.get(requestId)).resolves.toMatchObject({
+      state: 'in_progress',
+    });
+    await expect(steps.listForRequest(requestId)).resolves.toHaveLength(1);
+  });
 });
 
 describe('retention preview and execution gates', () => {
