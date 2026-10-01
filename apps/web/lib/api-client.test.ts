@@ -372,6 +372,9 @@ describe('createApiClient', () => {
       {
         body: JSON.stringify({ claimSecret: 'a'.repeat(24) }),
         cache: 'no-store',
+        // onboardingInspectInvitation only supplies 'content-type' below;
+        // 'accept' must still reach fetch as the shared default merged in by
+        // the internal fetchJson helper, not duplicated by every caller.
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
@@ -379,6 +382,46 @@ describe('createApiClient', () => {
         method: 'POST',
       },
     );
+  });
+
+  it('merges a caller-supplied content-type with the default accept header rather than replacing it', async () => {
+    // Regression test: fetchJson used to spread a caller's `headers` object
+    // over the default `{ accept: 'application/json' }` as a whole, so any
+    // caller that passed headers without an explicit 'accept' would silently
+    // drop it. fetchJson must merge per-key instead.
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'inspect_invitation',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          command: 'inspect_invitation',
+          inspection: {
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            state: 'issued',
+          },
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingInspectInvitation('a'.repeat(24));
+
+    const [, init] = fetch.mock.calls[0] as [URL, RequestInit];
+
+    expect(init.headers).toEqual({
+      accept: 'application/json',
+      'content-type': 'application/json',
+    });
   });
 
   it('rejects an invalid claim secret before making a request', async () => {
