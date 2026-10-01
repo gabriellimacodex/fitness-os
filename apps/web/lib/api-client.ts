@@ -5,9 +5,11 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticRuntimeProcessorsResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticRuntimeProcessorsResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +239,25 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyRuntimeProcessors(): Promise<PrivacySyntheticRuntimeProcessorsResponse> {
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/runtime-processors', parsedBaseUrl),
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const runtimeProcessors =
+        privacySyntheticRuntimeProcessorsResponseSchema.safeParse(payload);
+
+      if (!runtimeProcessors.success) {
+        throw new ApiProtocolError();
+      }
+
+      return runtimeProcessors.data;
     },
   };
 }
