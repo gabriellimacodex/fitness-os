@@ -269,4 +269,63 @@ describe('review record verification', () => {
       }),
     ).toThrow(/Pinned review authority fingerprint is inconsistent/);
   });
+
+  it('rejects a receipt whose role does not match its required position', () => {
+    const authority = createTestReviewAuthority();
+    const swapped = createSignedReviewRecord({
+      authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [
+        readerReceipt('role-swap-nonce-01'),
+        safetyReceipt('role-swap-nonce-02'),
+      ],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+
+    expect(() =>
+      verifyReviewRecord(swapped, authority, { allowTestAuthority: true }),
+    ).toThrow(/receipt role is incorrect/);
+  });
+
+  it('rejects an intended-reader receipt missing a reader perspective', () => {
+    const authority = createTestReviewAuthority();
+    const reader = { ...readerReceipt('missing-perspective-01') };
+    delete reader.readerPerspective;
+
+    const record = createSignedReviewRecord({
+      authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [safetyReceipt('missing-perspective-02'), reader],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+
+    expect(() =>
+      verifyReviewRecord(record, authority, { allowTestAuthority: true }),
+    ).toThrow(/require a reader perspective/);
+  });
+
+  it('rejects a movement-safety receipt carrying a reader perspective', () => {
+    const authority = createTestReviewAuthority();
+    const safety = {
+      ...safetyReceipt('extra-perspective-01'),
+      readerPerspective: 'student' as const,
+    };
+
+    const record = createSignedReviewRecord({
+      authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(SQUAT),
+      movementId: SQUAT.movementId,
+      receipts: [safety, readerReceipt('extra-perspective-02')],
+      sourceCommitSha: SOURCE_COMMIT,
+    });
+
+    expect(() =>
+      verifyReviewRecord(record, authority, { allowTestAuthority: true }),
+    ).toThrow(/must not carry a reader perspective/);
+  });
 });
