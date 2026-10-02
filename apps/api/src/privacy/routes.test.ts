@@ -1106,6 +1106,41 @@ describe('POST /v1/privacy/synthetic/withdrawal-plan', () => {
 
     await app.close();
   });
+
+  it('sets no-store on unexpected withdrawal-plan failures', async () => {
+    const app = buildSyntheticPrivacyApp();
+    app.addHook('preHandler', async (request) => {
+      if (
+        (request.url.split('?')[0] ?? '') ===
+        '/v1/privacy/synthetic/withdrawal-plan'
+      ) {
+        throw new Error('private withdrawal failure');
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/withdrawal-plan',
+      payload: {
+        existing: null,
+        withdrawalId: privacyWithdrawalIdSchema.parse(
+          'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        ),
+        evidenceId: evidence.evidenceId,
+        operationId: privacyOperationIdSchema.parse(
+          'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        ),
+      },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private withdrawal failure');
+
+    await app.close();
+  });
 });
 
 describe('POST /v1/privacy/synthetic/retention-preview', () => {
