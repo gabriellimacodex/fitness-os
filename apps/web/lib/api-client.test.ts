@@ -1,3 +1,4 @@
+import { privacySyntheticDataUseEvaluateRequestSchema } from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -440,5 +441,215 @@ describe('createApiClient', () => {
 
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
+  });
+
+  const dataUseEvaluateRequest =
+    privacySyntheticDataUseEvaluateRequestSchema.parse({
+      actor: {
+        issuer: 'synthetic.identity.v1',
+        version: 1,
+        principalReferenceDigest: 'e'.repeat(64),
+        authorityClaims: ['data_use_evaluate'],
+        synthetic: true,
+      },
+      purpose: {
+        purposeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        purposeVersionId: '33333333-3333-4333-8333-333333333333',
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        allowedOperationKinds: ['data_use_evaluation'],
+        allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+        evidenceRequired: true,
+        activationState: 'active',
+        contentDigest: 'b'.repeat(64),
+      },
+      policy: {
+        packageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        versionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        canonicalizationVersion: 'privacy-governance.canonical.v1',
+        contentDigest: 'a'.repeat(64),
+        synthetic: true,
+      },
+      processor: {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        descriptorDigest: 'c'.repeat(64),
+        inventoryVersionDigest: 'd'.repeat(64),
+        allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+        allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+        capabilities: ['access', 'inventory'],
+        supportsSubjectLookup: true,
+        codeOwner: 'packages.domain.privacy',
+        synthetic: true,
+      },
+      processorCapability: 'access',
+      operationKind: 'data_use_evaluation',
+      engineeringCategoryId: '44444444-4444-4444-8444-444444444444',
+      evidence: {
+        evidenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        purposeId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        contentDigest: 'f'.repeat(64),
+        recordedAt: '2026-08-18T11:00:00.000Z',
+      },
+      subjectScopeId: '22222222-2222-4222-8222-222222222222',
+      productionMode: false,
+    });
+
+  const allowedDecision = {
+    outcome: 'allowed' as const,
+    subjectScopeId: dataUseEvaluateRequest.subjectScopeId,
+    actorContextDigest: 'e'.repeat(64),
+    purposeVersionId: dataUseEvaluateRequest.purpose.purposeVersionId,
+    operationKind: dataUseEvaluateRequest.operationKind,
+    engineeringCategoryId: dataUseEvaluateRequest.engineeringCategoryId,
+    processorDescriptorVersionDigest:
+      dataUseEvaluateRequest.processor.descriptorDigest,
+    policyVersionId: dataUseEvaluateRequest.policy.versionId,
+    policyDigest: dataUseEvaluateRequest.policy.contentDigest,
+    evaluatedAt: '2026-08-18T12:00:00.000Z',
+    correlationId: '77777777-7777-4777-8777-777777777777',
+  };
+
+  const auditUnavailableDecision = {
+    outcome: 'denied' as const,
+    reasonCode: 'audit_unavailable' as const,
+    evaluatedAt: '2026-08-18T12:00:00.000Z',
+    correlationId: '77777777-7777-4777-8777-777777777777',
+  };
+
+  it('evaluates a privacy data-use decision with no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        status: 'evaluated',
+        decision: allowedDecision,
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyDataUseEvaluate(dataUseEvaluateRequest),
+    ).resolves.toEqual({
+      status: 'evaluated',
+      decision: allowedDecision,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/v1/privacy/synthetic/data-use-evaluate'),
+      {
+        body: JSON.stringify(dataUseEvaluateRequest),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('returns the validated fail-closed decision when audit is unavailable', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          status: 'audit_unavailable',
+          decision: auditUnavailableDecision,
+        },
+        { status: 503 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyDataUseEvaluate(dataUseEvaluateRequest),
+    ).resolves.toEqual({
+      status: 'audit_unavailable',
+      decision: auditUnavailableDecision,
+    });
+  });
+
+  it('rejects an invalid data-use-evaluate request before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyDataUseEvaluate({
+        ...dataUseEvaluateRequest,
+        subjectScopeId: 'not-a-uuid',
+      } as unknown as typeof dataUseEvaluateRequest),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error for an unexpected data-use-evaluate failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-evaluate-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyDataUseEvaluate(dataUseEvaluateRequest)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-evaluate-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed data-use-evaluate payload', async () => {
+    const rawContent = 'private-policy-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyDataUseEvaluate(dataUseEvaluateRequest)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  it('does not treat a malformed audit_unavailable payload as a valid decision', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        { status: 'evaluated', decision: { outcome: 'allowed' } },
+        { status: 503 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyDataUseEvaluate(dataUseEvaluateRequest),
+    ).rejects.toBeInstanceOf(ApiProtocolError);
   });
 });

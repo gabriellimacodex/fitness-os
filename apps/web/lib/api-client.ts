@@ -5,9 +5,13 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticDataUseEvaluateRequestSchema,
+  privacySyntheticDataUseEvaluateResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticDataUseEvaluateRequest,
+  type PrivacySyntheticDataUseEvaluateResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +241,52 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyDataUseEvaluate(
+      request: PrivacySyntheticDataUseEvaluateRequest,
+    ): Promise<PrivacySyntheticDataUseEvaluateResponse> {
+      const body = privacySyntheticDataUseEvaluateRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/data-use-evaluate', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (response.status === 503) {
+        const evaluated =
+          privacySyntheticDataUseEvaluateResponseSchema.safeParse(payload);
+
+        if (
+          !evaluated.success ||
+          evaluated.data.status !== 'audit_unavailable'
+        ) {
+          throw new ApiProtocolError();
+        }
+
+        return evaluated.data;
+      }
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const evaluated =
+        privacySyntheticDataUseEvaluateResponseSchema.safeParse(payload);
+
+      if (!evaluated.success || evaluated.data.status !== 'evaluated') {
+        throw new ApiProtocolError();
+      }
+
+      return evaluated.data;
     },
   };
 }
