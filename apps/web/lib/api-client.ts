@@ -5,9 +5,13 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticWithdrawalPlanRequestSchema,
+  privacySyntheticWithdrawalPlanResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticWithdrawalPlanRequest,
+  type PrivacySyntheticWithdrawalPlanResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +241,38 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyWithdrawalPlan(
+      request: PrivacySyntheticWithdrawalPlanRequest,
+    ): Promise<PrivacySyntheticWithdrawalPlanResponse> {
+      const body = privacySyntheticWithdrawalPlanRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/withdrawal-plan', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const plan =
+        privacySyntheticWithdrawalPlanResponseSchema.safeParse(payload);
+
+      if (!plan.success) {
+        throw new ApiProtocolError();
+      }
+
+      return plan.data;
     },
   };
 }
