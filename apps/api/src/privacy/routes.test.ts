@@ -3736,6 +3736,37 @@ describe('POST /v1/privacy/synthetic/governance-lifecycle-record', () => {
     },
   );
 
+  it('fails closed when a conflict reports no existing proof', async () => {
+    const governanceLifecycleVerifier =
+      new SyntheticPrivacyGovernanceLifecycleBindingVerifier();
+    governanceLifecycleVerifier.seal(basePayload());
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticPrivacy: true,
+        privacy: {
+          governanceLifecycleVerifier,
+          governanceLifecycle: {
+            append: async () => 'conflict' as const,
+            getByOperationId: async () => null,
+          },
+        },
+      },
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/privacy/synthetic/governance-lifecycle-record',
+      payload: basePayload(),
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'SERVICE_UNAVAILABLE',
+    );
+    await app.close();
+  });
+
   it('fails closed with zero appends when no exact sealed binding exists', async () => {
     let appendCalls = 0;
     const app = buildApp(
