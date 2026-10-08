@@ -132,6 +132,7 @@ describe('privacy schema readiness', () => {
     const result = await createPostgresPrivacyReadinessProbe(connection, {
       evaluatedAt: '2026-08-31T00:00:00.000Z',
       requiredHashes: [],
+      processorRetentionRequiredHashes: [],
     }).evaluate();
 
     expect(result.components).toContainEqual({
@@ -149,6 +150,155 @@ describe('privacy schema readiness', () => {
       diagnosticCode: 'audit_unavailable',
       state: 'not_ready',
     });
+  });
+
+  it('flips repositories/migrations not_ready when only the processor-step/retention tables are missing, even though core tables are present', async () => {
+    let lastInsertedAuditEventId: string | undefined;
+    // Minimal stand-in for the drizzle query-builder chain
+    // `checkPrivacyAuditSinkFunctionalReadiness` exercises through the real
+    // `createPostgresPrivacyAuditSink`, so the core-schema-only round trip
+    // below succeeds and this test can isolate the processor-retention gap.
+    const tx = {
+      insert: () => ({
+        values: async (row: { auditEventId: string }) => {
+          lastInsertedAuditEventId = row.auditEventId;
+        },
+      }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () =>
+              lastInsertedAuditEventId
+                ? [{ auditEventId: lastInsertedAuditEventId }]
+                : [],
+          }),
+        }),
+      }),
+    };
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tablename: 'privacy_policy_package_version' },
+          { tablename: 'privacy_purpose_version' },
+          { tablename: 'privacy_processor_registration' },
+          { tablename: 'privacy_authorization_evidence' },
+          { tablename: 'privacy_withdrawal' },
+          { tablename: 'privacy_audit_event' },
+          { tablename: 'privacy_subject_request' },
+          { tablename: 'privacy_subject_request_transition' },
+        ],
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+      processorRetentionRequiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'migrations',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'repositories',
+      diagnosticCode: 'repository_unavailable',
+      state: 'not_ready',
+    });
+    // audit_sink depends only on the core schema result and a working
+    // functional round trip, both fully satisfied here, so it stays ready
+    // even though repositories does not (the processor-retention gap is
+    // unrelated to the core-only audit_sink table/round trip).
+    expect(result.components).toContainEqual({
+      componentId: 'audit_sink',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).toContain('repository_unavailable');
+  });
+
+  it('reports migrations not_ready with migration_missing when only the processor-step/retention migration is missing', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tablename: 'privacy_policy_package_version' },
+          { tablename: 'privacy_purpose_version' },
+          { tablename: 'privacy_processor_registration' },
+          { tablename: 'privacy_authorization_evidence' },
+          { tablename: 'privacy_withdrawal' },
+          { tablename: 'privacy_audit_event' },
+          { tablename: 'privacy_subject_request' },
+          { tablename: 'privacy_subject_request_transition' },
+          { tablename: 'privacy_processor_step' },
+          { tablename: 'privacy_processor_execution_journal' },
+          { tablename: 'privacy_retention_preview' },
+          { tablename: 'privacy_retention_rule' },
+        ],
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+      processorRetentionRequiredHashes: ['0'.repeat(64)],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'migrations',
+      diagnosticCode: 'migration_missing',
+      state: 'not_ready',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'repositories',
+      diagnosticCode: 'repository_unavailable',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain('migration_missing');
+  });
+
+  it('reports repositories/migrations ready once every core and processor-step/retention table is present', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tablename: 'privacy_policy_package_version' },
+          { tablename: 'privacy_purpose_version' },
+          { tablename: 'privacy_processor_registration' },
+          { tablename: 'privacy_authorization_evidence' },
+          { tablename: 'privacy_withdrawal' },
+          { tablename: 'privacy_audit_event' },
+          { tablename: 'privacy_subject_request' },
+          { tablename: 'privacy_subject_request_transition' },
+          { tablename: 'privacy_processor_step' },
+          { tablename: 'privacy_processor_execution_journal' },
+          { tablename: 'privacy_retention_preview' },
+          { tablename: 'privacy_retention_rule' },
+        ],
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+      processorRetentionRequiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'migrations',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'repositories',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).not.toContain('repository_unavailable');
+    expect(result.diagnosticCodes).not.toContain('migration_missing');
   });
 
   it('preserves an overridden diagnostic still used by another component', async () => {
@@ -232,6 +382,7 @@ describe('privacy schema readiness', () => {
     const result = await createPostgresPrivacyReadinessProbe(connection, {
       baseProbe,
       requiredHashes: [],
+      processorRetentionRequiredHashes: [],
     }).evaluate();
 
     expect(result.diagnosticCodes).toContain('repository_unavailable');

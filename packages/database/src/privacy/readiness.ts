@@ -51,6 +51,13 @@ const REQUIRED_GOVERNANCE_LIFECYCLE_MIGRATION_FILES = [
   '0015_prd21_privacy_governance_lifecycle_proof.sql',
 ] as const;
 
+const REQUIRED_PROCESSOR_RETENTION_MIGRATION_FILES = [
+  '0014_prd21_privacy_processor_step.sql',
+  '0017_prd21_privacy_retention_preview.sql',
+  '0018_prd21_privacy_retention_rule.sql',
+  '0023_prd21_processor_execution_journal.sql',
+] as const;
+
 function hashMigrationFile(relativePath: string): string {
   return createHash('sha256')
     .update(readFileSync(join(drizzleRoot, relativePath)))
@@ -67,6 +74,16 @@ export function requiredPrivacyCoreMigrationHashes(): readonly string[] {
 /** Content hashes of migrations required for governance-lifecycle readiness. */
 export function requiredPrivacyGovernanceLifecycleMigrationHashes(): readonly string[] {
   return REQUIRED_GOVERNANCE_LIFECYCLE_MIGRATION_FILES.map((file) =>
+    hashMigrationFile(file),
+  );
+}
+
+/**
+ * Content hashes of migrations required for processor-step/retention
+ * readiness (see `checkPrivacyProcessorRetentionDatabaseReadiness`).
+ */
+export function requiredPrivacyProcessorRetentionMigrationHashes(): readonly string[] {
+  return REQUIRED_PROCESSOR_RETENTION_MIGRATION_FILES.map((file) =>
     hashMigrationFile(file),
   );
 }
@@ -206,6 +223,79 @@ export async function checkPrivacyGovernanceLifecycleDatabaseReadiness(
   }
 }
 
+const PROCESSOR_RETENTION_REQUIRED_TABLES = [
+  'privacy_processor_step',
+  'privacy_processor_execution_journal',
+  'privacy_retention_preview',
+  'privacy_retention_rule',
+] as const;
+
+/**
+ * Checks the processor-step/execution-journal/retention-preview/retention-
+ * rule tables independently of `checkPrivacyCoreDatabaseReadiness`'s fixed
+ * core migration list, since these migrations (`0014`, `0017`, `0018`,
+ * `0023`) landed later and are not part of the privacy-core bootstrap — the
+ * same reasoning `checkPrivacyGovernanceLifecycleDatabaseReadiness` already
+ * uses for `0015`. `apps/api/src/privacy/pg-persistence.ts` unconditionally
+ * composes real repositories against these four tables
+ * (`processorSteps`, `processorExecutionJournal`, `retentionPreviews`,
+ * `retentionRules`), so `migrations`/`repositories` readiness must fail
+ * closed when any of them is absent instead of reporting `ready` on evidence
+ * that only covers the original core tables.
+ */
+export async function checkPrivacyProcessorRetentionDatabaseReadiness(
+  connection: PostgresConnection,
+  options: {
+    requiredHashes?: readonly string[];
+  } = {},
+): Promise<PrivacyCoreReadinessResult> {
+  const requiredHashes =
+    options.requiredHashes ??
+    requiredPrivacyProcessorRetentionMigrationHashes();
+
+  try {
+    const journalHashes = await readJournalHashes(connection);
+    const journal = journalContainsRequiredHashes(
+      journalHashes.map((hash) => ({ hash })),
+      requiredHashes,
+    );
+
+    if (!journal.ready) {
+      return {
+        ready: false,
+        reason: 'missing_required_migration',
+        detail: journal.missingHashes.join(','),
+      };
+    }
+
+    const rows = await connection.db.execute<{ tablename: string }>(sql`
+      SELECT tablename
+      FROM pg_tables
+      WHERE schemaname = 'public'
+    `);
+    const present = new Set(rows.map((row) => row.tablename));
+    const missing = PROCESSOR_RETENTION_REQUIRED_TABLES.filter(
+      (table) => !present.has(table),
+    );
+
+    if (missing.length > 0) {
+      return {
+        ready: false,
+        reason: 'missing_required_table',
+        detail: missing.join(','),
+      };
+    }
+
+    return { ready: true };
+  } catch (error) {
+    return {
+      ready: false,
+      reason: 'database_error',
+      detail: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+}
+
 /**
  * Thrown deliberately at the end of the functional audit-sink round-trip
  * transaction so the write never commits. Caught explicitly in
@@ -300,6 +390,43 @@ export async function checkPrivacyAuditSinkFunctionalReadiness(
       detail: message,
     };
   }
+}
+
+/**
+ * Combines multiple repository-readiness results into the single worst
+ * result, preferring a migration failure over a table failure over a
+ * database error so the combined reason matches the most actionable cause.
+ */
+function combineCoreReadinessResults(
+  results: readonly PrivacyCoreReadinessResult[],
+): PrivacyCoreReadinessResult {
+  const failures = results.filter(
+    (result): result is Extract<PrivacyCoreReadinessResult, { ready: false }> =>
+      !result.ready,
+  );
+
+  const migrationFailure = failures.find(
+    (result) => result.reason === 'missing_required_migration',
+  );
+  if (migrationFailure !== undefined) {
+    return migrationFailure;
+  }
+
+  const tableFailure = failures.find(
+    (result) => result.reason === 'missing_required_table',
+  );
+  if (tableFailure !== undefined) {
+    return tableFailure;
+  }
+
+  const databaseErrorFailure = failures.find(
+    (result) => result.reason === 'database_error',
+  );
+  if (databaseErrorFailure !== undefined) {
+    return databaseErrorFailure;
+  }
+
+  return { ready: true };
 }
 
 const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
@@ -442,17 +569,23 @@ async function evaluateInventoryCoverageComponents(
  * `SyntheticPrivacyReadinessProbe`) and replaces its `migrations`,
  * `repositories`, `audit_sink`, `governance_lifecycle`, and `recovery`
  * components with a real evaluation of `checkPrivacyCoreDatabaseReadiness`,
+ * `checkPrivacyProcessorRetentionDatabaseReadiness`,
  * `checkPrivacyGovernanceLifecycleDatabaseReadiness`, and
- * `checkPrivacyRecoveryReadiness` against `connection`. `audit_sink` is
- * `ready` only when the core schema result is `ready` (`privacy_audit_event`
- * is already one of `REQUIRED_TABLES`) **and**
- * `checkPrivacyAuditSinkFunctionalReadiness` confirms a real, rolled-back
- * append+read-back through `createPostgresPrivacyAuditSink` succeeds — the
- * static schema check alone cannot prove the sink can actually write to and
- * read from the table it found. The functional check is skipped (and
- * `audit_sink` stays `not_ready`) when the schema result itself is not
- * `ready`, since an insert would just fail for a reason `migrations`/
- * `repositories` already report. When both
+ * `checkPrivacyRecoveryReadiness` against `connection`. `migrations` and
+ * `repositories` reflect the worst of `checkPrivacyCoreDatabaseReadiness` and
+ * `checkPrivacyProcessorRetentionDatabaseReadiness` combined (see
+ * `combineCoreReadinessResults`), so a missing processor-step, execution-
+ * journal, or retention table/migration also fails those two components
+ * closed, not just a missing core table. `audit_sink` is `ready` only when
+ * the core schema result is `ready` (`privacy_audit_event` is already one of
+ * `REQUIRED_TABLES`) **and** `checkPrivacyAuditSinkFunctionalReadiness`
+ * confirms a real, rolled-back append+read-back through
+ * `createPostgresPrivacyAuditSink` succeeds — the static schema check alone
+ * cannot prove the sink can actually write to and read from the table it
+ * found. The functional check is skipped (and `audit_sink` stays
+ * `not_ready`) when the core schema result itself is not `ready`, since an
+ * insert would just fail for a reason `migrations`/`repositories` already
+ * report. When both
  * `expectedInventory` and `runtimeProcessors` are supplied, this also
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
@@ -471,6 +604,7 @@ export function createPostgresPrivacyReadinessProbe(
     baseProbe?: PrivacyReadinessProbe;
     evaluatedAt?: string;
     requiredHashes?: readonly string[];
+    processorRetentionRequiredHashes?: readonly string[];
     governanceLifecycleRequiredHashes?: readonly string[];
     expectedInventory?: PrivacyExpectedProcessorInventoryPort;
     runtimeProcessors?: PrivacyRuntimeProcessorRegistry;
@@ -489,6 +623,14 @@ export function createPostgresPrivacyReadinessProbe(
       const schemaResult = await checkPrivacyCoreDatabaseReadiness(connection, {
         requiredHashes: options.requiredHashes,
       });
+      const processorRetentionResult =
+        await checkPrivacyProcessorRetentionDatabaseReadiness(connection, {
+          requiredHashes: options.processorRetentionRequiredHashes,
+        });
+      const repositoryResult = combineCoreReadinessResults([
+        schemaResult,
+        processorRetentionResult,
+      ]);
       const governanceLifecycleResult =
         await checkPrivacyGovernanceLifecycleDatabaseReadiness(connection, {
           requiredHashes: options.governanceLifecycleRequiredHashes,
@@ -511,18 +653,19 @@ export function createPostgresPrivacyReadinessProbe(
           : null;
 
       const migrationsComponent: PrivacyReadinessComponent =
-        schemaResult.ready || schemaResult.reason === 'missing_required_table'
+        repositoryResult.ready ||
+        repositoryResult.reason === 'missing_required_table'
           ? { componentId: 'migrations', state: 'ready', diagnosticCode: null }
           : {
               componentId: 'migrations',
               state: 'not_ready',
               diagnosticCode:
-                schemaResult.reason === 'missing_required_migration'
+                repositoryResult.reason === 'missing_required_migration'
                   ? 'migration_missing'
                   : 'repository_unavailable',
             };
       const repositoriesComponent: PrivacyReadinessComponent =
-        schemaResult.ready
+        repositoryResult.ready
           ? {
               componentId: 'repositories',
               state: 'ready',
