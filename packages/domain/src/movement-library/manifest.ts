@@ -98,6 +98,12 @@ export function deriveManifestState(
         throw new Error('Republish is only valid after withdrawal.');
       }
 
+      if (previous.action !== 'withdraw' && record.action === 'publish') {
+        throw new Error(
+          'A previously published movement must be revised, not republished as new.',
+        );
+      }
+
       if (record.action === 'withdraw') {
         if (
           record.contentVersion !== previous.contentVersion ||
