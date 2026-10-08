@@ -11,6 +11,8 @@ import {
   onboardingInvitationIdSchema,
   onboardingOperationIdSchema,
   onboardingOperationResponseSchema,
+  onboardingReadinessComponentSchema,
+  onboardingReadinessResultSchema,
   principalIdSchema,
   principalReferenceSchema,
   principalRoleMappingIdSchema,
@@ -164,6 +166,123 @@ describe('onboarding operation envelope', () => {
         '66666666-6666-4666-8666-666666666666',
       ),
     ).toBe('66666666-6666-4666-8666-666666666666');
+  });
+});
+
+describe('onboarding readiness contract', () => {
+  const readyComponents = [
+    'schema',
+    'clock',
+    'id_factory',
+    'secret_factory',
+    'invitation_repository',
+    'attempt_repository',
+    'operation_repository',
+    'role_mapping_repository',
+    'secret_verifier',
+  ].map((componentId) => ({
+    componentId,
+    state: 'ready' as const,
+    diagnosticCode: null,
+  }));
+  const syntheticComponents = [
+    ...readyComponents,
+    {
+      componentId: 'identity_adapter',
+      state: 'ready' as const,
+      diagnosticCode: 'identity_adapter_synthetic' as const,
+    },
+    {
+      componentId: 'policy_gateway',
+      state: 'ready' as const,
+      diagnosticCode: 'policy_gateway_synthetic' as const,
+    },
+  ];
+
+  it('accepts a mechanism-ready synthetic result stopped on legal_privacy_decision_required', () => {
+    const result = onboardingReadinessResultSchema.parse({
+      evaluatedAt: '2026-08-19T12:00:00.000Z',
+      mechanismReady: true,
+      productionReady: false,
+      components: syntheticComponents,
+      diagnosticCodes: ['legal_privacy_decision_required'],
+    });
+
+    expect(result.mechanismReady).toBe(true);
+    expect(result.productionReady).toBe(false);
+  });
+
+  it('allows a ready component to carry an advisory diagnosticCode (synthetic, not a failure)', () => {
+    // Real, already-shipped behavior: an identity_adapter/policy_gateway
+    // component can be mechanically 'ready' while still disclosing it is a
+    // synthetic, non-production composition.
+    expect(
+      onboardingReadinessComponentSchema.safeParse({
+        componentId: 'identity_adapter',
+        state: 'ready',
+        diagnosticCode: 'identity_adapter_synthetic',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a not_ready component with no diagnosticCode', () => {
+    expect(
+      onboardingReadinessComponentSchema.safeParse({
+        componentId: 'schema',
+        state: 'not_ready',
+        diagnosticCode: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects productionReady true without mechanismReady', () => {
+    expect(
+      onboardingReadinessResultSchema.safeParse({
+        evaluatedAt: '2026-08-19T12:00:00.000Z',
+        mechanismReady: false,
+        productionReady: true,
+        components: syntheticComponents,
+        diagnosticCodes: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an unknown field, component id, diagnostic code, or malformed evaluatedAt', () => {
+    const base = {
+      evaluatedAt: '2026-08-19T12:00:00.000Z',
+      mechanismReady: true,
+      productionReady: false,
+      components: syntheticComponents,
+      diagnosticCodes: ['legal_privacy_decision_required'],
+    };
+
+    expect(
+      onboardingReadinessResultSchema.safeParse({
+        ...base,
+        region: 'us-east-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      onboardingReadinessResultSchema.safeParse({
+        ...base,
+        diagnosticCodes: ['sql_exception'],
+      }).success,
+    ).toBe(false);
+    expect(
+      onboardingReadinessResultSchema.safeParse({
+        ...base,
+        components: [
+          ...syntheticComponents.slice(1),
+          { ...syntheticComponents[0], componentId: 'unknown_component' },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      onboardingReadinessResultSchema.safeParse({
+        ...base,
+        evaluatedAt: '2026-08-19',
+      }).success,
+    ).toBe(false);
   });
 });
 

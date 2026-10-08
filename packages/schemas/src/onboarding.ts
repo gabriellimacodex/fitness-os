@@ -382,6 +382,120 @@ export const onboardingMechanismReadinessSchema = z
   })
   .strict();
 
+// PRD 07 Contracts: "a safe onboarding readiness schema or closed readiness
+// classifications." Mirrors `OnboardingReadinessDiagnostic` /
+// `OnboardingReadinessComponentId` / `OnboardingReadinessComponent` /
+// `OnboardingReadinessResult` in
+// `packages/domain/src/onboarding/readiness.ts` exactly, so a frozen
+// contract exists for `GET /v1/onboarding/synthetic/readiness`'s response
+// (the same role `privacyReadinessResultSchema` plays for the analogous
+// privacy-governance route).
+export const onboardingReadinessDiagnosticCodeSchema = z.enum([
+  'migration_missing',
+  'schema_mismatch',
+  'identity_adapter_missing',
+  'identity_adapter_synthetic',
+  'policy_gateway_missing',
+  'policy_gateway_synthetic',
+  'policy_gateway_blocked',
+  'credential_unavailable',
+  'operation_reconciliation_incomplete',
+  'dual_role_self_coach_bypass',
+  'recovery_unverified',
+  'configuration_mismatch',
+  'legal_privacy_decision_required',
+  'human_perception_required',
+]);
+export type OnboardingReadinessDiagnosticCode = z.infer<
+  typeof onboardingReadinessDiagnosticCodeSchema
+>;
+
+export const onboardingReadinessComponentStateSchema = z.enum([
+  'ready',
+  'not_ready',
+]);
+export type OnboardingReadinessComponentState = z.infer<
+  typeof onboardingReadinessComponentStateSchema
+>;
+
+export const onboardingReadinessComponentIdSchema = z.enum([
+  'schema',
+  'clock',
+  'id_factory',
+  'secret_factory',
+  'invitation_repository',
+  'attempt_repository',
+  'operation_repository',
+  'role_mapping_repository',
+  'secret_verifier',
+  'identity_adapter',
+  'policy_gateway',
+]);
+export type OnboardingReadinessComponentId = z.infer<
+  typeof onboardingReadinessComponentIdSchema
+>;
+
+// Unlike the analogous privacy-governance component schema, a 'ready'
+// onboarding component may still carry an advisory diagnosticCode (e.g.
+// `identity_adapter_synthetic`/`policy_gateway_synthetic` for a component
+// that is mechanically ready but not production-grade) — this is real,
+// already-shipped behavior in `SyntheticOnboardingReadinessProbe`, not a gap.
+// Only the fail-closed direction is a genuine invariant: a 'not_ready'
+// component must always carry a closed diagnosticCode as evidence.
+export const onboardingReadinessComponentSchema = z
+  .object({
+    componentId: onboardingReadinessComponentIdSchema,
+    state: onboardingReadinessComponentStateSchema,
+    diagnosticCode: onboardingReadinessDiagnosticCodeSchema.nullable(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.state === 'not_ready' && value.diagnosticCode === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'a not_ready component requires a closed diagnosticCode',
+        path: ['diagnosticCode'],
+      });
+    }
+  });
+export type OnboardingReadinessComponent = z.infer<
+  typeof onboardingReadinessComponentSchema
+>;
+
+const onboardingReadinessEvaluatedAtSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+/**
+ * `mechanismReady: true` never implies `productionReady: true` by itself;
+ * production additionally requires a non-synthetic identity/policy
+ * composition and the real-user activation decision to have cleared (PRD 07,
+ * "Readiness": "Production onboarding readiness additionally requires ...").
+ * `productionReady` can therefore only be true when `mechanismReady` is also
+ * true — the converse does not hold.
+ */
+export const onboardingReadinessResultSchema = z
+  .object({
+    evaluatedAt: onboardingReadinessEvaluatedAtSchema,
+    mechanismReady: z.boolean(),
+    productionReady: z.boolean(),
+    components: z.array(onboardingReadinessComponentSchema).max(32),
+    diagnosticCodes: z.array(onboardingReadinessDiagnosticCodeSchema).max(64),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.productionReady && !value.mechanismReady) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'productionReady requires mechanismReady',
+        path: ['productionReady'],
+      });
+    }
+  });
+export type OnboardingReadinessResult = z.infer<
+  typeof onboardingReadinessResultSchema
+>;
+
 export type PrincipalId = z.infer<typeof principalIdSchema>;
 export type PrincipalBindingId = z.infer<typeof principalBindingIdSchema>;
 export type PrincipalRoleMappingId = z.infer<
