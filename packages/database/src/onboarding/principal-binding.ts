@@ -86,25 +86,26 @@ export function createPostgresPrincipalBindingRepository(
         return { binding: toRecord(row), status: 'established' };
       } catch (error) {
         if (
-          isUniqueViolation(
+          !isUniqueViolation(
             error,
             'onboarding_principal_binding_principal_key_unique',
           )
         ) {
-          const existing = await connection.db
-            .select()
-            .from(onboardingPrincipalBinding)
-            .where(
-              eq(onboardingPrincipalBinding.principalKey, input.principalKey),
-            )
-            .limit(1)
-            .then((rows) => (rows[0] ? toRecord(rows[0]) : null));
-          if (existing === null) {
-            throw error;
-          }
-          return { binding: existing, status: 'resolved' };
+          throw error;
         }
-        throw error;
+
+        // No code path ever updates or deletes an onboarding_principal_binding
+        // row, so a unique violation on principalKey means a row for this
+        // exact key already committed and remains present; the re-select
+        // below cannot come back empty.
+        const existing = await connection.db
+          .select()
+          .from(onboardingPrincipalBinding)
+          .where(
+            eq(onboardingPrincipalBinding.principalKey, input.principalKey),
+          )
+          .limit(1);
+        return { binding: toRecord(existing[0]!), status: 'resolved' };
       }
     },
   };
