@@ -12,6 +12,7 @@ import {
   inspectInvitationState,
   isNonterminal,
   revokeInvitation,
+  selectAttempt,
   SyntheticClaimFailureTracker,
   SyntheticIdentitySessionPort,
   SyntheticIdentitySessionStore,
@@ -995,6 +996,104 @@ export function registerOnboardingRoutes(
       });
     },
   );
+
+  /**
+   * PRD 07's attempt identity and cardinality rule: resume supplies an
+   * `AttemptId` only as a locator. When the caller has none yet, this route
+   * resolves which attempt that locator would name instead of guessing —
+   * it never performs the resume transition itself. The caller follows up
+   * against `/v1/onboarding/attempts/:attemptId/resume` once it holds a
+   * single resolved `AttemptId` from an `attempt_selected` result.
+   */
+  app.post('/v1/onboarding/attempts/resume', async (request, reply) => {
+    const body = resumeAttemptRequestSchema.safeParse(request.body);
+
+    if (!body.success) {
+      return sendError(request, reply, 400, 'BAD_REQUEST', 'Invalid request');
+    }
+
+    const context = await requireContext(request, reply);
+    if (context === null) {
+      return;
+    }
+
+    const digest = semanticDigest({
+      authority: context.principalKey,
+      namespace: 'resume_attempt_select',
+    });
+    const retryDigest = digestRetryToken(body.data.retryToken, store.pepper);
+    const bindingKey = operationBindingKey(
+      context.principalKey,
+      'resume_attempt',
+      retryDigest,
+    );
+    const existingOperation = await loadOperation(
+      store,
+      persistence,
+      bindingKey,
+    );
+
+    if (existingOperation !== undefined) {
+      if (existingOperation.digest !== digest) {
+        return operationEnvelope({
+          digest: existingOperation.digest,
+          namespace: 'resume_attempt',
+          operationId: existingOperation.operationId,
+          result: null,
+          state: 'operation_input_mismatch',
+        });
+      }
+
+      return operationEnvelope({
+        digest: existingOperation.digest,
+        namespace: 'resume_attempt',
+        operationId: existingOperation.operationId,
+        result: existingOperation.result,
+        state: 'operation_replayed',
+      });
+    }
+
+    if (persistence !== undefined) {
+      await hydratePrincipalAttempts(store, persistence, context.principalKey);
+    }
+
+    const active = [...store.attempts.values()]
+      .filter(
+        (record) =>
+          record.principalKey === context.principalKey &&
+          isNonterminal(record.detail.lifecycle),
+      )
+      .map((record) => record.detail);
+
+    const selection = selectAttempt(active, undefined);
+    const result = {
+      // PRD 07: `active_attempt_limit_reached` discloses no count or
+      // competing-attempt detail. It is also the one status `selectAttempt`
+      // does not bound to the cap, so disclosing it here could also exceed
+      // the frozen response schema's bounded attempt-summary array.
+      attempts:
+        selection.status === 'active_attempt_limit_reached'
+          ? []
+          : selection.attempts.map((attempt) => summarizeAttempt(attempt)),
+      outcome: selection.status,
+    };
+
+    const operationId = idFactory.operationId();
+    await rememberOperation(bindingKey, context.principalKey, {
+      digest,
+      namespace: 'resume_attempt',
+      operationId,
+      result,
+      retryDigest,
+    });
+    return operationEnvelope({
+      digest,
+      namespace: 'resume_attempt',
+      operationId,
+      result,
+      state: 'operation_committed',
+    });
+  });
 
   app.post(
     '/v1/onboarding/attempts/:attemptId/abandon',

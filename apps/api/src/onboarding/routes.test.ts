@@ -111,6 +111,11 @@ describe('onboarding routes without trusted context', () => {
       url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555/resume',
       payload: { retryToken: RETRY_TOKEN },
     });
+    const resumeSelection = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: RETRY_TOKEN },
+    });
     const abandon = await app.inject({
       method: 'POST',
       url: '/v1/onboarding/attempts/55555555-5555-4555-8555-555555555555/abandon',
@@ -137,6 +142,7 @@ describe('onboarding routes without trusted context', () => {
       create,
       detail,
       resume,
+      resumeSelection,
       abandon,
       listInvitations,
       issueInvitation,
@@ -1820,6 +1826,210 @@ describe('resume and abandon', () => {
     );
     expect(mismatchedAbandonBody.result).toBeNull();
 
+    await app.close();
+  });
+});
+
+describe('POST /v1/onboarding/attempts/resume (locator-less selection)', () => {
+  it('returns no_active_attempt with only authorized role-mapping state when none exist', async () => {
+    const { app } = buildSyntheticApp({ mappedRoles: ['coach'] });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toEqual({ attempts: [], outcome: 'no_active_attempt' });
+
+    await app.close();
+  });
+
+  it('resolves attempt_selected when exactly one active attempt exists', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-select') },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toMatchObject({
+      attempts: [{ attemptId }],
+      outcome: 'attempt_selected',
+    });
+
+    await app.close();
+  });
+
+  it('returns selection_required with bounded summaries for multiple active attempts', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    seedIssuedInvitation(store, { claimSecret: OTHER_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: {
+        claimSecret: OTHER_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-second-attempt'),
+      },
+    });
+    const firstAttemptId = extractAttemptId(first.json());
+    const secondAttemptId = extractAttemptId(second.json());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: retryTokenSchema.parse('synthetic-retry-select') },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    if (
+      !body.result ||
+      body.result.outcome !== 'selection_required' ||
+      !('attempts' in body.result)
+    ) {
+      throw new Error('expected selection_required');
+    }
+    expect(
+      body.result.attempts.map((attempt) => attempt.attemptId).sort(),
+    ).toEqual([firstAttemptId, secondAttemptId].sort());
+    expect(response.body).not.toContain(CLAIM_SECRET);
+
+    await app.close();
+  });
+
+  it('discloses no attempt detail for active_attempt_limit_reached, even across both roles', async () => {
+    const store = createOnboardingStore();
+    const studentSecrets = [1, 2, 3, 4].map((index) => secretAt(index));
+
+    for (const [index, secret] of studentSecrets.entries()) {
+      const invitation = seedIssuedInvitation(store, { claimSecret: secret });
+      const record = createStoredAttempt(invitation, index + 1, 'principal-a');
+      store.attempts.set(record.detail.attemptId, record);
+    }
+    const coachInvitation = seedIssuedInvitation(store, {
+      claimSecret: secretAt(5),
+      proposedRole: 'coach',
+      purpose: 'coach_bootstrap',
+    });
+    const coachRecord = createStoredAttempt(coachInvitation, 1, 'principal-a');
+    store.attempts.set(coachRecord.detail.attemptId, coachRecord);
+
+    const { app } = buildSyntheticApp({ store });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(response.json());
+
+    expect(body.result).toEqual({
+      attempts: [],
+      outcome: 'active_attempt_limit_reached',
+    });
+    expect(store.attempts.size).toBe(5);
+
+    await app.close();
+  });
+
+  it('replays the committed selection result for the same retry token', async () => {
+    const { app } = buildSyntheticApp();
+    const token = retryTokenSchema.parse('synthetic-retry-select-replay');
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: token },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: token },
+    });
+
+    expect(
+      onboardingOperationResponseSchema.parse(first.json()).operation.state,
+    ).toBe('operation_committed');
+    const secondBody = onboardingOperationResponseSchema.parse(second.json());
+    expect(secondBody.operation.state).toBe('operation_replayed');
+    expect(secondBody.result).toEqual({
+      attempts: [],
+      outcome: 'no_active_attempt',
+    });
+
+    await app.close();
+  });
+
+  it('treats a retry token shared with a locator-based resume as a different command', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+    const sharedToken = retryTokenSchema.parse('synthetic-retry-shared-shape');
+
+    const located = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: { retryToken: sharedToken },
+    });
+    const locatorless = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: { retryToken: sharedToken },
+    });
+    const locatorlessBody = onboardingOperationResponseSchema.parse(
+      locatorless.json(),
+    );
+
+    expect(
+      onboardingOperationResponseSchema.parse(located.json()).operation.state,
+    ).toBe('operation_committed');
+    expect(locatorlessBody.operation.state).toBe('operation_input_mismatch');
+    expect(locatorlessBody.result).toBeNull();
+
+    await app.close();
+  });
+
+  it('rejects an attemptId in the locator-less resume body', async () => {
+    const { app } = buildSyntheticApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts/resume',
+      payload: {
+        attemptId: '55555555-5555-4555-8555-555555555555',
+        retryToken: RETRY_TOKEN,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(apiErrorResponseSchema.parse(response.json()).error.code).toBe(
+      'BAD_REQUEST',
+    );
     await app.close();
   });
 });
