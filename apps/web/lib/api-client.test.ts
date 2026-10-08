@@ -1,3 +1,10 @@
+import {
+  privacySyntheticGovernanceLifecycleRecordRequestSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorExecuteRequestSchema,
+  privacySyntheticProcessorStepRecordRequestSchema,
+  privacySyntheticRetentionExecutionAuthorizeRequestSchema,
+} from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -440,5 +447,554 @@ describe('createApiClient', () => {
 
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
+  });
+
+  describe('privacyRetentionExecutionAuthorize', () => {
+    const request =
+      privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse({
+        operationId: '11111111-1111-4111-8111-111111111111',
+        productionMode: false,
+        requestedSelectionDigest: 'f'.repeat(64),
+        previewTtlMs: 60 * 60 * 1000,
+      });
+
+    it('authorizes a retention execution and validates the response', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: 'executed' }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com/platform',
+        fetch,
+      });
+
+      await expect(
+        client.privacyRetentionExecutionAuthorize(request),
+      ).resolves.toEqual({ status: 'executed' });
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          'https://api.example.com/platform/v1/privacy/synthetic/retention-execution-authorize',
+        ),
+        {
+          body: JSON.stringify(request),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+    });
+
+    it('rejects a request that fails schema validation before any fetch', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      await expect(
+        client.privacyRetentionExecutionAuthorize({
+          ...request,
+          operationId: 'not-a-uuid' as never,
+        }),
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws a typed API error for an unexpected authorization failure', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Request could not be completed',
+              requestId: 'req-retention-authorize-1',
+            },
+          },
+          { status: 500 },
+        ),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyRetentionExecutionAuthorize(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiClientError);
+      expect(error).toMatchObject({
+        code: 'INTERNAL_ERROR',
+        requestId: 'req-retention-authorize-1',
+        status: 500,
+      });
+    });
+
+    it('does not echo raw content from a malformed authorization payload', async () => {
+      const rawContent = 'private-retention-authorize-detail';
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: rawContent }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyRetentionExecutionAuthorize(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiProtocolError);
+      expect(String(error)).not.toContain(rawContent);
+    });
+  });
+
+  describe('privacyProcessorCoordinate', () => {
+    const request = privacySyntheticProcessorCoordinateRequestSchema.parse({
+      requestId: '66666666-6666-4666-8666-666666666666',
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      productionMode: false,
+    });
+
+    it('coordinates a processor step and validates the response', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: 'already_terminal' }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com/platform',
+        fetch,
+      });
+
+      await expect(client.privacyProcessorCoordinate(request)).resolves.toEqual(
+        { status: 'already_terminal' },
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          'https://api.example.com/platform/v1/privacy/synthetic/processor-coordinate',
+        ),
+        {
+          body: JSON.stringify(request),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+    });
+
+    it('rejects a request that fails schema validation before any fetch', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      await expect(
+        client.privacyProcessorCoordinate({
+          ...request,
+          requestId: 'not-a-uuid' as never,
+        }),
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws a typed API error for an unexpected coordination failure', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Request could not be completed',
+              requestId: 'req-processor-coordinate-1',
+            },
+          },
+          { status: 500 },
+        ),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorCoordinate(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiClientError);
+      expect(error).toMatchObject({
+        code: 'INTERNAL_ERROR',
+        requestId: 'req-processor-coordinate-1',
+        status: 500,
+      });
+    });
+
+    it('does not echo raw content from a malformed coordination payload', async () => {
+      const rawContent = 'private-processor-coordinate-detail';
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: rawContent }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorCoordinate(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiProtocolError);
+      expect(String(error)).not.toContain(rawContent);
+    });
+  });
+
+  describe('privacyProcessorStepRecord', () => {
+    const request = privacySyntheticProcessorStepRecordRequestSchema.parse({
+      step: {
+        stepId: 'e1111111-1111-4111-8111-111111111111',
+        requestId: '66666666-6666-4666-8666-666666666666',
+        processorId: '99999999-9999-4999-8999-999999999999',
+        capability: 'export',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        correlationId: '55555555-5555-4555-8555-555555555555',
+      },
+      productionMode: false,
+    });
+
+    it('records a processor step and validates the response', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: 'request_not_found' }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com/platform',
+        fetch,
+      });
+
+      await expect(client.privacyProcessorStepRecord(request)).resolves.toEqual(
+        { status: 'request_not_found' },
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          'https://api.example.com/platform/v1/privacy/synthetic/processor-step-record',
+        ),
+        {
+          body: JSON.stringify(request),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+    });
+
+    it('rejects a request that fails schema validation before any fetch', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      await expect(
+        client.privacyProcessorStepRecord({
+          ...request,
+          step: { ...request.step, stepId: 'not-a-uuid' as never },
+        }),
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws a typed API error for an unexpected step-record failure', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Request could not be completed',
+              requestId: 'req-processor-step-record-1',
+            },
+          },
+          { status: 500 },
+        ),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorStepRecord(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiClientError);
+      expect(error).toMatchObject({
+        code: 'INTERNAL_ERROR',
+        requestId: 'req-processor-step-record-1',
+        status: 500,
+      });
+    });
+
+    it('does not echo raw content from a malformed step-record payload', async () => {
+      const rawContent = 'private-processor-step-record-detail';
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: rawContent }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorStepRecord(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiProtocolError);
+      expect(String(error)).not.toContain(rawContent);
+    });
+  });
+
+  describe('privacyGovernanceLifecycleRecord', () => {
+    const request =
+      privacySyntheticGovernanceLifecycleRecordRequestSchema.parse({
+        requestId: '77777777-7777-4777-8777-777777777777',
+        processorId: '99999999-9999-4999-8999-999999999999',
+        operationId: 'c3333333-3333-4333-8333-333333333333',
+        result: {
+          outcome: 'completed',
+          proofId: 'd4444444-4444-4444-8444-444444444444',
+        },
+      });
+    const proof = {
+      ...request,
+      recordedAt: '2026-08-18T12:00:00.000Z',
+      synthetic: true,
+    };
+
+    it('records a governance-lifecycle proof and validates the response', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: 'recorded', proof }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com/platform',
+        fetch,
+      });
+
+      await expect(
+        client.privacyGovernanceLifecycleRecord(request),
+      ).resolves.toEqual({ status: 'recorded', proof });
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          'https://api.example.com/platform/v1/privacy/synthetic/governance-lifecycle-record',
+        ),
+        {
+          body: JSON.stringify(request),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+    });
+
+    it('rejects a request that fails schema validation before any fetch', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      await expect(
+        client.privacyGovernanceLifecycleRecord({
+          ...request,
+          processorId: 'not-a-uuid' as never,
+        }),
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws a typed API error for an unexpected lifecycle-record failure', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Request could not be completed',
+              requestId: 'req-governance-lifecycle-record-1',
+            },
+          },
+          { status: 500 },
+        ),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyGovernanceLifecycleRecord(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiClientError);
+      expect(error).toMatchObject({
+        code: 'INTERNAL_ERROR',
+        requestId: 'req-governance-lifecycle-record-1',
+        status: 500,
+      });
+    });
+
+    it('does not echo raw content from a malformed lifecycle-record payload', async () => {
+      const rawContent = 'private-governance-lifecycle-record-detail';
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: rawContent }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyGovernanceLifecycleRecord(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiProtocolError);
+      expect(String(error)).not.toContain(rawContent);
+    });
+  });
+
+  describe('privacyProcessorExecute', () => {
+    const request = privacySyntheticProcessorExecuteRequestSchema.parse({
+      descriptor: {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        descriptorDigest: 'c'.repeat(64),
+        inventoryVersionDigest: 'd'.repeat(64),
+        allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+        allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+        capabilities: ['access', 'inventory'],
+        supportsSubjectLookup: true,
+        codeOwner: 'packages.domain.privacy',
+        synthetic: true,
+      },
+      families: ['privacy_audit_event', 'privacy_subject_request'],
+      command: {
+        processorId: '99999999-9999-4999-8999-999999999999',
+        capability: 'inventory',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        correlationId: '55555555-5555-4555-8555-555555555555',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        productionMode: true,
+      },
+    });
+    const deniedResult = {
+      status: 'denied',
+      reasonCode: 'synthetic_processor_in_production',
+      capability: 'inventory',
+      families: [],
+      accessLocatorDigest: null,
+      exportManifestDigest: null,
+      operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      correlationId: '55555555-5555-4555-8555-555555555555',
+    };
+
+    it('executes a synthetic processor command and validates the response', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(deniedResult),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com/platform',
+        fetch,
+      });
+
+      await expect(client.privacyProcessorExecute(request)).resolves.toEqual(
+        deniedResult,
+      );
+      expect(fetch).toHaveBeenCalledWith(
+        new URL(
+          'https://api.example.com/platform/v1/privacy/synthetic/processor-execute',
+        ),
+        {
+          body: JSON.stringify(request),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+    });
+
+    it('rejects a request that fails schema validation before any fetch', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      await expect(
+        client.privacyProcessorExecute({
+          ...request,
+          command: {
+            ...request.command,
+            capability: 'not_a_capability' as never,
+          },
+        }),
+      ).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('throws a typed API error for an unexpected processor-execute failure', async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json(
+          {
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Request could not be completed',
+              requestId: 'req-processor-execute-1',
+            },
+          },
+          { status: 500 },
+        ),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorExecute(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiClientError);
+      expect(error).toMatchObject({
+        code: 'INTERNAL_ERROR',
+        requestId: 'req-processor-execute-1',
+        status: 500,
+      });
+    });
+
+    it('does not echo raw content from a malformed processor-execute payload', async () => {
+      const rawContent = 'private-processor-execute-detail';
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        Response.json({ status: rawContent }),
+      );
+      const client = createApiClient({
+        baseUrl: 'https://api.example.com',
+        fetch,
+      });
+
+      const error = await client
+        .privacyProcessorExecute(request)
+        .catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiProtocolError);
+      expect(String(error)).not.toContain(rawContent);
+    });
   });
 });
