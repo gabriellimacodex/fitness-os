@@ -189,6 +189,18 @@ describe('createMovementCatalog', () => {
     ).toThrow(/durable review record/);
   });
 
+  it('rejects a published manifest with no review authority', () => {
+    const input = reviewedCatalogInput([SQUAT]);
+
+    expect(() =>
+      createMovementCatalog({
+        manifest: input.manifest,
+        published: input.published,
+        reviewRecords: input.reviewRecords,
+      }),
+    ).toThrow(/review authority/);
+  });
+
   it('rejects a published movement absent from the manifest', () => {
     expect(() =>
       createMovementCatalog({ manifest: [], published: [SQUAT] }),
