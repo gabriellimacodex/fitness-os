@@ -5,9 +5,13 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticSubjectRequestTransitionRequestSchema,
+  privacySyntheticSubjectRequestTransitionResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticSubjectRequestTransitionRequest,
+  type PrivacySyntheticSubjectRequestTransitionResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +241,44 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacySubjectRequestTransition(
+      request: PrivacySyntheticSubjectRequestTransitionRequest,
+    ): Promise<PrivacySyntheticSubjectRequestTransitionResponse> {
+      const body =
+        privacySyntheticSubjectRequestTransitionRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          'v1/privacy/synthetic/subject-request-transition',
+          parsedBaseUrl,
+        ),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const transition =
+        privacySyntheticSubjectRequestTransitionResponseSchema.safeParse(
+          payload,
+        );
+
+      if (!transition.success) {
+        throw new ApiProtocolError();
+      }
+
+      return transition.data;
     },
   };
 }
