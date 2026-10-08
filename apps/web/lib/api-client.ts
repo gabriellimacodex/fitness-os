@@ -5,9 +5,13 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticInventoryCoverageRequestSchema,
+  privacySyntheticInventoryCoverageResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticInventoryCoverageRequest,
+  type PrivacySyntheticInventoryCoverageResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +241,39 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyInventoryCoverage(
+      request: PrivacySyntheticInventoryCoverageRequest = {},
+    ): Promise<PrivacySyntheticInventoryCoverageResponse> {
+      const body =
+        privacySyntheticInventoryCoverageRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/inventory-coverage', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const coverage =
+        privacySyntheticInventoryCoverageResponseSchema.safeParse(payload);
+
+      if (!coverage.success) {
+        throw new ApiProtocolError();
+      }
+
+      return coverage.data;
     },
   };
 }

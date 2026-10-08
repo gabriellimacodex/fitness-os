@@ -441,4 +441,125 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('evaluates inventory coverage with a validated default request and no-store', async () => {
+    const coverageResponse = {
+      status: 'matched',
+      mismatches: [],
+      evaluatedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(coverageResponse),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(client.privacyInventoryCoverage()).resolves.toEqual(
+      coverageResponse,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/inventory-coverage',
+      ),
+      {
+        body: JSON.stringify({}),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('reports mismatched inventory coverage', async () => {
+    const coverageResponse = {
+      status: 'mismatched',
+      mismatches: [
+        {
+          diagnosticCode: 'processor_missing',
+          processorId: null,
+          detail: 'No runtime processor registered for this descriptor.',
+        },
+      ],
+      evaluatedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(coverageResponse),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(client.privacyInventoryCoverage({})).resolves.toEqual(
+      coverageResponse,
+    );
+  });
+
+  it('rejects an invalid inventory-coverage request before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyInventoryCoverage({
+        runtime: 'not-an-array',
+      } as never),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error for an unexpected inventory-coverage failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-inventory-coverage-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyInventoryCoverage()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-inventory-coverage-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed inventory-coverage payload', async () => {
+    const rawContent = 'private-coverage-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyInventoryCoverage()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
