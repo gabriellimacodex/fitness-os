@@ -15,7 +15,8 @@ export type OnboardingMutationNamespace =
   | 'refresh_policy'
   | 'claim_attempt'
   | 'issue_student_invitation'
-  | 'revoke_student_invitation';
+  | 'revoke_student_invitation'
+  | 'issue_coach_bootstrap_invitation';
 
 export type StoredOnboardingOperation = {
   bindingKey: string;
@@ -41,6 +42,7 @@ const NAMESPACES = new Set<OnboardingMutationNamespace>([
   'claim_attempt',
   'issue_student_invitation',
   'revoke_student_invitation',
+  'issue_coach_bootstrap_invitation',
 ]);
 
 function isUniqueViolation(error: unknown, constraint: string): boolean {

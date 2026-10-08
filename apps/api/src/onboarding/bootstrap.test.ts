@@ -10,12 +10,89 @@ import {
 import { retryTokenSchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
+import type {
+  OnboardingInvitationRecord,
+  OnboardingOperationRecord,
+} from '@fitness-os/domain';
+
 import {
   createCoachBootstrapLedger,
   issueCoachBootstrapInvitation,
   type IssueCoachBootstrapInvitationOptions,
 } from './bootstrap.js';
+import type { OnboardingPgPersistence } from './pg-persistence.js';
 import { createOnboardingStore } from './store.js';
+
+/**
+ * Minimal fake satisfying `OnboardingPgPersistence` for unit-level
+ * verification of the coach-bootstrap → `persistOperation` write-through.
+ * Only `invitations`/`operations` are exercised by
+ * `issueCoachBootstrapInvitation`; the remaining ports throw if a future
+ * change starts calling them unexpectedly.
+ */
+function createFakeOnboardingPersistence(): OnboardingPgPersistence & {
+  operationRows: Map<string, OnboardingOperationRecord>;
+} {
+  const invitationRows = new Map<string, OnboardingInvitationRecord>();
+  const operationRows = new Map<string, OnboardingOperationRecord>();
+  const notImplemented = (): never => {
+    throw new Error('not implemented in this fake');
+  };
+
+  return {
+    attempts: {
+      applyTransition: notImplemented,
+      get: notImplemented,
+      listByPrincipal: notImplemented,
+      put: notImplemented,
+    },
+    invitations: {
+      applyClaim: notImplemented,
+      applyRevoke: notImplemented,
+      get: async (invitationId) => invitationRows.get(invitationId) ?? null,
+      getByClaimDigest: notImplemented,
+      listByTargetCoach: notImplemented,
+      put: async (record) => {
+        invitationRows.set(record.invitationId, record);
+        return 'accepted';
+      },
+    },
+    mappings: {
+      get: notImplemented,
+      listByPrincipal: notImplemented,
+      put: notImplemented,
+    },
+    nowUtcMs: () => '2026-08-27T00:00:00.000Z',
+    operations: {
+      getByBindingKey: async (bindingKey) => {
+        for (const record of operationRows.values()) {
+          if (record.bindingKey === bindingKey) {
+            return record;
+          }
+        }
+        return null;
+      },
+      getByOperationId: async (operationId) =>
+        operationRows.get(operationId) ?? null,
+      put: async (record) => {
+        const existing = operationRows.get(record.operationId);
+        if (existing !== undefined) {
+          return { operation: existing, status: 'replay' };
+        }
+        operationRows.set(record.operationId, record);
+        return { operation: record, status: 'accepted' };
+      },
+    },
+    operationRows,
+    principalBinding: {
+      getByPrincipalKey: notImplemented,
+      resolveOrEstablish: notImplemented,
+    },
+    transitions: {
+      append: async () => 'accepted',
+    },
+  };
+}
 
 const RETRY_TOKEN = retryTokenSchema.parse('synthetic-bootstrap-retry-01');
 const OTHER_RETRY_TOKEN = retryTokenSchema.parse(
@@ -218,6 +295,41 @@ describe('issueCoachBootstrapInvitation', () => {
       previousState: 'unissued',
       reason: 'issue_coach_bootstrap_invitation',
     });
+  });
+
+  it('writes the committed operation through persistOperation under issue_coach_bootstrap_invitation when persistence is supplied', async () => {
+    const persistence = createFakeOnboardingPersistence();
+    const options = buildOptions({ persistence });
+
+    const result = await issueCoachBootstrapInvitation(options, {
+      operatorId: 'operator-pg',
+      retryToken: RETRY_TOKEN,
+    });
+    if (result.state !== 'operation_committed') {
+      throw new Error('expected operation_committed');
+    }
+
+    const stored = persistence.operationRows.get(result.operationId);
+    expect(stored?.namespace).toBe('issue_coach_bootstrap_invitation');
+    expect(stored?.digest).toBe(result.digest);
+    expect(stored?.principalKey).toBe(`operator:synthetic:operator-pg`);
+  });
+
+  it('does not persist a second operation row when a repeat operator/retry token replays', async () => {
+    const persistence = createFakeOnboardingPersistence();
+    const options = buildOptions({ persistence });
+
+    await issueCoachBootstrapInvitation(options, {
+      operatorId: 'operator-pg-2',
+      retryToken: RETRY_TOKEN,
+    });
+    const second = await issueCoachBootstrapInvitation(options, {
+      operatorId: 'operator-pg-2',
+      retryToken: RETRY_TOKEN,
+    });
+
+    expect(second.state).toBe('operation_replayed');
+    expect(persistence.operationRows.size).toBe(1);
   });
 });
 

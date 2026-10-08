@@ -92,7 +92,8 @@ export type OnboardingMutationNamespace =
   | 'refresh_policy'
   | 'claim_attempt'
   | 'issue_student_invitation'
-  | 'revoke_student_invitation';
+  | 'revoke_student_invitation'
+  | 'issue_coach_bootstrap_invitation';
 
 export type OnboardingOperationRecord = {
   bindingKey: string;
