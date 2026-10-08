@@ -1,6 +1,10 @@
 import type { FastifyServerOptions } from 'fastify';
 
 import { buildApp, type PlatformOptions } from './app.js';
+import {
+  createOnboardingPlatformFromEnv,
+  type OnboardingPlatformHandles,
+} from './onboarding/platform.js';
 
 const DEFAULT_PORT = '3001';
 
@@ -27,6 +31,9 @@ interface BootstrapDependencies {
     options: FastifyServerOptions,
     platform: PlatformOptions,
   ) => BootstrapApp;
+  createOnboardingPlatform?: (
+    env: NodeJS.ProcessEnv,
+  ) => OnboardingPlatformHandles | null;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -110,17 +117,38 @@ export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const createOnboardingPlatform =
+    dependencies.createOnboardingPlatform ?? createOnboardingPlatformFromEnv;
   const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
+  let onboardingPlatform: OnboardingPlatformHandles | null;
+
+  try {
+    onboardingPlatform = createOnboardingPlatform(env);
+  } catch (error) {
+    runtime.exitCode = 1;
+    throw error;
+  }
 
   try {
     app = createApp(
       { logger: LOGGER_OPTIONS },
-      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+      {
+        corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+        ...(onboardingPlatform !== null
+          ? {
+              allowSyntheticOnboarding: true,
+              onboarding: onboardingPlatform.platform.onboarding,
+            }
+          : {}),
+      },
     );
   } catch (error) {
     runtime.exitCode = 1;
+    if (onboardingPlatform !== null) {
+      await onboardingPlatform.connection.close().catch(() => undefined);
+    }
     throw error;
   }
 
@@ -129,6 +157,9 @@ export async function bootstrapApi(
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
+    if (onboardingPlatform !== null) {
+      await onboardingPlatform.connection.close().catch(() => undefined);
+    }
     throw error;
   }
 
@@ -144,6 +175,9 @@ export async function bootstrapApi(
     app.log.info({ signal }, 'API shutdown started');
     try {
       await app.close();
+      if (onboardingPlatform !== null) {
+        await onboardingPlatform.connection.close();
+      }
     } catch (error) {
       runtime.exitCode = 1;
       app.log.error({ err: error, signal }, 'API shutdown failed');
