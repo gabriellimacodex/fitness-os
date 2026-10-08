@@ -158,4 +158,119 @@ describe('verifyCatalogArtifact', () => {
       ),
     ).rejects.toBeInstanceOf(CatalogArtifactVerificationError);
   });
+
+  it('rejects a candidate commit that is not a 40-character hex SHA before any git call', async () => {
+    const git = createGitInspection();
+
+    const error: unknown = await verifyCatalogArtifact(
+      {
+        candidateCommit: 'not-a-sha',
+        manifestPath: 'catalog/catalog-manifest.v1.json',
+        manifestSource: manifest,
+        reviewSource: review,
+      },
+      git,
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CatalogArtifactVerificationError);
+    expect((error as CatalogArtifactVerificationError).code).toBe(
+      'CANDIDATE_MISMATCH',
+    );
+    expect(git.isClean).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reviewSource that is not valid JSON', async () => {
+    const error: unknown = await verifyCatalogArtifact(
+      {
+        candidateCommit,
+        manifestPath: 'catalog/catalog-manifest.v1.json',
+        manifestSource: manifest,
+        reviewSource: '{not valid json',
+      },
+      createGitInspection(),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CatalogArtifactVerificationError);
+    expect((error as CatalogArtifactVerificationError).code).toBe(
+      'INVALID_REVIEW',
+    );
+  });
+
+  it('rejects a packaged manifest that fails schema validation, independent of the review content', async () => {
+    const brokenManifest = '{"not":"a catalog manifest"}';
+
+    const error: unknown = await verifyCatalogArtifact(
+      {
+        candidateCommit,
+        manifestPath: 'catalog/catalog-manifest.v1.json',
+        manifestSource: brokenManifest,
+        reviewSource: review,
+      },
+      createGitInspection({
+        readTextAtCommit: vi.fn(async () => brokenManifest),
+      }),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CatalogArtifactVerificationError);
+    expect((error as CatalogArtifactVerificationError).code).toBe(
+      'INVALID_MANIFEST',
+    );
+  });
+
+  it('rejects a review recorded against a different manifest path before resolving ancestry', async () => {
+    const parsedReview = JSON.parse(review) as Record<string, unknown>;
+    parsedReview.manifestPath = 'catalog/some-other-manifest.v1.json';
+    const git = createGitInspection();
+
+    const error: unknown = await verifyCatalogArtifact(
+      {
+        candidateCommit,
+        manifestPath: 'catalog/catalog-manifest.v1.json',
+        manifestSource: manifest,
+        reviewSource: JSON.stringify(parsedReview),
+      },
+      git,
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CatalogArtifactVerificationError);
+    expect((error as CatalogArtifactVerificationError).code).toBe(
+      'REVIEW_MISMATCH',
+    );
+    expect(git.isAncestor).not.toHaveBeenCalled();
+  });
+
+  it('rejects a packaged manifest whose content digest no longer matches the reviewed digest', async () => {
+    // Isolates the digest-mismatch branch of the final `REVIEW_MISMATCH`
+    // check from the unrelated unknown-review-field rejection the adjacent
+    // "substituted packaged content and unknown review fields" test above
+    // actually exercises (that test's review mutation trips `INVALID_REVIEW`
+    // before the digest comparison is ever reached). Here the review is
+    // valid and unchanged; only the packaged (and git-resolved) manifest
+    // content differs from what the review attests to, so this reaches, and
+    // is rejected by, the digest comparison itself — not a stand-in schema or
+    // review-shape check. This also regression-guards the surviving
+    // `digest !== review.canonicalDigest || !sameCounts(...)` condition after
+    // the provably-unreachable `schemaVersion` comparison was removed from it.
+    const mutatedManifest = manifest.replace(
+      'Bodyweight Squat',
+      'Changed Squat',
+    );
+
+    const error: unknown = await verifyCatalogArtifact(
+      {
+        candidateCommit,
+        manifestPath: 'catalog/catalog-manifest.v1.json',
+        manifestSource: mutatedManifest,
+        reviewSource: review,
+      },
+      createGitInspection({
+        readTextAtCommit: vi.fn(async () => mutatedManifest),
+      }),
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CatalogArtifactVerificationError);
+    expect((error as CatalogArtifactVerificationError).code).toBe(
+      'REVIEW_MISMATCH',
+    );
+  });
 });

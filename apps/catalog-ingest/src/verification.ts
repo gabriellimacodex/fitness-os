@@ -214,13 +214,19 @@ export async function verifyCatalogArtifact(
   }
 
   const manifest = parseManifest(input.manifestSource);
+  // `manifest.schemaVersion` can only ever be the literal
+  // `catalogManifestSchema` accepts (`'catalog-manifest.v1'`) — `parseManifest`
+  // throws `INVALID_MANIFEST` for any other value before this line is
+  // reached. `parseReview` applies the identical equality check to
+  // `review.schemaVersion` before returning, so by this point both sides are
+  // always the same literal. A `manifest.schemaVersion !== review.schemaVersion`
+  // comparison here can therefore never be true for any input that reaches
+  // this line; it was a provably unreachable guard and has been removed. If a
+  // future schema version ever becomes a non-literal or multi-valued field,
+  // this invariant must be re-checked before relying on it again.
   const digest = hashManifestIngestionOperation(manifest);
   const counts = countManifest(manifest);
-  if (
-    manifest.schemaVersion !== review.schemaVersion ||
-    digest !== review.canonicalDigest ||
-    !sameCounts(counts, review.counts)
-  ) {
+  if (digest !== review.canonicalDigest || !sameCounts(counts, review.counts)) {
     throw new CatalogArtifactVerificationError('REVIEW_MISMATCH');
   }
 
