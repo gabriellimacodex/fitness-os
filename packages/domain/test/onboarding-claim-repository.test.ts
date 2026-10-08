@@ -82,4 +82,94 @@ describe('SyntheticOnboardingClaimRepository', () => {
       }),
     ).resolves.toEqual({ reason: 'mapping_conflict', status: 'denied' });
   });
+
+  it('denies invalid_or_unavailable when the invitation is not issued', async () => {
+    const repo = new SyntheticOnboardingClaimRepository();
+    const invitation = {
+      claimDigest: `hmac-sha256.v1:${'a'.repeat(64)}`,
+      invitationId: onboardingInvitationIdSchema.parse(
+        '11111111-1111-4111-8111-111111111111',
+      ),
+      proposedRole: 'student' as const,
+      purpose: 'student_onboarding' as const,
+      state: 'claimed' as const,
+      targetCoachPrincipalKey: 'coach-1',
+      updatedAt: '2026-08-19T12:00:00.000Z',
+    };
+    const attempt = {
+      createdAt: '2026-08-19T12:00:00.000Z',
+      detail: attemptDetailSchema.parse({
+        attemptId: onboardingAttemptIdSchema.parse(
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ),
+        invitationId: invitation.invitationId,
+        lifecycle: 'ready_to_claim',
+        ordinal: 1,
+        policy: null,
+        predecessorAttemptId: null,
+        proposedRole: 'student',
+        purpose: 'student_onboarding',
+        terminalReason: null,
+      }),
+      principalKey: 'principal-1',
+      updatedAt: '2026-08-19T12:00:00.000Z',
+    };
+    const mapping = {
+      createdAt: '2026-08-19T12:00:00.000Z',
+      mappingId: principalRoleMappingIdSchema.parse(
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      ),
+      principalKey: 'principal-1',
+      role: 'student' as const,
+    };
+
+    await expect(
+      repo.commit({ attempt, invitation, mapping, productionMode: false }),
+    ).resolves.toEqual({ reason: 'invalid_or_unavailable', status: 'denied' });
+  });
+
+  it('denies invalid_or_unavailable when the attempt is not ready_to_claim', async () => {
+    const repo = new SyntheticOnboardingClaimRepository();
+    const invitation = {
+      claimDigest: `hmac-sha256.v1:${'a'.repeat(64)}`,
+      invitationId: onboardingInvitationIdSchema.parse(
+        '11111111-1111-4111-8111-111111111111',
+      ),
+      proposedRole: 'student' as const,
+      purpose: 'student_onboarding' as const,
+      state: 'issued' as const,
+      targetCoachPrincipalKey: 'coach-1',
+      updatedAt: '2026-08-19T12:00:00.000Z',
+    };
+    const attempt = {
+      createdAt: '2026-08-19T12:00:00.000Z',
+      detail: attemptDetailSchema.parse({
+        attemptId: onboardingAttemptIdSchema.parse(
+          'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        ),
+        invitationId: invitation.invitationId,
+        lifecycle: 'policy_pending',
+        ordinal: 1,
+        policy: null,
+        predecessorAttemptId: null,
+        proposedRole: 'student',
+        purpose: 'student_onboarding',
+        terminalReason: null,
+      }),
+      principalKey: 'principal-1',
+      updatedAt: '2026-08-19T12:00:00.000Z',
+    };
+    const mapping = {
+      createdAt: '2026-08-19T12:00:00.000Z',
+      mappingId: principalRoleMappingIdSchema.parse(
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      ),
+      principalKey: 'principal-1',
+      role: 'student' as const,
+    };
+
+    await expect(
+      repo.commit({ attempt, invitation, mapping, productionMode: false }),
+    ).resolves.toEqual({ reason: 'invalid_or_unavailable', status: 'denied' });
+  });
 });
