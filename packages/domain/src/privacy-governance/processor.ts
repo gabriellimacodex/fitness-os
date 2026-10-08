@@ -12,12 +12,6 @@ import {
 
 import type { PrivacySubjectDataProcessor } from './ports.js';
 
-const SUPPORTED_SIMULATION: ReadonlySet<PrivacyProcessorCapability> = new Set([
-  'inventory',
-  'access',
-  'export',
-]);
-
 /** Destructive / lifecycle capabilities never execute in this synthetic seam. */
 const LEGAL_PRIVACY_BLOCKED: ReadonlySet<PrivacyProcessorCapability> = new Set([
   'delete',
@@ -41,9 +35,7 @@ function denied(
   reasonCode:
     | 'capability_not_declared'
     | 'synthetic_processor_in_production'
-    | 'unsupported_capability'
     | 'requires_legal_privacy_decision',
-  status: 'denied' | 'unsupported' = 'denied',
 ): PrivacySyntheticProcessorResult {
   return privacySyntheticProcessorResultSchema.parse({
     accessLocatorDigest: null,
@@ -53,7 +45,7 @@ function denied(
     families: [],
     operationId: command.operationId,
     reasonCode,
-    status,
+    status: 'denied',
   });
 }
 
@@ -93,10 +85,10 @@ export class SyntheticPrivacySubjectDataProcessor implements PrivacySubjectDataP
       return denied(valid, 'requires_legal_privacy_decision');
     }
 
-    if (!SUPPORTED_SIMULATION.has(valid.capability)) {
-      return denied(valid, 'unsupported_capability', 'unsupported');
-    }
-
+    // privacyProcessorCapabilitySchema (packages/schemas/src/privacy-governance.ts)
+    // is exactly six values, and LEGAL_PRIVACY_BLOCKED above is the other
+    // three, so a capability reaching here is always `inventory`, `access`,
+    // or `export` — there is no reachable unsupported capability to deny.
     const families = this.families.map((family) =>
       familyCoverage(
         family,
