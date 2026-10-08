@@ -101,6 +101,17 @@ export interface AttemptTimeoutBounds {
   inactivityTtlMs: number;
 }
 
+/**
+ * Conservative default for `evaluateAttemptTimeout`. Exact production
+ * lifetimes are reviewed security configuration, not legal text and not
+ * caller input per PRD 07; this default only bounds the mechanism's own
+ * behavior when no server configuration overrides it.
+ */
+export const DEFAULT_ATTEMPT_TIMEOUT_BOUNDS: AttemptTimeoutBounds = {
+  absoluteTtlMs: 24 * 60 * 60 * 1000,
+  inactivityTtlMs: 30 * 60 * 1000,
+};
+
 export type AttemptTimeoutStatus = 'active' | 'expired' | 'inactive';
 
 /**

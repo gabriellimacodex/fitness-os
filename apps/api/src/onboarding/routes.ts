@@ -6,7 +6,9 @@ import {
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
   createSelfTestOnboardingReadinessProbe,
+  DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
   DEFAULT_CLAIM_THROTTLE_WINDOW,
+  evaluateAttemptTimeout,
   evaluateClaimEligibility,
   HmacInvitationSecretVerifier,
   inspectInvitationState,
@@ -22,6 +24,7 @@ import {
   SyntheticPrincipalReferenceDeriver,
   SystemTrustedClock,
   transitionAttempt,
+  type AttemptTimeoutBounds,
   type ClaimFailureTracker,
   type ClaimThrottleWindow,
   type IdentitySessionPort,
@@ -215,6 +218,7 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    attemptTimeoutBounds?: AttemptTimeoutBounds;
     claimFailureTracker?: ClaimFailureTracker;
     claimRepository?: OnboardingClaimRepository;
     claimThrottleWindow?: ClaimThrottleWindow;
@@ -269,6 +273,8 @@ export function registerOnboardingRoutes(
     options.claimFailureTracker ?? new SyntheticClaimFailureTracker();
   const claimThrottleWindow =
     options.claimThrottleWindow ?? DEFAULT_CLAIM_THROTTLE_WINDOW;
+  const attemptTimeoutBounds =
+    options.attemptTimeoutBounds ?? DEFAULT_ATTEMPT_TIMEOUT_BOUNDS;
 
   /**
    * PRD 07's claim-secret brute-force control: throttle before the invitation
@@ -963,6 +969,63 @@ export function registerOnboardingRoutes(
         return await commit({
           attempt: record.detail,
           outcome: 'already_terminal',
+        });
+      }
+
+      // Server-configured absolute/inactivity timeout (PRD 07 "Attempt
+      // absolute expiry and inactivity abandonment are server-configured,
+      // trusted-time transitions"). No separate last-activity timestamp is
+      // tracked yet, so `createdAtMs` stands in for both inputs; this makes
+      // the inactivity bound behave like a second, shorter absolute bound
+      // until last-activity tracking is added.
+      const createdAtMs = Date.parse(record.createdAt);
+      const timeoutStatus = evaluateAttemptTimeout({
+        bounds: attemptTimeoutBounds,
+        createdAtMs,
+        lastActivityAtMs: createdAtMs,
+        nowUtcMs: Date.parse(clock.nowUtcMs()),
+      });
+
+      if (timeoutStatus !== 'active') {
+        const previousLifecycle = record.detail.lifecycle;
+        const timedOut = transitionAttempt(
+          record.detail,
+          'terminal',
+          timeoutStatus === 'expired' ? 'expired' : 'abandoned',
+        );
+        if (timedOut.status !== 'advanced') {
+          return await commit({ outcome: 'invalid_or_unavailable' });
+        }
+
+        await rememberAttempt({ ...record, detail: timedOut.attempt });
+
+        const timeoutOperationId = idFactory.operationId();
+        await appendTransition({
+          aggregate: 'attempt',
+          aggregateId: record.detail.attemptId,
+          nextState: timedOut.attempt.lifecycle,
+          operationId: timeoutOperationId,
+          previousState: previousLifecycle,
+          reason: 'attempt_timeout',
+        });
+        const timeoutResult = {
+          attempt: timedOut.attempt,
+          command: 'attempt' as const,
+          outcome: 'command_succeeded' as const,
+        };
+        await rememberOperation(bindingKey, context.principalKey, {
+          digest,
+          namespace: 'resume_attempt',
+          operationId: timeoutOperationId,
+          result: timeoutResult,
+          retryDigest,
+        });
+        return operationEnvelope({
+          digest,
+          namespace: 'resume_attempt',
+          operationId: timeoutOperationId,
+          result: timeoutResult,
+          state: 'operation_committed',
         });
       }
 

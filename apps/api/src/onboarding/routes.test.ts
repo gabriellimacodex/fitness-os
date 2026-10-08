@@ -1824,6 +1824,158 @@ describe('resume and abandon', () => {
   });
 });
 
+describe('resume timeout', () => {
+  it('terminalizes an attempt as expired once the absolute TTL elapses', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const createdAtUtc = '2026-08-19T18:00:00.000Z';
+
+    const creatingApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          clock: new FixedTrustedClock(createdAtUtc),
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const created = await creatingApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+    await creatingApp.close();
+
+    // > 24h after createdAtUtc, past the default absolute TTL.
+    const laterUtc = '2026-08-20T19:00:00.000Z';
+    const resumingApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          clock: new FixedTrustedClock(laterUtc),
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const resumed = await resumingApp.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-timeout-expired'),
+      },
+    });
+    const resumedBody = onboardingOperationResponseSchema.parse(resumed.json());
+    expect(resumedBody.result).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: { attemptId, lifecycle: 'terminal', terminalReason: 'expired' },
+    });
+
+    const secondResume = await resumingApp.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: {
+        retryToken: retryTokenSchema.parse(
+          'synthetic-retry-timeout-expired-again',
+        ),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(secondResume.json()).result,
+    ).toMatchObject({
+      outcome: 'already_terminal',
+      attempt: { attemptId, lifecycle: 'terminal', terminalReason: 'expired' },
+    });
+
+    await resumingApp.close();
+  });
+
+  it('terminalizes an attempt as abandoned once a configured inactivity bound elapses', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const createdAtUtc = '2026-08-19T18:00:00.000Z';
+    const bounds = {
+      absoluteTtlMs: 60 * 60 * 1000,
+      inactivityTtlMs: 5 * 60 * 1000,
+    };
+
+    const creatingApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          attemptTimeoutBounds: bounds,
+          clock: new FixedTrustedClock(createdAtUtc),
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const created = await creatingApp.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const attemptId = extractAttemptId(created.json());
+    await creatingApp.close();
+
+    // 10 minutes later: past the 5-minute inactivity bound, within the
+    // 60-minute absolute bound, so this must be 'abandoned' not 'expired'.
+    const laterUtc = '2026-08-19T18:10:00.000Z';
+    const resumingApp = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          attemptTimeoutBounds: bounds,
+          clock: new FixedTrustedClock(laterUtc),
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+    const resumed = await resumingApp.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/resume`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-timeout-inactive'),
+      },
+    });
+    expect(
+      onboardingOperationResponseSchema.parse(resumed.json()).result,
+    ).toMatchObject({
+      outcome: 'command_succeeded',
+      attempt: {
+        attemptId,
+        lifecycle: 'terminal',
+        terminalReason: 'abandoned',
+      },
+    });
+
+    await resumingApp.close();
+  });
+});
+
 describe('policy-refresh and claim', () => {
   it('refreshes synthetic policy then completes a claim', async () => {
     const store = createOnboardingStore();
