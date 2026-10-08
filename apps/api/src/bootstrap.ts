@@ -1,6 +1,10 @@
 import type { FastifyServerOptions } from 'fastify';
 
 import { buildApp, type PlatformOptions } from './app.js';
+import {
+  createPrivacyPlatformFromEnv,
+  type PrivacyPlatformHandles,
+} from './privacy/platform.js';
 
 const DEFAULT_PORT = '3001';
 
@@ -27,6 +31,9 @@ interface BootstrapDependencies {
     options: FastifyServerOptions,
     platform: PlatformOptions,
   ) => BootstrapApp;
+  createPrivacyPlatform?: (
+    env: NodeJS.ProcessEnv,
+  ) => PrivacyPlatformHandles | null;
   env?: NodeJS.ProcessEnv;
   runtime?: RuntimeProcess;
 }
@@ -106,21 +113,53 @@ export function readServerConfig(env: NodeJS.ProcessEnv): ServerConfig {
   };
 }
 
+// A composed privacy platform holds a live `postgres()` client, which keeps
+// the event loop alive even before it ever connects. If startup fails after
+// composition, that connection must be closed here or the process can hang
+// instead of exiting with the fatal `runtime.exitCode` this function sets.
+async function closePrivacyPlatformOnStartupFailure(
+  privacyPlatform: PrivacyPlatformHandles | null,
+): Promise<void> {
+  if (privacyPlatform === null) {
+    return;
+  }
+
+  try {
+    await privacyPlatform.connection.close();
+  } catch {
+    // Best-effort cleanup while already failing startup; the original
+    // startup error is what gets reported and rethrown by the caller.
+  }
+}
+
 export async function bootstrapApi(
   dependencies: BootstrapDependencies = {},
 ): Promise<BootstrapApp> {
   const createApp = dependencies.createApp ?? buildApp;
+  const createPrivacyPlatform =
+    dependencies.createPrivacyPlatform ?? createPrivacyPlatformFromEnv;
   const env = dependencies.env ?? process.env;
   const runtime = dependencies.runtime ?? process;
   let app: BootstrapApp;
+  let privacyPlatform: PrivacyPlatformHandles | null = null;
 
   try {
+    privacyPlatform = createPrivacyPlatform(env);
     app = createApp(
       { logger: LOGGER_OPTIONS },
-      { corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS) },
+      {
+        corsAllowedOrigins: parseCorsAllowedOrigins(env.CORS_ALLOWED_ORIGINS),
+        ...(privacyPlatform !== null
+          ? {
+              allowSyntheticPrivacy: true,
+              privacy: privacyPlatform.platform.privacy,
+            }
+          : {}),
+      },
     );
   } catch (error) {
     runtime.exitCode = 1;
+    await closePrivacyPlatformOnStartupFailure(privacyPlatform);
     throw error;
   }
 
@@ -129,6 +168,7 @@ export async function bootstrapApi(
   } catch (error) {
     runtime.exitCode = 1;
     app.log.error({ err: error }, 'API startup failed');
+    await closePrivacyPlatformOnStartupFailure(privacyPlatform);
     throw error;
   }
 
@@ -144,6 +184,9 @@ export async function bootstrapApi(
     app.log.info({ signal }, 'API shutdown started');
     try {
       await app.close();
+      if (privacyPlatform !== null) {
+        await privacyPlatform.connection.close();
+      }
     } catch (error) {
       runtime.exitCode = 1;
       app.log.error({ err: error, signal }, 'API shutdown failed');
