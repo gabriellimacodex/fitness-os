@@ -13,6 +13,7 @@ import {
 import type { PostgresConnection } from '../src/connection.js';
 import {
   checkPrivacyAuditSinkFunctionalReadiness,
+  checkPrivacyGovernanceLifecycleFunctionalReadiness,
   createPostgresPrivacyReadinessProbe,
 } from '../src/privacy/readiness.js';
 
@@ -391,6 +392,268 @@ describe('checkPrivacyAuditSinkFunctionalReadiness (mocked)', () => {
     } as unknown as PostgresConnection;
 
     const result = await checkPrivacyAuditSinkFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
+  });
+
+  it('flips governance_lifecycle ready once its schema is ready and the functional append+read-back round trip succeeds', async () => {
+    let executeCount = 0;
+    let insertedProofRow:
+      | {
+          requestId: string;
+          processorId: string;
+          operationId: string;
+          outcome: string;
+          proofId: string | null;
+          recordedAt: string;
+          synthetic: boolean;
+        }
+      | undefined;
+    // Minimal stand-in for the drizzle transaction chain
+    // `checkPrivacyGovernanceLifecycleFunctionalReadiness` exercises through
+    // the real policy/subject-request repositories and governance-lifecycle
+    // ledger: any insert succeeds, and a read-back returns the exact row the
+    // lifecycle-proof insert wrote (identified by its `operationId` field,
+    // the only insert of the three that carries one).
+    const tx = {
+      insert: () => ({
+        values: async (row: Record<string, unknown>) => {
+          if (typeof row.operationId === 'string') {
+            insertedProofRow = row as typeof insertedProofRow;
+          }
+        },
+      }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => (insertedProofRow ? [insertedProofRow] : []),
+          }),
+        }),
+      }),
+    };
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : [
+                { tablename: 'privacy_policy_package_version' },
+                { tablename: 'privacy_purpose_version' },
+                { tablename: 'privacy_processor_registration' },
+                { tablename: 'privacy_authorization_evidence' },
+                { tablename: 'privacy_withdrawal' },
+                { tablename: 'privacy_audit_event' },
+                { tablename: 'privacy_subject_request' },
+                { tablename: 'privacy_subject_request_transition' },
+                { tablename: 'privacy_governance_lifecycle_proof' },
+              ];
+        },
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+      governanceLifecycleRequiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'governance_lifecycle',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).not.toContain(
+      'governance_table_lifecycle_missing',
+    );
+  });
+
+  it('keeps governance_lifecycle not_ready with governance_table_lifecycle_missing when its schema is ready but the functional round trip fails', async () => {
+    let executeCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : [
+                { tablename: 'privacy_policy_package_version' },
+                { tablename: 'privacy_purpose_version' },
+                { tablename: 'privacy_processor_registration' },
+                { tablename: 'privacy_authorization_evidence' },
+                { tablename: 'privacy_withdrawal' },
+                { tablename: 'privacy_audit_event' },
+                { tablename: 'privacy_subject_request' },
+                { tablename: 'privacy_subject_request_transition' },
+                { tablename: 'privacy_governance_lifecycle_proof' },
+              ];
+        },
+        // No `transaction` implementation: the functional round trip cannot
+        // run, so governance_lifecycle must fail closed rather than silently
+        // reporting ready on the static schema evidence alone.
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+      governanceLifecycleRequiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'governance_lifecycle',
+      diagnosticCode: 'governance_table_lifecycle_missing',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain(
+      'governance_table_lifecycle_missing',
+    );
+  });
+});
+
+describe('checkPrivacyGovernanceLifecycleFunctionalReadiness (mocked)', () => {
+  it('reports round_trip_failed when the policy-package prerequisite insert reports a conflict', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                const error = new Error('duplicate key') as Error & {
+                  code: string;
+                  constraint_name: string;
+                };
+                error.code = '23505';
+                error.constraint_name = 'privacy_policy_package_version_pkey';
+                throw error;
+              },
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'policy_conflict',
+    });
+  });
+
+  it('reports round_trip_failed when the subject-request prerequisite insert reports a conflict', async () => {
+    let insertCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                insertCount += 1;
+                if (insertCount === 1) {
+                  // The policy-package prerequisite insert succeeds.
+                  return undefined;
+                }
+                const error = new Error('duplicate key') as Error & {
+                  code: string;
+                  constraint_name: string;
+                };
+                error.code = '23505';
+                error.constraint_name = 'privacy_subject_request_pkey';
+                throw error;
+              },
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'request_conflict',
+    });
+  });
+
+  it('reports round_trip_failed when the lifecycle-proof append itself reports a conflict', async () => {
+    let insertCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                insertCount += 1;
+                if (insertCount <= 2) {
+                  // The two prerequisite inserts succeed.
+                  return undefined;
+                }
+                const error = new Error('duplicate key') as Error & {
+                  code: string;
+                  constraint_name: string;
+                };
+                error.code = '23505';
+                error.constraint_name =
+                  'privacy_governance_lifecycle_proof_pkey';
+                throw error;
+              },
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'append_conflict',
+    });
+  });
+
+  it('reports round_trip_failed when the read-back cannot find the appended probe proof', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            select: () => ({
+              from: () => ({ where: () => ({ limit: async () => [] }) }),
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'round_trip_read_back_missing',
+    });
+  });
+
+  it('reports database_error when the transaction itself is unavailable', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {},
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection);
 
     expect(result.ready).toBe(false);
     expect(result).toMatchObject({ reason: 'database_error' });

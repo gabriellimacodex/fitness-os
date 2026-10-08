@@ -13,6 +13,9 @@ import type {
 import {
   canonicalizePrivacyReadinessDiagnosticCodes,
   privacyAuditEventReferenceSchema,
+  privacyGovernanceLifecycleProofReferenceSchema,
+  privacyPolicyPackageReferenceSchema,
+  privacySubjectRequestReferenceSchema,
 } from '@fitness-os/schemas';
 import type {
   PrivacyExpectedProcessorInventoryPort,
@@ -27,7 +30,10 @@ import {
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
+import { createPostgresPrivacyGovernanceLifecycleLedger } from './governance-lifecycle.js';
 import { createPostgresPrivacyAuditSink } from './ledger.js';
+import { createPostgresPrivacyPolicyPackageRepository } from './registries.js';
+import { createPostgresPrivacySubjectRequestRepository } from './subject-request.js';
 import { privacyAuditEvent } from './tables.js';
 
 const drizzleRoot = join(
@@ -202,6 +208,145 @@ export async function checkPrivacyGovernanceLifecycleDatabaseReadiness(
       ready: false,
       reason: 'database_error',
       detail: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+}
+
+/**
+ * Thrown deliberately at the end of the functional governance-lifecycle
+ * round-trip transaction so none of its writes ever commit. Caught
+ * explicitly in `checkPrivacyGovernanceLifecycleFunctionalReadiness` and
+ * treated as success; any other thrown value is a real failure of the
+ * insert/read-back round trip.
+ */
+class PrivacyGovernanceLifecycleProbeRollback extends Error {}
+
+export type PrivacyGovernanceLifecycleFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'round_trip_failed' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Exercises the real `createPostgresPrivacyGovernanceLifecycleLedger` append
+ * path end to end. `privacy_governance_lifecycle_proof.request_id` carries a
+ * `RESTRICT` foreign key to `privacy_subject_request`, which itself requires
+ * a `privacy_policy_package_version` row, so a genuine round trip first
+ * appends one synthetic policy-package version and one synthetic
+ * `received` subject request the proof can legally reference, then appends
+ * one synthetic, closed-vocabulary lifecycle proof through the actual sink
+ * implementation, confirms it is visible via `getByOperationId`, and always
+ * rolls back — every write, including the two prerequisite rows, happens
+ * inside one transaction that never commits, so no probe row is ever left
+ * behind in any of the three append-only ledgers. This catches a broken
+ * insert/select path (column mismatch, constraint drift, permission
+ * failure) that the static migration-hash and `pg_tables` presence check in
+ * `checkPrivacyGovernanceLifecycleDatabaseReadiness` cannot detect, since
+ * that check only proves the expected migration ran and the table exists,
+ * not that the ledger can actually write to and read from it.
+ */
+export async function checkPrivacyGovernanceLifecycleFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<PrivacyGovernanceLifecycleFunctionalReadinessResult> {
+  const recordedAt = new Date().toISOString();
+  const probePolicyVersionId = randomUUID();
+  const probeRequestId = randomUUID();
+  const probeOperationId = randomUUID();
+  const probeProofId = randomUUID();
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      const txConnection: PostgresConnection = {
+        db: tx,
+        close: connection.close,
+      };
+
+      const policyResult = await createPostgresPrivacyPolicyPackageRepository(
+        txConnection,
+      ).put(
+        privacyPolicyPackageReferenceSchema.parse({
+          packageId: randomUUID(),
+          versionId: probePolicyVersionId,
+          canonicalizationVersion: 'privacy-governance.canonical.v1',
+          contentDigest: '0'.repeat(64),
+          synthetic: true,
+        }),
+      );
+      if (policyResult !== 'accepted') {
+        throw new Error(`policy_${policyResult}`);
+      }
+
+      const requestResult = await createPostgresPrivacySubjectRequestRepository(
+        txConnection,
+      ).createReceived(
+        privacySubjectRequestReferenceSchema.parse({
+          requestId: probeRequestId,
+          requestType: 'access',
+          state: 'received',
+          subjectScopeId: randomUUID(),
+          verification: null,
+          policyVersionId: probePolicyVersionId,
+          inventoryVersionDigest: '0'.repeat(64),
+          correlationId: randomUUID(),
+          updatedAt: recordedAt,
+        }),
+        recordedAt,
+      );
+      if (requestResult !== 'accepted') {
+        throw new Error(`request_${requestResult}`);
+      }
+
+      const ledger =
+        createPostgresPrivacyGovernanceLifecycleLedger(txConnection);
+      const appendResult = await ledger.append(
+        privacyGovernanceLifecycleProofReferenceSchema.parse({
+          requestId: probeRequestId,
+          processorId: randomUUID(),
+          operationId: probeOperationId,
+          result: { outcome: 'completed', proofId: probeProofId },
+          recordedAt,
+          synthetic: true,
+        }),
+      );
+      if (appendResult !== 'accepted') {
+        throw new Error(`append_${appendResult}`);
+      }
+
+      const readBack = await ledger.getByOperationId(probeOperationId);
+      if (readBack?.operationId !== probeOperationId) {
+        throw new Error('round_trip_read_back_missing');
+      }
+
+      // Always abort: this is a readiness probe, not a real request/proof,
+      // and must never leave a row in any of the three append-only ledgers
+      // it wrote to.
+      throw new PrivacyGovernanceLifecycleProbeRollback();
+    });
+
+    // The transaction above always throws before reaching a commit; getting
+    // here without an error means the sentinel rollback was swallowed
+    // somewhere, which is itself not a verified round trip.
+    return {
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof PrivacyGovernanceLifecycleProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    const isRoundTripFailure =
+      message.startsWith('policy_') ||
+      message.startsWith('request_') ||
+      message.startsWith('append_') ||
+      message === 'round_trip_read_back_missing';
+    return {
+      ready: false,
+      reason: isRoundTripFailure ? 'round_trip_failed' : 'database_error',
+      detail: message,
     };
   }
 }
@@ -452,7 +597,17 @@ async function evaluateInventoryCoverageComponents(
  * read from the table it found. The functional check is skipped (and
  * `audit_sink` stays `not_ready`) when the schema result itself is not
  * `ready`, since an insert would just fail for a reason `migrations`/
- * `repositories` already report. When both
+ * `repositories` already report. `governance_lifecycle` is `ready` only when
+ * its static schema result is `ready` **and**
+ * `checkPrivacyGovernanceLifecycleFunctionalReadiness` confirms a real,
+ * rolled-back append+read-back through
+ * `createPostgresPrivacyGovernanceLifecycleLedger` succeeds — the static
+ * schema check alone cannot prove the ledger can actually write to and read
+ * from the table it found. The functional check (and the two synthetic
+ * prerequisite rows its own foreign keys require) is skipped, and
+ * `governance_lifecycle` stays `not_ready`, when the static schema result
+ * itself is not `ready`, since an insert would just fail for a reason this
+ * component already reports. When both
  * `expectedInventory` and `runtimeProcessors` are supplied, this also
  * replaces `expected_inventory` and `runtime_processors` with a real
  * `compareExpectedInventoryToRuntime` evaluation; when either is omitted,
@@ -493,6 +648,15 @@ export function createPostgresPrivacyReadinessProbe(
         await checkPrivacyGovernanceLifecycleDatabaseReadiness(connection, {
           requiredHashes: options.governanceLifecycleRequiredHashes,
         });
+      // Only attempt the functional round trip once the static schema check
+      // already reports the required migration/table present — otherwise
+      // the insert would fail on a missing table for a reason this probe
+      // already reports through `governance_lifecycle` itself, and running
+      // it anyway would just duplicate that diagnosis with a heavier DB call.
+      const governanceLifecycleFunctionalResult =
+        governanceLifecycleResult.ready
+          ? await checkPrivacyGovernanceLifecycleFunctionalReadiness(connection)
+          : null;
       const recoveryResult = await checkPrivacyRecoveryReadiness(connection);
       // Only attempt the functional round trip once the static schema check
       // already reports the required migrations/tables present — otherwise
@@ -542,7 +706,8 @@ export function createPostgresPrivacyReadinessProbe(
               diagnosticCode: 'audit_unavailable',
             };
       const governanceLifecycleComponent: PrivacyReadinessComponent =
-        governanceLifecycleResult.ready
+        governanceLifecycleResult.ready &&
+        governanceLifecycleFunctionalResult?.ready === true
           ? {
               componentId: 'governance_lifecycle',
               state: 'ready',
