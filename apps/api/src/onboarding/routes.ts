@@ -6,7 +6,9 @@ import {
   CryptoOnboardingIdFactory,
   CryptoOnboardingSecretFactory,
   createSelfTestOnboardingReadinessProbe,
+  DEFAULT_ATTEMPT_TIMEOUT_BOUNDS,
   DEFAULT_CLAIM_THROTTLE_WINDOW,
+  evaluateAttemptTimeout,
   evaluateClaimEligibility,
   HmacInvitationSecretVerifier,
   inspectInvitationState,
@@ -22,6 +24,7 @@ import {
   SyntheticPrincipalReferenceDeriver,
   SystemTrustedClock,
   transitionAttempt,
+  type AttemptTimeoutBounds,
   type ClaimFailureTracker,
   type ClaimThrottleWindow,
   type IdentitySessionPort,
@@ -215,6 +218,7 @@ function attemptsForPrincipalRole(
 export function registerOnboardingRoutes(
   app: FastifyInstance,
   options: {
+    attemptTimeoutBounds?: AttemptTimeoutBounds;
     claimFailureTracker?: ClaimFailureTracker;
     claimRepository?: OnboardingClaimRepository;
     claimThrottleWindow?: ClaimThrottleWindow;
@@ -269,6 +273,8 @@ export function registerOnboardingRoutes(
     options.claimFailureTracker ?? new SyntheticClaimFailureTracker();
   const claimThrottleWindow =
     options.claimThrottleWindow ?? DEFAULT_CLAIM_THROTTLE_WINDOW;
+  const attemptTimeoutBounds =
+    options.attemptTimeoutBounds ?? DEFAULT_ATTEMPT_TIMEOUT_BOUNDS;
 
   /**
    * PRD 07's claim-secret brute-force control: throttle before the invitation
@@ -350,6 +356,62 @@ export function registerOnboardingRoutes(
       reason: input.reason,
       recordedAt: clock.nowUtcMs(),
     });
+  };
+
+  /**
+   * PRD 07's attempt-cardinality business rule: attempt creation first
+   * terminalizes trusted-time-expired attempts in the exact
+   * principal/proposed-role scope before checking uniqueness and the cap, so
+   * an abandoned-but-never-closed attempt cannot permanently occupy a slot.
+   *
+   * This enforces absolute expiry only (`createdAt` against
+   * `attemptTimeoutBounds.absoluteTtlMs`). Inactivity-based abandonment is
+   * not wired here: it needs a persisted per-attempt last-activity bound that
+   * does not exist yet, so every call passes the current instant as
+   * `evaluateAttemptTimeout`'s `lastActivityAtMs`, which makes that branch
+   * unreachable rather than guessing an activity signal this store doesn't
+   * have. Each closed attempt gets its own transition record, distinct from
+   * the enclosing command's own operation.
+   */
+  const terminalizeExpiredAttempts = async (
+    candidates: StoredAttempt[],
+    nowUtcMs: number,
+  ): Promise<StoredAttempt[]> => {
+    const stillActive: StoredAttempt[] = [];
+
+    for (const record of candidates) {
+      const status = evaluateAttemptTimeout({
+        bounds: attemptTimeoutBounds,
+        createdAtMs: Date.parse(record.createdAt),
+        lastActivityAtMs: nowUtcMs,
+        nowUtcMs,
+      });
+
+      if (status !== 'expired') {
+        stillActive.push(record);
+        continue;
+      }
+
+      const expired = transitionAttempt(record.detail, 'terminal', 'expired');
+
+      if (expired.status !== 'advanced') {
+        stillActive.push(record);
+        continue;
+      }
+
+      const updated: StoredAttempt = { ...record, detail: expired.attempt };
+      await rememberAttempt(updated);
+      await appendTransition({
+        aggregate: 'attempt',
+        aggregateId: record.detail.attemptId,
+        nextState: expired.attempt.lifecycle,
+        operationId: idFactory.operationId(),
+        previousState: record.detail.lifecycle,
+        reason: 'attempt_absolute_expiry',
+      });
+    }
+
+    return stillActive;
   };
 
   app.addHook('onSend', async (request, reply, payload) => {
@@ -780,10 +842,13 @@ export function registerOnboardingRoutes(
       return await commit({ outcome: 'invalid_or_unavailable' });
     }
 
-    const activeForRole = attemptsForPrincipalRole(
-      store,
-      context.principalKey,
-      invitation.proposedRole,
+    const activeForRole = await terminalizeExpiredAttempts(
+      attemptsForPrincipalRole(
+        store,
+        context.principalKey,
+        invitation.proposedRole,
+      ),
+      Date.parse(clock.nowUtcMs()),
     );
 
     if (!canAllocateAttempt(activeForRole.length)) {
