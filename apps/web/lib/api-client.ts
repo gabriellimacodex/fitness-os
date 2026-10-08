@@ -6,6 +6,7 @@ import {
   movementListResponseSchema,
   onboardingOperationResponseSchema,
   readinessResponseSchema,
+  revokeStudentInvitationRequestSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
 } from '@fitness-os/schemas';
@@ -215,6 +216,41 @@ export function createApiClient({
       const { payload, response } = await fetchJson(
         fetchImplementation,
         new URL('v1/onboarding/invitations/inspect', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const operation = onboardingOperationResponseSchema.safeParse(payload);
+
+      if (!operation.success) {
+        throw new ApiProtocolError();
+      }
+
+      return operation.data;
+    },
+    async onboardingRevokeStudentInvitation(
+      invitationId: string,
+      retryToken: string,
+    ): Promise<OnboardingOperationResponse> {
+      const body = revokeStudentInvitationRequestSchema.parse({ retryToken });
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          `v1/onboarding/student-invitations/${encodeURIComponent(invitationId)}/revoke`,
+          parsedBaseUrl,
+        ),
         {
           body: JSON.stringify(body),
           cache: 'no-store',
