@@ -190,6 +190,13 @@
       "when": 1788470788696,
       "tag": "0026_prd07_onboarding_coach_bootstrap_namespace",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790245314247,
+      "tag": "0027_prd07_onboarding_attempt_cardinality_guard",
+      "breakpoints": true
     }
   ]
 }

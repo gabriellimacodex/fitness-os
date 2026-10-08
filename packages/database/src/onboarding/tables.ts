@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -131,6 +132,47 @@ export const onboardingAttempt = pgTable(
     index('onboarding_attempt_principal_key_idx').on(table.principalKey),
     index('onboarding_attempt_lifecycle_idx').on(table.lifecycle),
     index('onboarding_attempt_invitation_id_idx').on(table.invitationId),
+    index('onboarding_attempt_principal_role_lifecycle_idx').on(
+      table.principalKey,
+      table.proposedRole,
+      table.lifecycle,
+    ),
+  ],
+);
+
+/**
+ * Disposable synthetic per-(principal, proposed-role) cardinality guard.
+ * `active_count` is trigger-maintained (see migration
+ * `0027_prd07_onboarding_attempt_cardinality_guard.sql`) to always equal the
+ * true count of nonterminal `onboarding_attempt` rows for that scope — the
+ * application never writes `active_count` directly. The `0..4` bound is
+ * enforced by the check constraint below; the trigger raises before any
+ * write could violate it, satisfying PRD 07's "constraint trigger... rejects
+ * a bypass write that would exceed the cap, underflow the guard, or diverge
+ * from the nonterminal rows."
+ */
+export const onboardingAttemptCardinalityGuard = pgTable(
+  'onboarding_attempt_cardinality_guard',
+  {
+    principalKey: text('principal_key').notNull(),
+    proposedRole: text('proposed_role').notNull(),
+    activeCount: integer('active_count').notNull(),
+    lockVersion: integer('lock_version').notNull().default(0),
+    updatedAt: timestamp('updated_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.principalKey, table.proposedRole] }),
+    check(
+      'onboarding_attempt_cardinality_guard_proposed_role_check',
+      sql`${table.proposedRole} IN ('student', 'coach')`,
+    ),
+    check(
+      'onboarding_attempt_cardinality_guard_active_count_check',
+      sql`${table.activeCount} BETWEEN 0 AND 4`,
+    ),
   ],
 );
 

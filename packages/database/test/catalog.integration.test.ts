@@ -70,6 +70,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
         'exercise_revision_reference',
         'exercise_revision_taxonomy_term',
         'onboarding_attempt',
+        'onboarding_attempt_cardinality_guard',
         'onboarding_claim_failure',
         'onboarding_invitation',
         'onboarding_operation',
