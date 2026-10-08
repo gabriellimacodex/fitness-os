@@ -1,13 +1,45 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
   createPostgresConnection,
   createPostgresPrivacyGovernanceLifecycleBindingVerifier,
   createPostgresPrivacyReadinessProbe,
   type PostgresConnection,
 } from '@fitness-os/database';
-import type { PrivacyExpectedProcessorInventoryPort } from '@fitness-os/domain';
+import {
+  SyntheticPrivacyExpectedProcessorInventory,
+  type PrivacyExpectedProcessorInventoryPort,
+} from '@fitness-os/domain';
+import { privacyExpectedProcessorInventorySchema } from '@fitness-os/schemas';
 
 import type { PlatformOptions } from '../app.js';
 import { createPrivacyPgPersistence } from './pg-persistence.js';
+
+const reviewedInventoryFixturePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../packages/schemas/fixtures/privacy/processor-inventory.v1.json',
+);
+
+/**
+ * Loads the version-controlled, independently reviewed processor inventory
+ * (`docs/technical-design/021-privacy-data-governance.md`'s "Inventory
+ * artifact") packaged alongside this candidate build, and wraps it as the
+ * `PrivacyExpectedProcessorInventoryPort` that readiness's inventory-coverage
+ * comparison, and the privacy routes' inventory-coverage endpoint, compare
+ * the runtime registry against. The reviewed fixture is metadata only — no
+ * connection value, secret, or subject data — so reading it at
+ * platform-composition time is not itself a `LEGAL_PRIVACY_DECISION_REQUIRED`
+ * concern; a fixture that fails to parse or validate throws rather than
+ * silently falling back, since a corrupted reviewed artifact must fail
+ * closed, not compose a platform with unreviewed inventory.
+ */
+export function loadReviewedPrivacyExpectedProcessorInventory(): PrivacyExpectedProcessorInventoryPort {
+  const raw = JSON.parse(readFileSync(reviewedInventoryFixturePath, 'utf8'));
+  const inventory = privacyExpectedProcessorInventorySchema.parse(raw);
+  return new SyntheticPrivacyExpectedProcessorInventory(inventory);
+}
 
 export interface PrivacyPlatformHandles {
   platform: Pick<PlatformOptions, 'privacy'>;
@@ -34,18 +66,20 @@ export interface PrivacyPlatformHandles {
  * registers a processor through this platform sees that registration reflect
  * in the readiness evaluation of the same composition.
  *
- * `expectedInventory` has no real, reviewed content anywhere in this
- * codebase yet — only synthetic fixtures exist (`SyntheticPrivacyExpected-
- * ProcessorInventory`) — so this helper cannot supply one on its own without
- * inventing production-authoritative content, exactly like `identity_adapter`
- * and `policy_gateway` are left unset by `createOnboardingPlatformFromEnv`
- * pending a separate decision. `options.expectedInventory` exists so a future
- * caller who does have a reviewed inventory port can inject it; until then,
- * omitting it keeps `expected_inventory`/`runtime_processors` exactly at the
- * base probe's synthetic defaults (unchanged from before this parameter
- * existed), since `createPostgresPrivacyReadinessProbe` only overrides that
- * pair when both `expectedInventory` and `runtimeProcessors` are supplied
- * together.
+ * `expectedInventory` defaults to the version-controlled, independently
+ * reviewed processor inventory loaded by
+ * `loadReviewedPrivacyExpectedProcessorInventory` (established in #210 and
+ * referenced by `docs/technical-design/021-privacy-data-governance.md`'s
+ * "Inventory artifact" section). `options.expectedInventory` lets a caller
+ * override that default — for example with a different reviewed inventory,
+ * or a synthetic port in a test — without inventing production-authoritative
+ * content here. `readiness`'s `runtimeProcessors` is this same connection's
+ * `persistence.processors`, so inventory-coverage compares the effective
+ * expected inventory against this exact database's processor-registration
+ * rows, not a disconnected or synthetic substitute. No row seeds itself:
+ * until a processor is actually registered through
+ * `persistence.processors.put`, coverage correctly reports `not_ready` for
+ * the declared processor rather than silently passing.
  *
  * This does not set `allowSyntheticPrivacy` — that gate, and whether to also
  * inject `ids`, `clock`, or any other still-synthetic-only option, remains the
@@ -69,9 +103,12 @@ export function createPrivacyPlatformFromEnv(
   const persistence = createPrivacyPgPersistence(connection);
   const governanceLifecycleVerifier =
     createPostgresPrivacyGovernanceLifecycleBindingVerifier(connection);
+  const expectedInventory =
+    options.expectedInventory ??
+    loadReviewedPrivacyExpectedProcessorInventory();
   const readiness = createPostgresPrivacyReadinessProbe(connection, {
+    expectedInventory,
     runtimeProcessors: persistence.processors,
-    expectedInventory: options.expectedInventory,
   });
 
   return {
@@ -90,6 +127,7 @@ export function createPrivacyPlatformFromEnv(
         retentionPreviews: persistence.retentionPreviews,
         retentionRules: persistence.retentionRules,
         governanceLifecycleVerifier,
+        expectedInventory,
         readiness,
       },
     },

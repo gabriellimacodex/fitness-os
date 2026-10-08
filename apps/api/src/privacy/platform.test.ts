@@ -2,7 +2,28 @@ import { SyntheticPrivacyExpectedProcessorInventory } from '@fitness-os/domain';
 import { privacyExpectedProcessorInventorySchema } from '@fitness-os/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { createPrivacyPlatformFromEnv } from './platform.js';
+import {
+  createPrivacyPlatformFromEnv,
+  loadReviewedPrivacyExpectedProcessorInventory,
+} from './platform.js';
+
+describe('loadReviewedPrivacyExpectedProcessorInventory', () => {
+  it('loads and validates the reviewed processor-inventory fixture', async () => {
+    const port = loadReviewedPrivacyExpectedProcessorInventory();
+    const inventory = await port.getInventory();
+
+    expect(inventory.schemaVersion).toBe('privacy.processor-inventory.v1');
+    expect(inventory.processors).toHaveLength(1);
+    expect(inventory.processors[0]?.recordFamilies).toHaveLength(14);
+    expect(inventory.processors[0]?.synthetic).toBe(true);
+  });
+
+  it('returns a fresh port instance on every call', () => {
+    expect(loadReviewedPrivacyExpectedProcessorInventory()).not.toBe(
+      loadReviewedPrivacyExpectedProcessorInventory(),
+    );
+  });
+});
 
 describe('privacy platform env composition', () => {
   it('returns null when PRIVACY_DATABASE_URL is not configured', () => {
@@ -30,6 +51,7 @@ describe('privacy platform env composition', () => {
     expect(typeof privacy?.governanceLifecycleVerifier?.verify).toBe(
       'function',
     );
+    expect(typeof privacy?.expectedInventory?.getInventory).toBe('function');
     expect(typeof privacy?.readiness?.evaluate).toBe('function');
 
     // Does not decide the route-gating flag or any option this helper does
