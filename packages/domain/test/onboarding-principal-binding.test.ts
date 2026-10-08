@@ -36,4 +36,47 @@ describe('SyntheticPrincipalBindingRepository', () => {
       expect(resolved.binding).toEqual(established.binding);
     }
   });
+
+  it('denies an empty or whitespace-only principal key as missing', async () => {
+    const repo = new SyntheticPrincipalBindingRepository();
+
+    await expect(
+      repo.resolveOrEstablish({
+        nowUtcMs: '2026-08-19T12:00:00.000Z',
+        principalKey: '',
+        productionMode: false,
+      }),
+    ).resolves.toEqual({ reason: 'missing', status: 'denied' });
+
+    await expect(
+      repo.resolveOrEstablish({
+        nowUtcMs: '2026-08-19T12:00:00.000Z',
+        principalKey: '   ',
+        productionMode: false,
+      }),
+    ).resolves.toEqual({ reason: 'missing', status: 'denied' });
+
+    expect(await repo.getByPrincipalKey('')).toBeNull();
+  });
+
+  it('reads an established binding by principal key and null for the unknown', async () => {
+    const repo = new SyntheticPrincipalBindingRepository();
+
+    expect(await repo.getByPrincipalKey('principal-b')).toBeNull();
+
+    const established = await repo.resolveOrEstablish({
+      nowUtcMs: '2026-08-19T12:00:00.000Z',
+      principalKey: 'principal-b',
+      productionMode: false,
+    });
+    expect(established.status).toBe('established');
+    if (established.status !== 'established') {
+      throw new Error('unreachable');
+    }
+
+    await expect(repo.getByPrincipalKey('principal-b')).resolves.toEqual(
+      established.binding,
+    );
+    await expect(repo.getByPrincipalKey('principal-c')).resolves.toBeNull();
+  });
 });
