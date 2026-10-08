@@ -66,6 +66,7 @@ export function deriveManifestState(
   >;
 } {
   const byMovement = new Map<string, MovementManifestRecord[]>();
+  const latestByMovement = new Map<string, MovementManifestRecord>();
 
   for (const [index, record] of records.entries()) {
     if (!(index in records)) {
@@ -114,6 +115,7 @@ export function deriveManifestState(
 
     history.push(record);
     byMovement.set(record.movementId, history);
+    latestByMovement.set(record.movementId, record);
   }
 
   const current = new Map<
@@ -122,13 +124,7 @@ export function deriveManifestState(
   >();
   const reservedIds = new Set<string>();
 
-  for (const [movementId, history] of byMovement) {
-    const latest = history.at(-1);
-
-    if (latest === undefined) {
-      continue;
-    }
-
+  for (const [movementId, latest] of latestByMovement) {
     reservedIds.add(movementId);
 
     if (latest.action !== 'withdraw') {
