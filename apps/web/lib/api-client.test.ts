@@ -1,3 +1,12 @@
+import {
+  privacyCorrelationIdSchema,
+  privacyOperationIdSchema,
+  privacyPolicyVersionIdSchema,
+  privacySubjectRequestIdSchema,
+  privacySubjectRequestReferenceSchema,
+  privacySubjectRequestTransitionIdSchema,
+  privacySyntheticSubjectRequestTransitionRequestSchema,
+} from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -436,6 +445,128 @@ describe('createApiClient', () => {
 
     const error = await client
       .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  const subjectRequestTransitionRequest =
+    privacySyntheticSubjectRequestTransitionRequestSchema.parse({
+      request: privacySubjectRequestReferenceSchema.parse({
+        requestId: privacySubjectRequestIdSchema.parse(
+          '66666666-6666-4666-8666-666666666666',
+        ),
+        requestType: 'export',
+        state: 'ready',
+        subjectScopeId: '22222222-2222-4222-8222-222222222222',
+        verification: null,
+        policyVersionId: privacyPolicyVersionIdSchema.parse(
+          '33333333-3333-4333-8333-333333333333',
+        ),
+        inventoryVersionDigest: '1'.repeat(64),
+        correlationId: privacyCorrelationIdSchema.parse(
+          '55555555-5555-4555-8555-555555555555',
+        ),
+        updatedAt: '2026-08-18T11:00:00.000Z',
+      }),
+      next: 'in_progress',
+      transitionId: privacySubjectRequestTransitionIdSchema.parse(
+        'a1111111-1111-4111-8111-111111111111',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'b2222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      productionMode: false,
+    });
+
+  it('advances a subject-request transition with no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: 'advanced' }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(
+      client.privacySubjectRequestTransition(subjectRequestTransitionRequest),
+    ).resolves.toEqual({ status: 'advanced' });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/subject-request-transition',
+      ),
+      {
+        body: JSON.stringify(subjectRequestTransitionRequest),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('does not throw on a typed conflict/invalid/already_terminal subject-request outcome', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: 'conflict' }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacySubjectRequestTransition(subjectRequestTransitionRequest),
+    ).resolves.toEqual({ status: 'conflict' });
+  });
+
+  it('throws a typed API error for a malformed subject-request transition request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'Invalid request',
+            requestId: 'req-transition-1',
+          },
+        },
+        { status: 400 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacySubjectRequestTransition(subjectRequestTransitionRequest)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'BAD_REQUEST',
+      requestId: 'req-transition-1',
+      status: 400,
+    });
+  });
+
+  it('does not echo raw content from a malformed subject-request transition payload', async () => {
+    const rawContent = 'private-transition-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacySubjectRequestTransition(subjectRequestTransitionRequest)
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiProtocolError);
