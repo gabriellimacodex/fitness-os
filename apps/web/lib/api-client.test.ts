@@ -441,4 +441,119 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('abandons an attempt with a validated retry token and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'abandon_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          attempt: {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            invitationId: '33333333-3333-4333-8333-333333333333',
+            lifecycle: 'terminal',
+            ordinal: 1,
+            policy: null,
+            predecessorAttemptId: null,
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            terminalReason: 'abandoned',
+          },
+          command: 'attempt',
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingAbandon(
+      '22222222-2222-4222-8222-222222222222',
+      'a'.repeat(16),
+    );
+
+    expect(response.result).toMatchObject({ outcome: 'command_succeeded' });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/attempts/22222222-2222-4222-8222-222222222222/abandon',
+      ),
+      {
+        body: JSON.stringify({ retryToken: 'a'.repeat(16) }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid retry token before making an abandon request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingAbandon('22222222-2222-4222-8222-222222222222', 'short'),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when abandoning an unknown attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Resource not found',
+            requestId: 'req-abandon-1',
+          },
+        },
+        { status: 404 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingAbandon('22222222-2222-4222-8222-222222222222', 'a'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: 'req-abandon-1',
+      status: 404,
+    });
+  });
+
+  it('does not echo raw content from a malformed abandon payload', async () => {
+    const rawContent = 'private-abandon-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingAbandon('22222222-2222-4222-8222-222222222222', 'a'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
