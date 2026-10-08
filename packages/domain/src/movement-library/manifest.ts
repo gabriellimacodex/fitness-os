@@ -109,6 +109,13 @@ export function deriveManifestState(
         }
       } else if (record.contentVersion !== previous.contentVersion + 1) {
         throw new Error('Content versions must increment by one.');
+      } else if (
+        record.action === 'revise' &&
+        record.digest === previous.digest
+      ) {
+        throw new Error(
+          'A revise action must change the movement content digest.',
+        );
       }
     }
 
