@@ -178,6 +178,16 @@ describe('createMovementCatalog', () => {
     ).toThrow(/digest or version drifted/);
   });
 
+  it('rejects a published movement without a review authority', () => {
+    const { manifest, published, reviewRecords } = reviewedCatalogInput([
+      SQUAT,
+    ]);
+
+    expect(() =>
+      createMovementCatalog({ manifest, published, reviewRecords }),
+    ).toThrow(/review authority/);
+  });
+
   it('rejects a published version without a review record', () => {
     const input = reviewedCatalogInput([SQUAT]);
 
@@ -187,6 +197,28 @@ describe('createMovementCatalog', () => {
         reviewRecords: [],
       }),
     ).toThrow(/durable review record/);
+  });
+
+  it('rejects a review record that does not bind the exact movement artifact', () => {
+    const input = reviewedCatalogInput([SQUAT]);
+    const mismatchedRecord = createSignedReviewRecord({
+      authority: input.authority,
+      contentVersion: SQUAT.contentVersion,
+      digest: digestMovementDetail(HINGE),
+      movementId: SQUAT.movementId,
+      receipts: [
+        safetyReceipt('safety-mismatch-0001'),
+        readerReceipt('reader-mismatch-0001'),
+      ],
+      sourceCommitSha: 'cccccccccccccccccccccccccccccccccccccccc',
+    });
+
+    expect(() =>
+      createMovementCatalog({
+        ...input,
+        reviewRecords: [mismatchedRecord],
+      }),
+    ).toThrow(/does not bind the exact movement artifact/);
   });
 
   it('rejects a published movement absent from the manifest', () => {
