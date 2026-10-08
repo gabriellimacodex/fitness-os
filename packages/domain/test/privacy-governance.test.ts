@@ -1673,6 +1673,38 @@ describe('synthetic subject-data processor simulation', () => {
       }),
     ).toEqual({ status: 'matched' });
   });
+
+  it('denies a command routed to a different processor instance', async () => {
+    const syntheticProcessor = new SyntheticPrivacySubjectDataProcessor(
+      processor,
+      ['privacy_audit_event'],
+    );
+
+    const misrouted = await syntheticProcessor.execute({
+      processorId: privacyProcessorIdSchema.parse(
+        '11111111-1111-4111-8111-111111111111',
+      ),
+      capability: 'inventory',
+      subjectScopeId: privacySubjectScopeIdSchema.parse(
+        '22222222-2222-4222-8222-222222222222',
+      ),
+      correlationId: privacyCorrelationIdSchema.parse(
+        '55555555-5555-4555-8555-555555555555',
+      ),
+      operationId: privacyOperationIdSchema.parse(
+        'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      ),
+      productionMode: false,
+    });
+
+    expect(misrouted).toMatchObject({
+      status: 'denied',
+      reasonCode: 'capability_not_declared',
+      families: [],
+      accessLocatorDigest: null,
+      exportManifestDigest: null,
+    });
+  });
 });
 
 describe('synthetic expected processor inventory', () => {
