@@ -5,9 +5,13 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticRetentionPreviewRequestSchema,
+  privacySyntheticRetentionPreviewResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticRetentionPreviewRequest,
+  type PrivacySyntheticRetentionPreviewResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +241,38 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyRetentionPreview(
+      request: PrivacySyntheticRetentionPreviewRequest,
+    ): Promise<PrivacySyntheticRetentionPreviewResponse> {
+      const body = privacySyntheticRetentionPreviewRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/retention-preview', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const preview =
+        privacySyntheticRetentionPreviewResponseSchema.safeParse(payload);
+
+      if (!preview.success) {
+        throw new ApiProtocolError();
+      }
+
+      return preview.data;
     },
   };
 }

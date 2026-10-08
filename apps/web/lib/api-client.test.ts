@@ -1,3 +1,4 @@
+import { privacySyntheticRetentionPreviewRequestSchema } from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -436,6 +437,144 @@ describe('createApiClient', () => {
 
     const error = await client
       .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  const retentionPreviewRequest =
+    privacySyntheticRetentionPreviewRequestSchema.parse({
+      policyVersionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      policySynthetic: true,
+      inventoryVersionDigest: 'd'.repeat(64),
+      processorDescriptorDigests: ['c'.repeat(64)],
+      watermark: '2026-08-18T12:00:00.000Z',
+      approvedExceptionIds: [],
+      productionMode: false,
+    });
+
+  const plannedPreview = {
+    policyVersionId: retentionPreviewRequest.policyVersionId,
+    inventoryVersionDigest: retentionPreviewRequest.inventoryVersionDigest,
+    processorDescriptorDigests:
+      retentionPreviewRequest.processorDescriptorDigests,
+    watermark: retentionPreviewRequest.watermark,
+    selectionDigest: 'a'.repeat(64),
+    approvedExceptionIds: retentionPreviewRequest.approvedExceptionIds,
+    synthetic: true as const,
+  };
+
+  it('plans a privacy retention preview with no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        status: 'planned',
+        preview: plannedPreview,
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyRetentionPreview(retentionPreviewRequest),
+    ).resolves.toEqual({
+      status: 'planned',
+      preview: plannedPreview,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/v1/privacy/synthetic/retention-preview'),
+      {
+        body: JSON.stringify(retentionPreviewRequest),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('returns the validated invalid outcome without throwing', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        status: 'invalid',
+        reason: 'missing_watermark',
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyRetentionPreview(retentionPreviewRequest),
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'missing_watermark',
+    });
+  });
+
+  it('rejects an invalid retention-preview request before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyRetentionPreview({
+        ...retentionPreviewRequest,
+        inventoryVersionDigest: 'not-a-digest',
+      } as unknown as typeof retentionPreviewRequest),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error for an unexpected retention-preview failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-retention-preview-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyRetentionPreview(retentionPreviewRequest)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-retention-preview-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed retention-preview payload', async () => {
+    const rawContent = 'private-retention-preview-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyRetentionPreview(retentionPreviewRequest)
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiProtocolError);
