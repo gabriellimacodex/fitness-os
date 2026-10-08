@@ -28,7 +28,12 @@ const plainTextSchema = (maximum: number) =>
         }),
       'Control characters are not allowed',
     )
-    .refine((value) => !/[<>]/u.test(value), 'HTML-like markup is not allowed');
+    .refine((value) => !/[<>]/u.test(value), 'HTML-like markup is not allowed')
+    .refine((value) => !/`/u.test(value), 'Markdown code syntax is not allowed')
+    .refine(
+      (value) => !/!?\[[^[\]]*\]\([^()]*\)/u.test(value),
+      'Markdown link or image syntax is not allowed',
+    );
 
 const movementNameSchema = plainTextSchema(80);
 const movementSummaryTextSchema = plainTextSchema(240);
