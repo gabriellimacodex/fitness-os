@@ -38,6 +38,7 @@ import {
   deriveRequestCompletionFromSteps,
   digestRetentionExecutionInput,
   evaluateDataUse,
+  isTerminalSubjectRequestState,
   planRetentionPreview,
   planRetentionPreviewWithRetentionRule,
   planWithdrawal,
@@ -2159,6 +2160,135 @@ describe('subject request transitions', () => {
       updatedAt: '2026-08-18T12:04:00.000Z',
     });
     expect(denied.status).toBe('already_terminal');
+  });
+});
+
+describe('subject request transitions - remaining forward and terminal matrix', () => {
+  const baseRequest = privacySubjectRequestReferenceSchema.parse({
+    requestId: privacySubjectRequestIdSchema.parse(
+      '66666666-6666-4666-8666-666666666666',
+    ),
+    requestType: 'export',
+    state: 'received',
+    subjectScopeId: '22222222-2222-4222-8222-222222222222',
+    verification: null,
+    policyVersionId: policy.versionId,
+    inventoryVersionDigest: '1'.repeat(64),
+    correlationId: privacyCorrelationIdSchema.parse(
+      '55555555-5555-4555-8555-555555555555',
+    ),
+    updatedAt: '2026-08-18T12:00:00.000Z',
+  });
+
+  it.each([
+    ['received', 'policy_blocked'],
+    ['received', 'cancelled'],
+    ['verification_required', 'policy_blocked'],
+    ['verification_required', 'cancelled'],
+    ['verification_required', 'denied'],
+    ['policy_blocked', 'verification_required'],
+    ['policy_blocked', 'cancelled'],
+    ['policy_blocked', 'denied'],
+    ['ready', 'in_progress'],
+    ['ready', 'cancelled'],
+    ['ready', 'denied'],
+    ['in_progress', 'partially_failed'],
+    ['in_progress', 'completed'],
+    ['in_progress', 'cancelled'],
+    ['in_progress', 'denied'],
+    ['partially_failed', 'in_progress'],
+    ['partially_failed', 'completed'],
+    ['partially_failed', 'cancelled'],
+    ['partially_failed', 'denied'],
+  ] as const)('advances %s -> %s', (from, to) => {
+    const result = transitionSubjectRequest({
+      request: { ...baseRequest, state: from },
+      next: to,
+      updatedAt: '2026-08-18T12:10:00.000Z',
+    });
+
+    expect(result.status).toBe('advanced');
+    if (result.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+    expect(result.request.state).toBe(to);
+  });
+
+  it.each([
+    'received',
+    'verification_required',
+    'policy_blocked',
+    'ready',
+    'in_progress',
+    'partially_failed',
+  ] as const)('%s is not a terminal state', (state) => {
+    expect(isTerminalSubjectRequestState(state)).toBe(false);
+  });
+
+  it.each(['completed', 'cancelled', 'denied'] as const)(
+    '%s is terminal and rejects any further transition',
+    (state) => {
+      expect(isTerminalSubjectRequestState(state)).toBe(true);
+
+      const result = transitionSubjectRequest({
+        request: { ...baseRequest, state },
+        next: 'in_progress',
+        updatedAt: '2026-08-18T12:11:00.000Z',
+      });
+
+      expect(result.status).toBe('already_terminal');
+      if (result.status !== 'already_terminal') {
+        throw new Error('expected already_terminal');
+      }
+      expect(result.request.state).toBe(state);
+    },
+  );
+
+  it('carries an existing verification forward when the caller omits it', () => {
+    const ready = transitionSubjectRequest({
+      request: { ...baseRequest, state: 'verification_required' },
+      next: 'ready',
+      updatedAt: '2026-08-18T12:12:00.000Z',
+      verification: { verificationRefDigest: '3'.repeat(64), synthetic: true },
+    });
+    if (ready.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    const advanced = transitionSubjectRequest({
+      request: ready.request,
+      next: 'in_progress',
+      updatedAt: '2026-08-18T12:13:00.000Z',
+    });
+    if (advanced.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    expect(advanced.request.verification).toEqual(ready.request.verification);
+  });
+
+  it('clears verification when the caller explicitly passes null', () => {
+    const ready = transitionSubjectRequest({
+      request: { ...baseRequest, state: 'verification_required' },
+      next: 'ready',
+      updatedAt: '2026-08-18T12:14:00.000Z',
+      verification: { verificationRefDigest: '4'.repeat(64), synthetic: true },
+    });
+    if (ready.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    const cleared = transitionSubjectRequest({
+      request: ready.request,
+      next: 'in_progress',
+      updatedAt: '2026-08-18T12:15:00.000Z',
+      verification: null,
+    });
+    if (cleared.status !== 'advanced') {
+      throw new Error('expected advanced');
+    }
+
+    expect(cleared.request.verification).toBeNull();
   });
 });
 
