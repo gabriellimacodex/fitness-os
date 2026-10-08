@@ -441,4 +441,183 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('claims an attempt with a validated retry token and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'claim_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          completionId: '22222222-2222-4222-8222-222222222222',
+          mappingId: '33333333-3333-4333-8333-333333333333',
+          outcome: 'completed',
+          role: 'student',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingClaimAttempt(
+      '44444444-4444-4444-8444-444444444444',
+      'a'.repeat(24),
+      'b'.repeat(16),
+    );
+
+    expect(response.result).toMatchObject({
+      outcome: 'completed',
+      role: 'student',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/onboarding/attempts/44444444-4444-4444-8444-444444444444/claim',
+      ),
+      {
+        body: JSON.stringify({
+          retryToken: 'b'.repeat(16),
+          claimSecret: 'a'.repeat(24),
+        }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('encodes the attempt identifier as one URL segment when claiming', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'claim_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          completionId: '22222222-2222-4222-8222-222222222222',
+          mappingId: '33333333-3333-4333-8333-333333333333',
+          outcome: 'completed',
+          role: 'coach',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await client.onboardingClaimAttempt(
+      'attempt/with-slash',
+      'a'.repeat(24),
+      'b'.repeat(16),
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/v1/onboarding/attempts/attempt%2Fwith-slash/claim',
+      ),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('rejects an invalid claim secret before claiming an attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingClaimAttempt(
+        '44444444-4444-4444-8444-444444444444',
+        'too-short',
+        'b'.repeat(16),
+      ),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid retry token before claiming an attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingClaimAttempt(
+        '44444444-4444-4444-8444-444444444444',
+        'a'.repeat(24),
+        'too-short',
+      ),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when claiming an attempt is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-claim-attempt-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingClaimAttempt(
+        '44444444-4444-4444-8444-444444444444',
+        'a'.repeat(24),
+        'b'.repeat(16),
+      )
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-claim-attempt-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed claim-attempt payload', async () => {
+    const rawContent = 'private-claim-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingClaimAttempt(
+        '44444444-4444-4444-8444-444444444444',
+        'a'.repeat(24),
+        'b'.repeat(16),
+      )
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
