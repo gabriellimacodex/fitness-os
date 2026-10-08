@@ -227,6 +227,7 @@ export async function issueCoachBootstrapInvitation(
     const invitationId = options.idFactory.invitationId();
     const invitation: StoredInvitation = {
       claimDigest: digestClaimSecret(claimSecret, options.store.pepper),
+      createdAt: options.clock.nowUtcMs(),
       invitationId,
       proposedRole: 'coach',
       purpose: 'coach_bootstrap',

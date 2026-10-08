@@ -1176,8 +1176,11 @@ describe('GET /v1/onboarding/attempts/:attemptId', () => {
 describe('student invitation list/issue/revoke', () => {
   it('stamps attempt creation time through TrustedClock', async () => {
     const store = createOnboardingStore();
-    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
     const fixedUtc = '2026-08-19T18:00:00.000Z';
+    seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: fixedUtc,
+    });
     const app = buildApp(
       { logger: false },
       {
@@ -2668,6 +2671,225 @@ describe('policy-refresh and claim', () => {
     expect(firstRead.length).toBeGreaterThanOrEqual(5);
     // Append-only: repeated list() returns an equal snapshot.
     expect(sink.list()).toEqual(firstRead);
+
+    await app.close();
+  });
+});
+
+describe('invitation bounded-lifetime expiry', () => {
+  const LONG_EXPIRED_CREATED_AT = '2000-01-01T00:00:00.000Z';
+  const SHORT_TTL_BOUNDS = { absoluteTtlMs: 60 * 1000 };
+
+  it('treats an expired invitation as invalid_or_unavailable on inspect and terminalizes it', async () => {
+    const store = createOnboardingStore();
+    const seeded = seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: LONG_EXPIRED_CREATED_AT,
+    });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: SHORT_TTL_BOUNDS,
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const inspected = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+    const body = onboardingOperationResponseSchema.parse(inspected.json());
+    expect(body.result).toEqual({ outcome: 'invalid_or_unavailable' });
+    expect(store.invitations.get(seeded.invitationId)?.state).toBe('expired');
+
+    await app.close();
+  });
+
+  it('treats an expired invitation as invalid_or_unavailable on attempt creation', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: LONG_EXPIRED_CREATED_AT,
+    });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: SHORT_TTL_BOUNDS,
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(created.json());
+    expect(body.result).toEqual({ outcome: 'invalid_or_unavailable' });
+
+    await app.close();
+  });
+
+  it('does not expire an invitation still inside its configured TTL', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: { absoluteTtlMs: 24 * 60 * 60 * 1000 },
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const inspected = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+    const body = onboardingOperationResponseSchema.parse(inspected.json());
+    expect(body.result).toMatchObject({ outcome: 'command_succeeded' });
+
+    await app.close();
+  });
+
+  it('records invitation_expired transition evidence for the closed expired state', async () => {
+    const store = createOnboardingStore();
+    const seeded = seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: LONG_EXPIRED_CREATED_AT,
+    });
+    const sink = new SyntheticOnboardingTransitionSink();
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: SHORT_TTL_BOUNDS,
+          resolveContext: () => ({
+            mappedRoles: [],
+            principalKey: 'principal-a',
+            synthetic: true,
+          }),
+          store,
+          transitionSink: sink,
+        },
+      },
+    );
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/invitations/inspect',
+      payload: { claimSecret: CLAIM_SECRET },
+    });
+
+    expect(sink.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          aggregate: 'invitation',
+          aggregateId: seeded.invitationId,
+          previousState: 'issued',
+          nextState: 'expired',
+          reason: 'invitation_expired',
+        }),
+      ]),
+    );
+
+    await app.close();
+  });
+
+  it('reports an already-expired invitation as already_terminal on revoke without re-revoking it', async () => {
+    const store = createOnboardingStore();
+    const seeded = seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: LONG_EXPIRED_CREATED_AT,
+      purpose: 'student_onboarding',
+      targetCoachPrincipalKey: 'coach-a',
+    });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: SHORT_TTL_BOUNDS,
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/student-invitations/${seeded.invitationId}/revoke`,
+      payload: { retryToken: RETRY_TOKEN },
+    });
+    const body = onboardingOperationResponseSchema.parse(revoked.json());
+    expect(body.result).toMatchObject({
+      outcome: 'command_succeeded',
+      invitation: { state: 'expired' },
+    });
+
+    await app.close();
+  });
+
+  it('lists a coach-owned invitation as expired once its TTL has passed', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, {
+      claimSecret: CLAIM_SECRET,
+      createdAt: LONG_EXPIRED_CREATED_AT,
+      purpose: 'student_onboarding',
+      targetCoachPrincipalKey: 'coach-a',
+    });
+    const app = buildApp(
+      { logger: false },
+      {
+        allowSyntheticOnboarding: true,
+        onboarding: {
+          invitationTimeoutBounds: SHORT_TTL_BOUNDS,
+          resolveContext: () => ({
+            mappedRoles: ['coach'],
+            principalKey: 'coach-a',
+            synthetic: true,
+          }),
+          store,
+        },
+      },
+    );
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/v1/onboarding/student-invitations',
+    });
+    const body = studentInvitationListResponseSchema.parse(listed.json());
+    expect(body.items).toEqual([expect.objectContaining({ state: 'expired' })]);
 
     await app.close();
   });

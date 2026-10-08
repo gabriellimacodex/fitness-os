@@ -25,10 +25,15 @@ export {
 } from './claim-throttle.js';
 export {
   claimInvitation,
+  DEFAULT_INVITATION_TTL_MS,
+  evaluateInvitationTimeout,
+  expireInvitation,
   inspectInvitationState,
   revokeInvitation,
   type InvitationMutationResult,
   type InvitationState,
+  type InvitationTimeoutBounds,
+  type InvitationTimeoutStatus,
 } from './invitation.js';
 export type {
   InvitationPurpose,

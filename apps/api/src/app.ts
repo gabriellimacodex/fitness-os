@@ -47,6 +47,7 @@ export interface PlatformOptions {
     idFactory?: import('@fitness-os/domain').OnboardingIdFactory;
     identitySession?: import('@fitness-os/domain').IdentitySessionPort;
     identitySessionStore?: import('@fitness-os/domain').IdentitySessionStore;
+    invitationTimeoutBounds?: import('@fitness-os/domain').InvitationTimeoutBounds;
     persistence?: import('./onboarding/pg-persistence.js').OnboardingPgPersistence;
     policyGateway?: import('@fitness-os/domain').OnboardingPolicyGateway;
     principalBinding?: import('@fitness-os/domain').PrincipalBindingRepository;

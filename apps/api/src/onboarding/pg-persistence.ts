@@ -81,6 +81,16 @@ export function toApiInvitation(
 ): StoredInvitation {
   return {
     claimDigest: row.claimDigest,
+    // `onboarding_invitation` has no dedicated `created_at` column yet (a
+    // Data/Infrastructure migration — out of this task's ownership area).
+    // `persistInvitation` below only ever sets `updatedAt` once, at the
+    // initial `issued` put; `applyClaim`/`applyRevoke` are the only mutators
+    // that touch it afterward. So while a hydrated row is still `issued`,
+    // `updatedAt` is exactly its issuance instant and is a safe stand-in for
+    // `createdAt`. Once terminal (claimed/revoked/expired), PRD 07's
+    // bounded-lifetime check never re-reads this field, so a later mutation
+    // changing `updatedAt` cannot retroactively misrepresent issuance time.
+    createdAt: row.updatedAt,
     invitationId: row.invitationId,
     proposedRole: row.proposedRole,
     purpose: row.purpose,
@@ -118,7 +128,12 @@ export async function persistInvitation(
 
   if (existing === null) {
     const put = await persistence.invitations.put({
-      ...invitation,
+      claimDigest: invitation.claimDigest,
+      invitationId: invitation.invitationId,
+      proposedRole: invitation.proposedRole,
+      purpose: invitation.purpose,
+      state: invitation.state,
+      targetCoachPrincipalKey: invitation.targetCoachPrincipalKey,
       updatedAt,
     });
     if (put === 'accepted') {
@@ -148,7 +163,16 @@ export async function persistInvitation(
     if (result.status === 'invalid' && result.reason === 'not_found') {
       throw new Error('onboarding invitation missing for revoke persistence');
     }
+    return;
   }
+
+  // `expired` has no repository mutator yet: `OnboardingInvitationRepository`
+  // (packages/domain's port, backed by packages/database) only exposes
+  // `applyClaim`/`applyRevoke`. Adding `applyExpire` is a Data/Infrastructure
+  // change outside this task's ownership area — see `createCoachBootstrapLedger`
+  // in `./bootstrap.js` for the same documented in-memory-only pattern used
+  // elsewhere in this file. The caller's in-memory `store.invitations` entry
+  // is still terminalized; only the durable mirror lags until that follow-up.
 }
 
 export async function persistAttempt(

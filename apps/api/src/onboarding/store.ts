@@ -22,6 +22,12 @@ import {
 
 export interface StoredInvitation {
   claimDigest: string;
+  /**
+   * Issuance instant from the trusted server clock, used only to evaluate
+   * PRD 07's invitation bounded-lifetime rule (`evaluateInvitationTimeout`).
+   * It is never caller-supplied and never extended once set.
+   */
+  createdAt: string;
   invitationId: OnboardingInvitationId;
   proposedRole: ProposedRole;
   purpose: 'coach_bootstrap' | 'student_onboarding';

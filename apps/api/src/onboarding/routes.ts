@@ -7,7 +7,10 @@ import {
   CryptoOnboardingSecretFactory,
   createSelfTestOnboardingReadinessProbe,
   DEFAULT_CLAIM_THROTTLE_WINDOW,
+  DEFAULT_INVITATION_TTL_MS,
   evaluateClaimEligibility,
+  evaluateInvitationTimeout,
+  expireInvitation,
   HmacInvitationSecretVerifier,
   inspectInvitationState,
   isNonterminal,
@@ -27,6 +30,7 @@ import {
   type IdentitySessionPort,
   type IdentitySessionStore,
   type InvitationSecretVerifier,
+  type InvitationTimeoutBounds,
   type OnboardingClaimRepository,
   type OnboardingIdFactory,
   type OnboardingPolicyGateway,
@@ -222,6 +226,7 @@ export function registerOnboardingRoutes(
     idFactory?: OnboardingIdFactory;
     identitySession?: IdentitySessionPort;
     identitySessionStore?: IdentitySessionStore;
+    invitationTimeoutBounds?: InvitationTimeoutBounds;
     persistence?: OnboardingPgPersistence;
     policyGateway?: OnboardingPolicyGateway;
     principalBinding?: PrincipalBindingRepository;
@@ -269,6 +274,10 @@ export function registerOnboardingRoutes(
     options.claimFailureTracker ?? new SyntheticClaimFailureTracker();
   const claimThrottleWindow =
     options.claimThrottleWindow ?? DEFAULT_CLAIM_THROTTLE_WINDOW;
+  const invitationTimeoutBounds: InvitationTimeoutBounds =
+    options.invitationTimeoutBounds ?? {
+      absoluteTtlMs: DEFAULT_INVITATION_TTL_MS,
+    };
 
   /**
    * PRD 07's claim-secret brute-force control: throttle before the invitation
@@ -350,6 +359,59 @@ export function registerOnboardingRoutes(
       reason: input.reason,
       recordedAt: clock.nowUtcMs(),
     });
+  };
+
+  /**
+   * PRD 07's invitation bounded-lifetime rule: "Derive invitation expiry from
+   * server-controlled configuration and trusted time" plus the "Unknown,
+   * malformed, expired, revoked, or inaccessible invitation" failure mode.
+   * Lazily terminalizes an `issued` invitation to `expired` the moment any
+   * route reads it past its server-configured TTL, mirroring this file's
+   * existing lazy-terminalization style for onboarding attempts. A
+   * non-`issued` invitation is returned unchanged — expiry never re-opens or
+   * reclassifies an already-terminal (claimed/revoked/expired) record.
+   */
+  const resolveInvitationLifecycle = async (
+    invitation: StoredInvitation,
+  ): Promise<StoredInvitation> => {
+    if (invitation.state !== 'issued') {
+      return invitation;
+    }
+
+    const status = evaluateInvitationTimeout({
+      bounds: invitationTimeoutBounds,
+      createdAtMs: Date.parse(invitation.createdAt),
+      nowUtcMs: Date.parse(clock.nowUtcMs()),
+    });
+
+    if (status === 'active') {
+      return invitation;
+    }
+
+    const expired = expireInvitation(invitation.state);
+    if (expired.status !== 'advanced') {
+      return invitation;
+    }
+
+    const previousState = invitation.state;
+    const updated: StoredInvitation = { ...invitation, state: expired.state };
+    // In-memory terminalization only in this slice: the durable PG mirror has
+    // no `applyExpire` mutator yet (see `persistInvitation` in
+    // `./pg-persistence.js`), so a configured persistence layer still shows
+    // `issued` until that follow-up lands. The in-process store — what every
+    // route in this file actually reads — is authoritative here and is
+    // updated unconditionally.
+    store.invitations.set(updated.invitationId, updated);
+    await appendTransition({
+      aggregate: 'invitation',
+      aggregateId: updated.invitationId,
+      nextState: updated.state,
+      operationId: idFactory.operationId(),
+      previousState,
+      reason: 'invitation_expired',
+    });
+
+    return updated;
   };
 
   app.addHook('onSend', async (request, reply, payload) => {
@@ -584,11 +646,15 @@ export function registerOnboardingRoutes(
       namespace: 'inspect_invitation',
     });
 
-    const invitation = await loadInvitationByClaimDigest(
+    const loadedInvitation = await loadInvitationByClaimDigest(
       store,
       persistence,
       digestSecret(body.data.claimSecret),
     );
+    const invitation =
+      loadedInvitation === undefined
+        ? undefined
+        : await resolveInvitationLifecycle(loadedInvitation);
     const inspection = invitation
       ? inspectInvitationState(invitation.state)
       : 'invalid_or_unavailable';
@@ -738,11 +804,15 @@ export function registerOnboardingRoutes(
       });
     };
 
-    const invitation = await loadInvitationByClaimDigest(
+    const loadedInvitation = await loadInvitationByClaimDigest(
       store,
       persistence,
       digestSecret(body.data.claimSecret),
     );
+    const invitation =
+      loadedInvitation === undefined
+        ? undefined
+        : await resolveInvitationLifecycle(loadedInvitation);
 
     if (
       invitation === undefined ||
@@ -1392,11 +1462,15 @@ export function registerOnboardingRoutes(
         return await commit({ outcome: 'invalid_or_unavailable' });
       }
 
-      const invitation = await loadInvitationByClaimDigest(
+      const loadedInvitation = await loadInvitationByClaimDigest(
         store,
         persistence,
         digestSecret(body.data.claimSecret),
       );
+      const invitation =
+        loadedInvitation === undefined
+          ? undefined
+          : await resolveInvitationLifecycle(loadedInvitation);
       if (
         invitation === undefined ||
         invitation.invitationId !== record.detail.invitationId ||
@@ -1534,12 +1608,16 @@ export function registerOnboardingRoutes(
       await hydrateCoachInvitations(store, persistence, context.principalKey);
     }
 
-    const items = [...store.invitations.values()]
-      .filter(
-        (invitation) =>
-          invitation.purpose === 'student_onboarding' &&
-          invitation.targetCoachPrincipalKey === context.principalKey,
-      )
+    const owned = [...store.invitations.values()].filter(
+      (invitation) =>
+        invitation.purpose === 'student_onboarding' &&
+        invitation.targetCoachPrincipalKey === context.principalKey,
+    );
+    const resolved = await Promise.all(
+      owned.map((invitation) => resolveInvitationLifecycle(invitation)),
+    );
+
+    const items = resolved
       .map((invitation) => ({
         invitationId: invitation.invitationId,
         purpose: 'student_onboarding' as const,
@@ -1619,6 +1697,7 @@ export function registerOnboardingRoutes(
     const invitationId = idFactory.invitationId();
     await rememberInvitation({
       claimDigest: digestSecret(claimSecret),
+      createdAt: clock.nowUtcMs(),
       invitationId,
       proposedRole: 'student',
       purpose: 'student_onboarding',
@@ -1745,15 +1824,15 @@ export function registerOnboardingRoutes(
         });
       };
 
-      const invitation = await loadInvitation(
+      const loadedInvitation = await loadInvitation(
         store,
         persistence,
         params.data.invitationId,
       );
       if (
-        invitation === undefined ||
-        invitation.purpose !== 'student_onboarding' ||
-        invitation.targetCoachPrincipalKey !== context.principalKey
+        loadedInvitation === undefined ||
+        loadedInvitation.purpose !== 'student_onboarding' ||
+        loadedInvitation.targetCoachPrincipalKey !== context.principalKey
       ) {
         return sendError(
           request,
@@ -1763,6 +1842,7 @@ export function registerOnboardingRoutes(
           'Resource not found',
         );
       }
+      const invitation = await resolveInvitationLifecycle(loadedInvitation);
 
       const revoked = revokeInvitation(invitation.state);
       if (revoked.status === 'already_terminal') {

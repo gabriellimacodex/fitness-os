@@ -12,6 +12,7 @@ export function seedInvitation(
   store: OnboardingStore,
   input: {
     claimSecret: InvitationClaimSecret;
+    createdAt?: string;
     proposedRole?: ProposedRole;
     purpose?: StoredInvitation['purpose'];
     state?: StoredInvitation['state'];
@@ -20,6 +21,7 @@ export function seedInvitation(
 ): StoredInvitation {
   const invitation: StoredInvitation = {
     claimDigest: digestClaimSecret(input.claimSecret, store.pepper),
+    createdAt: input.createdAt ?? new Date().toISOString(),
     invitationId: newInvitationId(),
     proposedRole: input.proposedRole ?? 'student',
     purpose: input.purpose ?? 'student_onboarding',
@@ -35,6 +37,7 @@ export function seedIssuedInvitation(
   store: OnboardingStore,
   input: {
     claimSecret: InvitationClaimSecret;
+    createdAt?: string;
     proposedRole?: ProposedRole;
     purpose?: StoredInvitation['purpose'];
     targetCoachPrincipalKey?: string | null;
