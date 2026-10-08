@@ -1,3 +1,4 @@
+import { privacyExpectedProcessorInventorySchema } from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -436,6 +437,166 @@ describe('createApiClient', () => {
 
     const error = await client
       .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  const processorPlanExpectedInventory =
+    privacyExpectedProcessorInventorySchema.parse({
+      canonicalizationVersion: 'privacy-governance.canonical.v1',
+      inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      inventoryVersionDigest: 'd'.repeat(64),
+      processors: [
+        {
+          adapterPackage: '@fitness-os/domain',
+          allowedCategoryIds: ['44444444-4444-4444-8444-444444444444'],
+          allowedPurposeIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'],
+          codeOwner: 'packages.domain.privacy',
+          descriptorDigest: 'c'.repeat(64),
+          environmentApplicability: 'synthetic_only',
+          inventoryId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          processorId: '99999999-9999-4999-8999-999999999999',
+          recordFamilies: [
+            {
+              family: 'privacy_audit_event',
+              lifecycleAction: 'retain_until_reviewed',
+            },
+          ],
+          registrationVersion: 1,
+          requiredReadiness: 'mechanism_only',
+          storageKind: 'in_memory_synthetic',
+          subjectLookupStrategy: 'synthetic_scope_id',
+          supportedCapabilities: ['access', 'inventory'],
+          synthetic: true,
+          unsupportedCapabilities: [
+            {
+              capability: 'delete',
+              rationale: 'deferred_to_later_prd21_slice',
+            },
+          ],
+        },
+      ],
+      schemaVersion: 'privacy.processor-inventory.v1',
+      sourceCommit: 'ebab024',
+    });
+
+  it('plans a processor request and validates the synthetic response', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        excluded: [],
+        status: 'planned',
+        steps: [
+          {
+            capability: 'access',
+            processorId: '99999999-9999-4999-8999-999999999999',
+          },
+        ],
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.privacyProcessorPlan({
+      expected: processorPlanExpectedInventory,
+      requestType: 'access',
+    });
+
+    expect(response).toMatchObject({
+      status: 'planned',
+      steps: [
+        {
+          capability: 'access',
+          processorId: '99999999-9999-4999-8999-999999999999',
+        },
+      ],
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/processor-plan',
+      ),
+      {
+        body: JSON.stringify({
+          requestType: 'access',
+          expected: processorPlanExpectedInventory,
+        }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects a processor plan request that fails schema validation before any fetch', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyProcessorPlan({
+        expected: processorPlanExpectedInventory,
+        requestType: 'not_a_real_request_type' as never,
+      }),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error for an unexpected processor-plan failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-processor-plan-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyProcessorPlan({
+        expected: processorPlanExpectedInventory,
+        requestType: 'access',
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-processor-plan-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed processor-plan payload', async () => {
+    const rawContent = 'private-processor-plan-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyProcessorPlan({
+        expected: processorPlanExpectedInventory,
+        requestType: 'access',
+      })
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiProtocolError);
