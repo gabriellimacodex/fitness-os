@@ -30,6 +30,13 @@ describe('onboarding platform env composition', () => {
     expect(onboarding?.secretFactory).toBeDefined();
     expect(onboarding?.secretVerifier).toBeDefined();
     expect(onboarding?.store).toBeDefined();
+    expect(onboarding?.claimFailureTracker).toBeDefined();
+    expect(typeof onboarding?.claimFailureTracker?.recentFailures).toBe(
+      'function',
+    );
+    expect(typeof onboarding?.claimFailureTracker?.recordFailure).toBe(
+      'function',
+    );
     // Not composed here: those legitimately remain synthetic pending a
     // separate identity/governance provider decision.
     expect(onboarding?.identitySession).toBeUndefined();
