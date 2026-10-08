@@ -441,4 +441,79 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('fetches and validates the privacy synthetic runtime processors', async () => {
+    const runtimeProcessorsResponse = {
+      runtime: [],
+      evaluatedAt: '2026-10-01T00:00:00.000Z',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(runtimeProcessorsResponse),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    await expect(client.privacyRuntimeProcessors()).resolves.toEqual(
+      runtimeProcessorsResponse,
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/runtime-processors',
+      ),
+      {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+      },
+    );
+  });
+
+  it('throws a typed API error for an unexpected runtime-processors failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Resource not found',
+            requestId: 'req-runtime-processors-1',
+          },
+        },
+        { status: 404 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyRuntimeProcessors()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'NOT_FOUND',
+      requestId: 'req-runtime-processors-1',
+      status: 404,
+    });
+  });
+
+  it('does not echo raw content from a malformed runtime-processors payload', async () => {
+    const rawContent = 'private-runtime-processor-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ runtime: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyRuntimeProcessors()
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
