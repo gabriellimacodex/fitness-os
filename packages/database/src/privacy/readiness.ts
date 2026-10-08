@@ -387,9 +387,10 @@ const INVENTORY_COVERAGE_COMPONENT_IDS = [
  * treats coverage as one combined check: any mismatch flips both components
  * `not_ready` together (fail-closed) rather than inventing a finer per-field
  * split between "expected inventory content" and "runtime availability".
- * `runtime_processors` keeps its `processor_missing` default when at least
- * one expected processor is absent from the runtime registry; otherwise both
- * components fall back to `inventory_mismatch`.
+ * `runtime_processors` keeps the comparator's more specific `processor_missing`
+ * (an expected processor is absent entirely) or `handler_missing` (a present
+ * processor lacks a declared capability) code when either applies, in that
+ * priority order; otherwise both components fall back to `inventory_mismatch`.
  */
 async function evaluateInventoryCoverageComponents(
   expectedInventory: PrivacyExpectedProcessorInventoryPort,
@@ -420,6 +421,9 @@ async function evaluateInventoryCoverageComponents(
   const hasProcessorMissing = coverage.mismatches.some(
     (mismatch) => mismatch.diagnosticCode === 'processor_missing',
   );
+  const hasHandlerMissing = coverage.mismatches.some(
+    (mismatch) => mismatch.diagnosticCode === 'handler_missing',
+  );
 
   return {
     expectedInventoryComponent: {
@@ -432,7 +436,9 @@ async function evaluateInventoryCoverageComponents(
       state: 'not_ready',
       diagnosticCode: hasProcessorMissing
         ? 'processor_missing'
-        : 'inventory_mismatch',
+        : hasHandlerMissing
+          ? 'handler_missing'
+          : 'inventory_mismatch',
     },
   };
 }

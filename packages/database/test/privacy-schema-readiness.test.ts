@@ -588,6 +588,31 @@ describe('privacy readiness inventory coverage override', () => {
     });
   });
 
+  it('reports runtime_processors not_ready with handler_missing when the registered processor is missing a declared capability', async () => {
+    const expectedInventory = new SyntheticPrivacyExpectedProcessorInventory(
+      expectedInventoryArtifact,
+    );
+    const runtimeProcessors = new SyntheticPrivacyRuntimeProcessorRegistry();
+    runtimeProcessors.seed({ ...processor, capabilities: ['access'] });
+
+    const result = await createPostgresPrivacyReadinessProbe(connectionStub, {
+      expectedInventory,
+      runtimeProcessors,
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'expected_inventory',
+      state: 'not_ready',
+      diagnosticCode: 'inventory_mismatch',
+    });
+    expect(result.components).toContainEqual({
+      componentId: 'runtime_processors',
+      state: 'not_ready',
+      diagnosticCode: 'handler_missing',
+    });
+    expect(result.diagnosticCodes).toContain('handler_missing');
+  });
+
   it('drops the base probe stale codes and re-adds only what the real coverage check reports', async () => {
     const baseProbe: PrivacyReadinessProbe = {
       evaluate: async () => ({
