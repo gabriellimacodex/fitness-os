@@ -88,4 +88,17 @@ describe('web coach onboarding boundary', () => {
       expect(source).not.toContain('@fitness-os/database');
     }
   });
+
+  it('does not reference the non-public coach-bootstrap command (Agent 90 R1 MEDIUM)', () => {
+    for (const file of ['./page.tsx', './coach-views.tsx']) {
+      const source = readFileSync(
+        fileURLToPath(new URL(file, import.meta.url)),
+        'utf8',
+      );
+
+      expect(source).not.toContain('issueCoachBootstrapInvitation');
+      expect(source).not.toContain('createCoachBootstrapLedger');
+      expect(source).not.toContain('onboarding/bootstrap');
+    }
+  });
 });
