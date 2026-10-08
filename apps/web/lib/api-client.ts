@@ -1,5 +1,6 @@
 import {
   apiErrorResponseSchema,
+  attemptDetailSchema,
   healthResponseSchema,
   inspectInvitationRequestSchema,
   movementDetailResponseSchema,
@@ -7,6 +8,7 @@ import {
   onboardingOperationResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
+  type AttemptDetail,
   type OnboardingOperationResponse,
 } from '@fitness-os/schemas';
 
@@ -206,6 +208,28 @@ export function createApiClient({
       }
 
       return detail.data;
+    },
+    async onboardingAttempt(attemptId: string): Promise<AttemptDetail> {
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          `v1/onboarding/attempts/${encodeURIComponent(attemptId)}`,
+          parsedBaseUrl,
+        ),
+        { cache: 'no-store' },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const attempt = attemptDetailSchema.safeParse(payload);
+
+      if (!attempt.success) {
+        throw new ApiProtocolError();
+      }
+
+      return attempt.data;
     },
     async onboardingInspectInvitation(
       claimSecret: string,
