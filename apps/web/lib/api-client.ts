@@ -5,6 +5,7 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  policyRefreshRequestSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
@@ -215,6 +216,41 @@ export function createApiClient({
       const { payload, response } = await fetchJson(
         fetchImplementation,
         new URL('v1/onboarding/invitations/inspect', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const operation = onboardingOperationResponseSchema.safeParse(payload);
+
+      if (!operation.success) {
+        throw new ApiProtocolError();
+      }
+
+      return operation.data;
+    },
+    async onboardingRefreshPolicy(
+      attemptId: string,
+      retryToken: string,
+    ): Promise<OnboardingOperationResponse> {
+      const body = policyRefreshRequestSchema.parse({ retryToken });
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          `v1/onboarding/attempts/${encodeURIComponent(attemptId)}/policy-refresh`,
+          parsedBaseUrl,
+        ),
         {
           body: JSON.stringify(body),
           cache: 'no-store',
