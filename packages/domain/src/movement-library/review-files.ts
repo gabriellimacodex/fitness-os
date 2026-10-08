@@ -3,6 +3,7 @@ import {
   movementIdSchema,
 } from '@fitness-os/schemas';
 
+import type { MovementManifestRecord } from './manifest.js';
 import type { MovementReviewRecord } from './review-record.js';
 
 const FIELD = (name: string) => new RegExp(`^${name}:\\s*(.+)$`, 'm');
@@ -38,3 +39,35 @@ export function parseReviewRecordMarkdown(
 
 export const REVIEW_RECORD_DIRECTORY =
   'docs/execution/content-reviews/movements';
+
+export class ReviewRecordFileBindingError extends Error {
+  override readonly name = 'ReviewRecordFileBindingError';
+}
+
+export function assertReviewRecordFileMatchesManifest(
+  markdown: string,
+  record: Pick<
+    MovementManifestRecord,
+    'contentVersion' | 'digest' | 'movementId'
+  >,
+): void {
+  const parsed = parseReviewRecordMarkdown(markdown);
+
+  if (parsed.movementId !== record.movementId) {
+    throw new ReviewRecordFileBindingError(
+      'Review record file movementId does not match the manifest record.',
+    );
+  }
+
+  if (parsed.contentVersion !== record.contentVersion) {
+    throw new ReviewRecordFileBindingError(
+      'Review record file contentVersion does not match the manifest record.',
+    );
+  }
+
+  if (parsed.digest !== record.digest) {
+    throw new ReviewRecordFileBindingError(
+      'Review record file digest does not match the manifest record.',
+    );
+  }
+}
