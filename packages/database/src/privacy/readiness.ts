@@ -311,14 +311,21 @@ const ALWAYS_OVERRIDDEN_COMPONENT_IDS = [
 ] as const;
 
 /**
- * The append-only guard triggers migration `0006` installs on every
- * immutable/append-only privacy ledger table. These enforce the destructive-
- * recovery safety net independently verified by the `privacy-migration-
- * recovery.integration.test.ts` evidence: a table can carry the right
- * migration hash and still lack real DML protection if a trigger was
- * manually dropped or its creation silently failed outside the migration
- * path, so this checks live `pg_trigger` state rather than re-deriving the
- * answer from the `migrations` component's journal evidence.
+ * The append-only/mutation guard triggers that migration `0006` and every
+ * later privacy migration adding its own immutable ledger table install:
+ * `0006` (authorization evidence, withdrawal, audit event, subject-request
+ * transition, policy package version, purpose version, processor
+ * registration), `0014` (processor step), `0015` (governance lifecycle
+ * proof), `0019` (retention rule), and `0023` (processor execution journal).
+ * These enforce the destructive-recovery safety net independently verified
+ * by the `privacy-migration-recovery.integration.test.ts` evidence: a table
+ * can carry the right migration hash and still lack real DML protection if a
+ * trigger was manually dropped or its creation silently failed outside the
+ * migration path, so this checks live `pg_trigger` state rather than
+ * re-deriving the answer from the `migrations` component's journal evidence.
+ * The list must be extended whenever a future migration adds another
+ * append-only/mutation guard trigger; leaving one out would let `recovery`
+ * report `ready` while that table's real guard is silently unverified.
  */
 const RECOVERY_REQUIRED_TRIGGERS = [
   'privacy_authorization_evidence_append_only_guard',
@@ -328,6 +335,10 @@ const RECOVERY_REQUIRED_TRIGGERS = [
   'privacy_policy_package_version_append_only_guard',
   'privacy_purpose_version_append_only_guard',
   'privacy_processor_registration_append_only_guard',
+  'privacy_processor_step_append_only_guard',
+  'privacy_governance_lifecycle_proof_append_only_guard',
+  'privacy_retention_rule_append_only_guard',
+  'privacy_processor_execution_journal_mutation_guard',
 ] as const;
 
 export type PrivacyRecoveryReadinessResult =
@@ -339,9 +350,10 @@ export type PrivacyRecoveryReadinessResult =
     };
 
 /**
- * Verifies every append-only guard trigger migration `0006` installs is
- * actually present in the connected database, independent of whether the
- * migration journal recorded `0006` as applied.
+ * Verifies every append-only/mutation guard trigger listed in
+ * `RECOVERY_REQUIRED_TRIGGERS` is actually present in the connected
+ * database, independent of whether the migration journal recorded the
+ * installing migration as applied.
  */
 export async function checkPrivacyRecoveryReadiness(
   connection: PostgresConnection,

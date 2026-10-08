@@ -441,7 +441,7 @@ describe('privacy recovery readiness', () => {
     });
   });
 
-  it('reports recovery ready once every required append-only guard trigger is present', async () => {
+  it('reports recovery ready once every required append-only/mutation guard trigger is present', async () => {
     const connection = {
       close: async () => undefined,
       db: {
@@ -453,6 +453,10 @@ describe('privacy recovery readiness', () => {
           { tgname: 'privacy_policy_package_version_append_only_guard' },
           { tgname: 'privacy_purpose_version_append_only_guard' },
           { tgname: 'privacy_processor_registration_append_only_guard' },
+          { tgname: 'privacy_processor_step_append_only_guard' },
+          { tgname: 'privacy_governance_lifecycle_proof_append_only_guard' },
+          { tgname: 'privacy_retention_rule_append_only_guard' },
+          { tgname: 'privacy_processor_execution_journal_mutation_guard' },
           // An unrelated trigger must not be required or otherwise affect
           // the result.
           { tgname: 'some_other_unrelated_guard' },
@@ -471,6 +475,42 @@ describe('privacy recovery readiness', () => {
       state: 'ready',
     });
     expect(result.diagnosticCodes).not.toContain('recovery_unverified');
+  });
+
+  it('reports recovery not_ready with recovery_unverified when every migration-0006 trigger is present but a later migration (0014/0015/0019/0023) append-only/mutation guard trigger is missing', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => [
+          { tgname: 'privacy_authorization_evidence_append_only_guard' },
+          { tgname: 'privacy_withdrawal_append_only_guard' },
+          { tgname: 'privacy_audit_event_append_only_guard' },
+          { tgname: 'privacy_subject_request_transition_append_only_guard' },
+          { tgname: 'privacy_policy_package_version_append_only_guard' },
+          { tgname: 'privacy_purpose_version_append_only_guard' },
+          { tgname: 'privacy_processor_registration_append_only_guard' },
+          // Deliberately omits privacy_processor_step_append_only_guard,
+          // privacy_governance_lifecycle_proof_append_only_guard,
+          // privacy_retention_rule_append_only_guard, and
+          // privacy_processor_execution_journal_mutation_guard: a database
+          // missing any of these real destructive-DML guards must not be
+          // reported ready merely because every migration-0006 trigger is
+          // present.
+        ],
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'recovery',
+      diagnosticCode: 'recovery_unverified',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain('recovery_unverified');
   });
 
   it('reports recovery not_ready with recovery_unverified on a database error', async () => {
