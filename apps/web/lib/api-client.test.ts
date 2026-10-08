@@ -1,3 +1,8 @@
+import {
+  privacyEvidenceIdSchema,
+  privacyOperationIdSchema,
+  privacyWithdrawalIdSchema,
+} from '@fitness-os/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,6 +10,16 @@ import {
   ApiProtocolError,
   createApiClient,
 } from './api-client';
+
+const WITHDRAWAL_ID = privacyWithdrawalIdSchema.parse(
+  'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+);
+const EVIDENCE_ID = privacyEvidenceIdSchema.parse(
+  'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+);
+const OPERATION_ID = privacyOperationIdSchema.parse(
+  'ffffffff-ffff-4fff-8fff-ffffffffffff',
+);
 
 describe('createApiClient', () => {
   it('rejects a relative base URL', () => {
@@ -436,6 +451,133 @@ describe('createApiClient', () => {
 
     const error = await client
       .onboardingInspectInvitation('a'.repeat(24))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
+
+  it('plans a withdrawal with a validated request and no-store', async () => {
+    const withdrawalId = WITHDRAWAL_ID;
+    const evidenceId = EVIDENCE_ID;
+    const operationId = OPERATION_ID;
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        status: 'accepted',
+        withdrawal: {
+          withdrawalId,
+          evidenceId,
+          state: 'withdrawn',
+          withdrawnAt: '2026-01-01T00:00:00.000Z',
+          operationId,
+          processingOutcome: 'accepted',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.privacyWithdrawalPlan({
+      existing: null,
+      withdrawalId,
+      evidenceId,
+      operationId,
+    });
+
+    expect(response).toMatchObject({ status: 'accepted' });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(
+        'https://api.example.com/platform/v1/privacy/synthetic/withdrawal-plan',
+      ),
+      {
+        body: JSON.stringify({
+          existing: null,
+          withdrawalId,
+          evidenceId,
+          operationId,
+        }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid withdrawal-plan request before making a request', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.privacyWithdrawalPlan({
+        existing: null,
+        withdrawalId: 'not-a-uuid',
+        evidenceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        operationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+      } as never),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error for an unexpected withdrawal-plan failure', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Request could not be completed',
+            requestId: 'req-withdrawal-plan-1',
+          },
+        },
+        { status: 500 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyWithdrawalPlan({
+        existing: null,
+        withdrawalId: WITHDRAWAL_ID,
+        evidenceId: EVIDENCE_ID,
+        operationId: OPERATION_ID,
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-withdrawal-plan-1',
+      status: 500,
+    });
+  });
+
+  it('does not echo raw content from a malformed withdrawal-plan payload', async () => {
+    const rawContent = 'private-ledger-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ status: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .privacyWithdrawalPlan({
+        existing: null,
+        withdrawalId: WITHDRAWAL_ID,
+        evidenceId: EVIDENCE_ID,
+        operationId: OPERATION_ID,
+      })
       .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiProtocolError);
