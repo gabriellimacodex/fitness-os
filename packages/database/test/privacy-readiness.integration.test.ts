@@ -13,6 +13,7 @@ import {
 import { createPostgresConnection } from '../src/connection.js';
 import {
   checkPrivacyAuditSinkFunctionalReadiness,
+  checkPrivacyRepositoriesFunctionalReadiness,
   createPostgresPrivacyReadinessProbe,
 } from '../src/privacy/readiness.js';
 import { createPostgresPrivacyRuntimeProcessorRegistry } from '../src/privacy/registries.js';
@@ -152,6 +153,25 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
       );
       // The probe transaction always rolls back, so it must never leave a row
       // in the append-only audit ledger, no matter how many times it runs.
+      expect(after[0]?.count).toBe(before[0]?.count);
+    });
+
+    it('checkPrivacyRepositoriesFunctionalReadiness performs a real put+read-back through createPostgresPrivacyRuntimeProcessorRegistry and leaves no row behind', async () => {
+      const before = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_processor_registration`,
+      );
+
+      const result =
+        await checkPrivacyRepositoriesFunctionalReadiness(connection);
+
+      expect(result.ready).toBe(true);
+
+      const after = await connection.db.execute<{ count: string }>(
+        sql`SELECT count(*)::text AS count FROM privacy_processor_registration`,
+      );
+      // The probe transaction always rolls back, so it must never leave a
+      // row in `privacy_processor_registration`, no matter how many times it
+      // runs.
       expect(after[0]?.count).toBe(before[0]?.count);
     });
 

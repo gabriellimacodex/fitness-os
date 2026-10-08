@@ -13,6 +13,7 @@ import {
 import type { PostgresConnection } from '../src/connection.js';
 import {
   checkPrivacyAuditSinkFunctionalReadiness,
+  checkPrivacyRepositoriesFunctionalReadiness,
   createPostgresPrivacyReadinessProbe,
 } from '../src/privacy/readiness.js';
 
@@ -297,6 +298,101 @@ describe('privacy schema readiness', () => {
     expect(result.diagnosticCodes).not.toContain('audit_unavailable');
   });
 
+  it('flips repositories ready once the core schema is ready and the functional put+read-back round trip succeeds', async () => {
+    let executeCount = 0;
+    let lastPutRow: Record<string, unknown> | undefined;
+    // Minimal stand-in for the drizzle query-builder chain
+    // `checkPrivacyRepositoriesFunctionalReadiness` exercises through the
+    // real `createPostgresPrivacyRuntimeProcessorRegistry`: capture the
+    // inserted row and hand it back on read-back, mirroring what a real
+    // transaction would return.
+    const tx = {
+      insert: () => ({
+        values: async (row: Record<string, unknown>) => {
+          lastPutRow = row;
+        },
+      }),
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => (lastPutRow ? [lastPutRow] : []),
+          }),
+        }),
+      }),
+    };
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : [
+                { tablename: 'privacy_policy_package_version' },
+                { tablename: 'privacy_purpose_version' },
+                { tablename: 'privacy_processor_registration' },
+                { tablename: 'privacy_authorization_evidence' },
+                { tablename: 'privacy_withdrawal' },
+                { tablename: 'privacy_audit_event' },
+                { tablename: 'privacy_subject_request' },
+                { tablename: 'privacy_subject_request_transition' },
+              ];
+        },
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'repositories',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.diagnosticCodes).not.toContain('repository_unavailable');
+  });
+
+  it('keeps repositories not_ready with repository_unavailable when the core schema is ready but the functional round trip fails', async () => {
+    let executeCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : [
+                { tablename: 'privacy_policy_package_version' },
+                { tablename: 'privacy_purpose_version' },
+                { tablename: 'privacy_processor_registration' },
+                { tablename: 'privacy_authorization_evidence' },
+                { tablename: 'privacy_withdrawal' },
+                { tablename: 'privacy_audit_event' },
+                { tablename: 'privacy_subject_request' },
+                { tablename: 'privacy_subject_request_transition' },
+              ];
+        },
+        // No `transaction` implementation: the functional round trip cannot
+        // run, so it must fail closed rather than silently reporting ready.
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresPrivacyReadinessProbe(connection, {
+      evaluatedAt: '2026-08-31T00:00:00.000Z',
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'repositories',
+      diagnosticCode: 'repository_unavailable',
+      state: 'not_ready',
+    });
+    expect(result.diagnosticCodes).toContain('repository_unavailable');
+  });
+
   it('keeps audit_sink not_ready with audit_unavailable when the core schema is ready but the functional round trip fails', async () => {
     let executeCount = 0;
     const connection = {
@@ -391,6 +487,73 @@ describe('checkPrivacyAuditSinkFunctionalReadiness (mocked)', () => {
     } as unknown as PostgresConnection;
 
     const result = await checkPrivacyAuditSinkFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
+  });
+});
+
+describe('checkPrivacyRepositoriesFunctionalReadiness (mocked)', () => {
+  it('reports round_trip_failed when the registry put itself reports a conflict', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                throw Object.assign(new Error('unique violation'), {
+                  code: '23505',
+                  constraint_name: 'privacy_processor_registration_pkey',
+                });
+              },
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyRepositoriesFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'put_conflict',
+    });
+  });
+
+  it('reports round_trip_failed when the read-back cannot find the registered probe descriptor', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            select: () => ({
+              from: () => ({ where: () => ({ limit: async () => [] }) }),
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyRepositoriesFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'round_trip_read_back_missing',
+    });
+  });
+
+  it('reports database_error when the transaction itself is unavailable', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {},
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkPrivacyRepositoriesFunctionalReadiness(connection);
 
     expect(result.ready).toBe(false);
     expect(result).toMatchObject({ reason: 'database_error' });
