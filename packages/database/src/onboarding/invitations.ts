@@ -174,56 +174,54 @@ async function applyTransition(
   updatedAt: string,
   transition: (state: InvitationState) => ReturnType<typeof claimInvitation>,
 ): Promise<OnboardingInvitationTransitionResult> {
-  try {
-    return await connection.db.transaction(async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(onboardingInvitation)
-        .where(eq(onboardingInvitation.invitationId, invitationId))
-        .for('update');
+  // This transition only ever updates `state` and `updatedAt`; it never
+  // writes `claim_digest`, so no unique-constraint violation on
+  // `onboarding_invitation_claim_digest_unique` can occur here. Any error
+  // from the transaction (lock timeout, serialization failure, connection
+  // loss, etc.) propagates to the caller unhandled.
+  return await connection.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(onboardingInvitation)
+      .where(eq(onboardingInvitation.invitationId, invitationId))
+      .for('update');
 
-      if (!row) {
-        return { reason: 'not_found' as const, status: 'invalid' as const };
-      }
-
-      const current = toRecord(row);
-      const result = transition(current.state);
-      if (result.status === 'already_terminal') {
-        return { invitation: current, status: 'already_terminal' as const };
-      }
-      if (result.status !== 'advanced') {
-        return {
-          reason: 'illegal_transition' as const,
-          status: 'invalid' as const,
-        };
-      }
-
-      const updated = await tx
-        .update(onboardingInvitation)
-        .set({ state: result.state, updatedAt })
-        .where(
-          and(
-            eq(onboardingInvitation.invitationId, invitationId),
-            eq(onboardingInvitation.state, current.state),
-          ),
-        )
-        .returning();
-
-      if (updated.length === 0) {
-        return { status: 'conflict' as const };
-      }
-
-      return {
-        invitation: toRecord(updated[0]!),
-        status: 'advanced' as const,
-      };
-    });
-  } catch (error) {
-    if (isUniqueViolation(error, 'onboarding_invitation_claim_digest_unique')) {
-      return { status: 'conflict' };
+    if (!row) {
+      return { reason: 'not_found' as const, status: 'invalid' as const };
     }
-    throw error;
-  }
+
+    const current = toRecord(row);
+    const result = transition(current.state);
+    if (result.status === 'already_terminal') {
+      return { invitation: current, status: 'already_terminal' as const };
+    }
+    if (result.status !== 'advanced') {
+      return {
+        reason: 'illegal_transition' as const,
+        status: 'invalid' as const,
+      };
+    }
+
+    const updated = await tx
+      .update(onboardingInvitation)
+      .set({ state: result.state, updatedAt })
+      .where(
+        and(
+          eq(onboardingInvitation.invitationId, invitationId),
+          eq(onboardingInvitation.state, current.state),
+        ),
+      )
+      .returning();
+
+    if (updated.length === 0) {
+      return { status: 'conflict' as const };
+    }
+
+    return {
+      invitation: toRecord(updated[0]!),
+      status: 'advanced' as const,
+    };
+  });
 }
 
 export type PostgresOnboardingInvitationRepository = ReturnType<
