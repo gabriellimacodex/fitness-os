@@ -5,9 +5,11 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacyReadinessResultSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacyReadinessResult,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +239,24 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacySyntheticReadiness(): Promise<PrivacyReadinessResult> {
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/readiness', parsedBaseUrl),
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const readiness = privacyReadinessResultSchema.safeParse(payload);
+
+      if (!readiness.success) {
+        throw new ApiProtocolError();
+      }
+
+      return readiness.data;
     },
   };
 }
