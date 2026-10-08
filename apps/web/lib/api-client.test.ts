@@ -441,4 +441,136 @@ describe('createApiClient', () => {
     expect(error).toBeInstanceOf(ApiProtocolError);
     expect(String(error)).not.toContain(rawContent);
   });
+
+  it('creates an onboarding attempt with a validated claim secret/retry token and no-store', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({
+        operation: {
+          canonicalizationVersion: 'utf8-json-sha256.v1',
+          digest: 'a'.repeat(64),
+          namespace: 'create_attempt',
+          operationId: '11111111-1111-4111-8111-111111111111',
+          state: 'operation_committed',
+        },
+        result: {
+          attempt: {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            invitationId: '33333333-3333-4333-8333-333333333333',
+            lifecycle: 'policy_pending',
+            ordinal: 1,
+            policy: null,
+            predecessorAttemptId: null,
+            proposedRole: 'student',
+            purpose: 'student_onboarding',
+            terminalReason: null,
+          },
+          command: 'attempt',
+          outcome: 'command_succeeded',
+        },
+      }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com/platform',
+      fetch,
+    });
+
+    const response = await client.onboardingCreateAttempt(
+      'a'.repeat(24),
+      'b'.repeat(16),
+    );
+
+    expect(response.result).toMatchObject({
+      command: 'attempt',
+      outcome: 'command_succeeded',
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://api.example.com/platform/v1/onboarding/attempts'),
+      {
+        body: JSON.stringify({
+          retryToken: 'b'.repeat(16),
+          claimSecret: 'a'.repeat(24),
+        }),
+        cache: 'no-store',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  });
+
+  it('rejects an invalid claim secret before creating an attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingCreateAttempt('too-short', 'b'.repeat(16)),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid retry token before creating an attempt', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    await expect(
+      client.onboardingCreateAttempt('a'.repeat(24), 'too-short'),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('throws a typed API error when creating an attempt is unauthenticated', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Authentication required',
+            requestId: 'req-create-attempt-1',
+          },
+        },
+        { status: 401 },
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCreateAttempt('a'.repeat(24), 'b'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect(error).toMatchObject({
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-create-attempt-1',
+      status: 401,
+    });
+  });
+
+  it('does not echo raw content from a malformed create-attempt payload', async () => {
+    const rawContent = 'private-attempt-detail';
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ result: rawContent }),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.com',
+      fetch,
+    });
+
+    const error = await client
+      .onboardingCreateAttempt('a'.repeat(24), 'b'.repeat(16))
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiProtocolError);
+    expect(String(error)).not.toContain(rawContent);
+  });
 });
