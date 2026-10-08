@@ -5,9 +5,29 @@ import {
   movementDetailResponseSchema,
   movementListResponseSchema,
   onboardingOperationResponseSchema,
+  privacySyntheticGovernanceLifecycleRecordRequestSchema,
+  privacySyntheticGovernanceLifecycleRecordResponseSchema,
+  privacySyntheticProcessorCoordinateRequestSchema,
+  privacySyntheticProcessorCoordinateResponseSchema,
+  privacySyntheticProcessorExecuteRequestSchema,
+  privacySyntheticProcessorExecuteResponseSchema,
+  privacySyntheticProcessorStepRecordRequestSchema,
+  privacySyntheticProcessorStepRecordResponseSchema,
+  privacySyntheticRetentionExecutionAuthorizeRequestSchema,
+  privacySyntheticRetentionExecutionAuthorizeResponseSchema,
   readinessResponseSchema,
   type ApiErrorCode,
   type OnboardingOperationResponse,
+  type PrivacySyntheticGovernanceLifecycleRecordRequest,
+  type PrivacySyntheticGovernanceLifecycleRecordResponse,
+  type PrivacySyntheticProcessorCoordinateRequest,
+  type PrivacySyntheticProcessorCoordinateResponse,
+  type PrivacySyntheticProcessorExecuteRequest,
+  type PrivacySyntheticProcessorExecuteResponse,
+  type PrivacySyntheticProcessorStepRecordRequest,
+  type PrivacySyntheticProcessorStepRecordResponse,
+  type PrivacySyntheticRetentionExecutionAuthorizeRequest,
+  type PrivacySyntheticRetentionExecutionAuthorizeResponse,
 } from '@fitness-os/schemas';
 
 export class ApiClientError extends Error {
@@ -237,6 +257,180 @@ export function createApiClient({
       }
 
       return operation.data;
+    },
+    async privacyRetentionExecutionAuthorize(
+      request: PrivacySyntheticRetentionExecutionAuthorizeRequest,
+    ): Promise<PrivacySyntheticRetentionExecutionAuthorizeResponse> {
+      const body =
+        privacySyntheticRetentionExecutionAuthorizeRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          'v1/privacy/synthetic/retention-execution-authorize',
+          parsedBaseUrl,
+        ),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const authorization =
+        privacySyntheticRetentionExecutionAuthorizeResponseSchema.safeParse(
+          payload,
+        );
+
+      if (!authorization.success) {
+        throw new ApiProtocolError();
+      }
+
+      return authorization.data;
+    },
+    async privacyProcessorCoordinate(
+      request: PrivacySyntheticProcessorCoordinateRequest,
+    ): Promise<PrivacySyntheticProcessorCoordinateResponse> {
+      const body =
+        privacySyntheticProcessorCoordinateRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/processor-coordinate', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const coordination =
+        privacySyntheticProcessorCoordinateResponseSchema.safeParse(payload);
+
+      if (!coordination.success) {
+        throw new ApiProtocolError();
+      }
+
+      return coordination.data;
+    },
+    async privacyProcessorStepRecord(
+      request: PrivacySyntheticProcessorStepRecordRequest,
+    ): Promise<PrivacySyntheticProcessorStepRecordResponse> {
+      const body =
+        privacySyntheticProcessorStepRecordRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/processor-step-record', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const record =
+        privacySyntheticProcessorStepRecordResponseSchema.safeParse(payload);
+
+      if (!record.success) {
+        throw new ApiProtocolError();
+      }
+
+      return record.data;
+    },
+    async privacyGovernanceLifecycleRecord(
+      request: PrivacySyntheticGovernanceLifecycleRecordRequest,
+    ): Promise<PrivacySyntheticGovernanceLifecycleRecordResponse> {
+      const body =
+        privacySyntheticGovernanceLifecycleRecordRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL(
+          'v1/privacy/synthetic/governance-lifecycle-record',
+          parsedBaseUrl,
+        ),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const record =
+        privacySyntheticGovernanceLifecycleRecordResponseSchema.safeParse(
+          payload,
+        );
+
+      if (!record.success) {
+        throw new ApiProtocolError();
+      }
+
+      return record.data;
+    },
+    async privacyProcessorExecute(
+      request: PrivacySyntheticProcessorExecuteRequest,
+    ): Promise<PrivacySyntheticProcessorExecuteResponse> {
+      const body = privacySyntheticProcessorExecuteRequestSchema.parse(request);
+
+      const { payload, response } = await fetchJson(
+        fetchImplementation,
+        new URL('v1/privacy/synthetic/processor-execute', parsedBaseUrl),
+        {
+          body: JSON.stringify(body),
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        },
+      );
+
+      if (!response.ok) {
+        throwApiError(response, payload);
+      }
+
+      const result =
+        privacySyntheticProcessorExecuteResponseSchema.safeParse(payload);
+
+      if (!result.success) {
+        throw new ApiProtocolError();
+      }
+
+      return result.data;
     },
   };
 }
