@@ -2671,4 +2671,57 @@ describe('policy-refresh and claim', () => {
 
     await app.close();
   });
+
+  it('sets no-store on unexpected claim failures', async () => {
+    const store = createOnboardingStore();
+    seedIssuedInvitation(store, { claimSecret: CLAIM_SECRET });
+    const { app } = buildSyntheticApp({ store });
+    const claimUrlPattern = /^\/v1\/onboarding\/attempts\/[^/]+\/claim$/;
+    app.addHook('preHandler', async (request) => {
+      if (claimUrlPattern.test(request.url.split('?')[0] ?? '')) {
+        throw new Error('private claim failure');
+      }
+    });
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/onboarding/attempts',
+      payload: { claimSecret: CLAIM_SECRET, retryToken: RETRY_TOKEN },
+    });
+    const createdBody = onboardingOperationResponseSchema.parse(created.json());
+    if (
+      !createdBody.result ||
+      createdBody.result.outcome !== 'command_succeeded' ||
+      !('attempt' in createdBody.result)
+    ) {
+      throw new Error('expected attempt');
+    }
+    const attemptId = createdBody.result.attempt.attemptId;
+
+    await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/policy-refresh`,
+      payload: {
+        retryToken: retryTokenSchema.parse('synthetic-retry-policy-claim-fail'),
+      },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/onboarding/attempts/${attemptId}/claim`,
+      payload: {
+        claimSecret: CLAIM_SECRET,
+        retryToken: retryTokenSchema.parse('synthetic-retry-claim-fail'),
+      },
+    });
+    const body = apiErrorResponseSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(body.error.code).toBe('INTERNAL_ERROR');
+    expect(response.body).not.toContain('private claim failure');
+    expect(response.body).not.toContain(CLAIM_SECRET);
+
+    await app.close();
+  });
 });
