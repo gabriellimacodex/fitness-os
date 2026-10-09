@@ -56,8 +56,10 @@ export {
   type PostgresClaimFailureTracker,
 } from './claim-failure.js';
 export {
+  checkOnboardingClaimFailureFunctionalReadiness,
   checkOnboardingSchemaReadiness,
   createPostgresOnboardingReadinessProbe,
   requiredOnboardingMigrationHashes,
+  type OnboardingClaimFailureFunctionalReadinessResult,
   type OnboardingSchemaReadinessResult,
 } from './readiness.js';

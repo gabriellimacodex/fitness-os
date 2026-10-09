@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,7 @@ import {
 import type { PostgresConnection } from '../connection.js';
 import { journalContainsRequiredHashes } from '../catalog/migration-readiness.js';
 import { readJournalHashes } from '../catalog/readiness.js';
+import { createPostgresClaimFailureTracker } from './claim-failure.js';
 
 const drizzleRoot = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -68,6 +69,85 @@ const REQUIRED_TABLES = [
 ] as const;
 
 /**
+ * Thrown deliberately at the end of the functional claim-failure round-trip
+ * transaction so the write never commits. Caught explicitly in
+ * `checkOnboardingClaimFailureFunctionalReadiness` and treated as success;
+ * any other thrown value is a real failure of the insert/read-back path.
+ */
+class OnboardingClaimFailureProbeRollback extends Error {}
+
+export type OnboardingClaimFailureFunctionalReadinessResult =
+  | { ready: true }
+  | {
+      ready: false;
+      reason: 'round_trip_failed' | 'database_error';
+      detail?: string;
+    };
+
+/**
+ * Exercises the real `createPostgresClaimFailureTracker` path end to end:
+ * records one synthetic failure key through the actual tracker
+ * implementation inside a transaction, confirms it is visible via
+ * `recentFailures`, and always rolls back so no probe row is ever committed
+ * to the claim-throttling table. This catches a broken insert/select path
+ * (column mismatch, constraint drift, permission failure) that
+ * `checkOnboardingSchemaReadiness`'s static migration-hash and `pg_tables`
+ * presence check cannot detect, since that check only proves the expected
+ * migration ran and `onboarding_claim_failure` exists, not that the
+ * production claim-throttling tracker can actually write to and read from
+ * it.
+ */
+export async function checkOnboardingClaimFailureFunctionalReadiness(
+  connection: PostgresConnection,
+): Promise<OnboardingClaimFailureFunctionalReadinessResult> {
+  const probeKey = `readiness-probe:${randomUUID()}`;
+  const probeAtUtcMs = Date.now();
+
+  try {
+    await connection.db.transaction(async (tx) => {
+      const txConnection: PostgresConnection = {
+        db: tx,
+        close: connection.close,
+      };
+      const tracker = createPostgresClaimFailureTracker(txConnection);
+      await tracker.recordFailure(probeKey, probeAtUtcMs);
+
+      const recentFailures = await tracker.recentFailures(
+        probeKey,
+        probeAtUtcMs - 1,
+      );
+      if (!recentFailures.includes(probeAtUtcMs)) {
+        throw new Error('round_trip_read_back_missing');
+      }
+
+      // Always abort: this is a readiness probe, not a real recorded
+      // failure, and must never leave a row in the claim-throttling table.
+      throw new OnboardingClaimFailureProbeRollback();
+    });
+
+    // The transaction above always throws before reaching a commit; getting
+    // here without an error means the sentinel rollback was swallowed
+    // somewhere, which is itself not a verified round trip.
+    return {
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'transaction_completed_without_rollback',
+    };
+  } catch (error) {
+    if (error instanceof OnboardingClaimFailureProbeRollback) {
+      return { ready: true };
+    }
+    const message = error instanceof Error ? error.message : 'unknown';
+    const isRoundTripFailure = message === 'round_trip_read_back_missing';
+    return {
+      ready: false,
+      reason: isRoundTripFailure ? 'round_trip_failed' : 'database_error',
+      detail: message,
+    };
+  }
+}
+
+/**
  * Readiness components whose backing table is already one of
  * `REQUIRED_TABLES`, so `checkOnboardingSchemaReadiness` is real evidence for
  * them rather than an invented equivalence:
@@ -78,12 +158,17 @@ const REQUIRED_TABLES = [
  *
  * `onboarding_claim_failure` (backing `createPostgresClaimFailureTracker`,
  * used by production claim throttling) has no dedicated readiness component
- * id of its own, but is still required here: `checkOnboardingSchemaReadiness`
- * is a single combined, fail-closed check across every table this package
+ * id of its own, so it is folded into the aggregate `schema` component
+ * instead: `schema` is ready only when both the static migration/table
+ * evidence (`checkOnboardingSchemaReadiness`, covering every table in
+ * `REQUIRED_TABLES` including this one) and the functional round trip
+ * (`checkOnboardingClaimFailureFunctionalReadiness`) succeed. This is a
+ * single combined, fail-closed check across every table this package
  * requires (see the `schema`/repository binding note below), so omitting a
- * real, landed onboarding table from `REQUIRED_TABLES` would let the
- * aggregate `schema` component report `ready` while a production table is
- * actually missing.
+ * real, landed onboarding table from `REQUIRED_TABLES`, or a broken
+ * claim-failure insert/select path, would otherwise let the aggregate
+ * `schema` component report `ready` while production claim throttling is
+ * actually broken.
  */
 const REPOSITORY_COMPONENT_IDS = [
   'invitation_repository',
@@ -158,16 +243,24 @@ export async function checkOnboardingSchemaReadiness(
  * probe) and replaces its `schema` component plus the four repository
  * components with a real evaluation of `checkOnboardingSchemaReadiness`
  * against `connection`, per PRD 07's "Readiness" section ("Mechanism
- * readiness requires: exact required migration and schema markers").
+ * readiness requires: exact required migration and schema markers"). `schema`
+ * additionally requires `checkOnboardingClaimFailureFunctionalReadiness` to
+ * succeed once the static check is ready — a real, rolled-back
+ * record+read-back through `createPostgresClaimFailureTracker` — since the
+ * static migration/table check alone cannot prove that table can actually be
+ * written to and read from. The functional check is skipped (and `schema`
+ * stays `not_ready`) when the static result itself is not `ready`, since a
+ * write would just fail for a reason already reported.
  *
- * The repository components reuse that same result because every table they
- * are backed by is already one of `REQUIRED_TABLES` (see
- * `REPOSITORY_COMPONENT_IDS`), so the check is real evidence for them and not
- * an invented equivalence. They are bound as one combined, fail-closed check:
- * any missing required migration or table flips all four `not_ready`
- * together, rather than inferring a finer per-repository split from partial
- * schema state. This is table/migration presence only — it does not exercise
- * a read/write round-trip through the repositories themselves.
+ * The repository components reuse the static schema result (not the
+ * functional claim-failure check) because every table they are backed by is
+ * already one of `REQUIRED_TABLES` (see `REPOSITORY_COMPONENT_IDS`), so that
+ * check is real evidence for them and not an invented equivalence. They are
+ * bound as one combined, fail-closed check: any missing required migration or
+ * table flips all four `not_ready` together, rather than inferring a finer
+ * per-repository split from partial schema state. This is table/migration
+ * presence only — it does not exercise a read/write round-trip through the
+ * repositories themselves.
  *
  * When `mechanismComponents` is also supplied, this first composes
  * `createSelfTestOnboardingReadinessProbe` from `@fitness-os/domain` around
@@ -209,19 +302,29 @@ export function createPostgresOnboardingReadinessProbe(
       const schemaResult = await checkOnboardingSchemaReadiness(connection, {
         requiredHashes: options.requiredHashes,
       });
+      // Only attempt the functional round trip once the static schema check
+      // already reports the required migrations/tables present — otherwise
+      // the insert would fail on a missing table for a reason this probe
+      // already reports through `schema`, and running it anyway would just
+      // duplicate that diagnosis with a heavier DB call.
+      const claimFailureFunctionalResult = schemaResult.ready
+        ? await checkOnboardingClaimFailureFunctionalReadiness(connection)
+        : null;
 
-      const schemaComponent: OnboardingReadinessComponent = schemaResult.ready
-        ? { componentId: 'schema', diagnosticCode: null, state: 'ready' }
-        : {
-            componentId: 'schema',
-            diagnosticCode:
-              schemaResult.reason === 'missing_required_migration'
-                ? 'migration_missing'
-                : schemaResult.reason === 'missing_required_table'
-                  ? 'schema_mismatch'
-                  : 'configuration_mismatch',
-            state: 'not_ready',
-          };
+      const schemaComponent: OnboardingReadinessComponent =
+        schemaResult.ready && claimFailureFunctionalResult?.ready === true
+          ? { componentId: 'schema', diagnosticCode: null, state: 'ready' }
+          : {
+              componentId: 'schema',
+              diagnosticCode: !schemaResult.ready
+                ? schemaResult.reason === 'missing_required_migration'
+                  ? 'migration_missing'
+                  : schemaResult.reason === 'missing_required_table'
+                    ? 'schema_mismatch'
+                    : 'configuration_mismatch'
+                : 'configuration_mismatch',
+              state: 'not_ready',
+            };
 
       const repositoryComponents: OnboardingReadinessComponent[] =
         REPOSITORY_COMPONENT_IDS.map((componentId) =>
