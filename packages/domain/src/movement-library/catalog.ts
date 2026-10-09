@@ -70,9 +70,10 @@ export function createMovementCatalog(
   try {
     derived = deriveManifestState(manifest);
   } catch (error) {
-    throw new MovementCatalogError(
-      error instanceof Error ? error.message : 'Manifest is invalid.',
-    );
+    // deriveManifestState and assertValidManifestRecord only ever throw
+    // Error instances (including Zod's parse errors), so error.message is
+    // always defined here; there is no non-Error branch to fall back to.
+    throw new MovementCatalogError((error as Error).message);
   }
 
   const publishedById = new Map<MovementId, MovementDetail>();
@@ -165,9 +166,10 @@ export function createMovementCatalog(
         });
       }
     } catch (error) {
-      throw new MovementCatalogError(
-        error instanceof Error ? error.message : 'Review evidence is invalid.',
-      );
+      // The explicit throws above and assertUniqueNonces/verifyReviewRecord
+      // only ever throw Error instances, so error.message is always defined
+      // here; there is no non-Error branch to fall back to.
+      throw new MovementCatalogError((error as Error).message);
     }
   }
 
