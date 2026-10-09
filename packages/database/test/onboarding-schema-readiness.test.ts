@@ -15,6 +15,7 @@ import {
 
 import type { PostgresConnection } from '../src/connection.js';
 import {
+  checkOnboardingClaimFailureFunctionalReadiness,
   createPostgresOnboardingReadinessProbe,
   requiredOnboardingMigrationHashes,
 } from '../src/onboarding/readiness.js';
@@ -29,9 +30,35 @@ const REPOSITORY_COMPONENT_IDS = [
 ] as const;
 
 /**
+ * Minimal stand-in for the drizzle query-builder chain
+ * `checkOnboardingClaimFailureFunctionalReadiness` exercises through the
+ * real `createPostgresClaimFailureTracker`: records the inserted row and
+ * hands it back on read-back, mirroring what a real transaction would
+ * return.
+ */
+function claimFailureTransactionStub() {
+  const rows: { key: string; occurredAt: string }[] = [];
+  return {
+    insert: () => ({
+      values: async (row: { key: string; occurredAt: string }) => {
+        rows.push(row);
+      },
+    }),
+    select: () => ({
+      from: () => ({
+        where: async () => rows.map((row) => ({ occurredAt: row.occurredAt })),
+      }),
+    }),
+  };
+}
+
+/**
  * First `execute` answers the migration-journal query, later ones answer the
  * `pg_tables` query, so a caller can control migration and table evidence
- * independently.
+ * independently. `transaction` always succeeds the functional claim-failure
+ * round trip so callers exercising the `tables`-present path get a `schema`
+ * component that is `ready` by default; tests for the functional round trip
+ * itself failing construct their own connection without it.
  */
 function stubConnection(tables: readonly string[]): PostgresConnection {
   let executeCount = 0;
@@ -45,6 +72,8 @@ function stubConnection(tables: readonly string[]): PostgresConnection {
           ? []
           : tables.map((tablename) => ({ tablename }));
       },
+      transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(claimFailureTransactionStub()),
     },
   } as unknown as PostgresConnection;
 }
@@ -313,6 +342,8 @@ describe('onboarding schema readiness', () => {
                 { tablename: 'onboarding_claim_failure' },
               ];
         },
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn(claimFailureTransactionStub()),
       },
     } as unknown as PostgresConnection;
     const baseProbe: OnboardingReadinessProbe = {
@@ -343,6 +374,135 @@ describe('onboarding schema readiness', () => {
       diagnosticCode: null,
       state: 'ready',
     });
+  });
+
+  it('flips schema ready once the static check is ready and the functional claim-failure round trip succeeds', async () => {
+    const result = await createPostgresOnboardingReadinessProbe(
+      stubConnection(ALL_ONBOARDING_TABLES),
+      { requiredHashes: [] },
+    ).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'schema',
+      diagnosticCode: null,
+      state: 'ready',
+    });
+    expect(result.mechanismReady).toBe(true);
+  });
+
+  it('keeps schema not_ready with configuration_mismatch when the static check is ready but the functional claim-failure round trip cannot run', async () => {
+    let executeCount = 0;
+    const connection = {
+      close: async () => undefined,
+      db: {
+        execute: async () => {
+          executeCount += 1;
+          return executeCount === 1
+            ? []
+            : ALL_ONBOARDING_TABLES.map((tablename) => ({ tablename }));
+        },
+        // No `transaction` implementation: the functional round trip cannot
+        // run, so it must fail closed rather than silently reporting ready.
+      },
+    } as unknown as PostgresConnection;
+
+    const result = await createPostgresOnboardingReadinessProbe(connection, {
+      requiredHashes: [],
+    }).evaluate();
+
+    expect(result.components).toContainEqual({
+      componentId: 'schema',
+      diagnosticCode: 'configuration_mismatch',
+      state: 'not_ready',
+    });
+    expect(result.mechanismReady).toBe(false);
+    // The four repository components are backed by real, present tables and
+    // stay ready — the claim-failure functional check is folded only into
+    // the aggregate `schema` component, not re-derived onto repositories it
+    // has no evidence relationship with.
+    for (const componentId of REPOSITORY_COMPONENT_IDS) {
+      expect(
+        result.components.find((c) => c.componentId === componentId),
+      ).toEqual({ componentId, diagnosticCode: null, state: 'ready' });
+    }
+  });
+});
+
+describe('checkOnboardingClaimFailureFunctionalReadiness (mocked)', () => {
+  it('reports database_error when the record itself fails', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({
+              values: async () => {
+                throw new Error('insert rejected');
+              },
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingClaimFailureFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'database_error',
+      detail: 'insert rejected',
+    });
+  });
+
+  it('reports round_trip_failed when the read-back cannot find the recorded probe failure', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn({
+            insert: () => ({ values: async () => undefined }),
+            select: () => ({
+              from: () => ({ where: async () => [] }),
+            }),
+          }),
+      },
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingClaimFailureFunctionalReadiness(connection);
+
+    expect(result).toEqual({
+      ready: false,
+      reason: 'round_trip_failed',
+      detail: 'round_trip_read_back_missing',
+    });
+  });
+
+  it('reports database_error when the transaction itself is unavailable', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {},
+    } as unknown as PostgresConnection;
+
+    const result =
+      await checkOnboardingClaimFailureFunctionalReadiness(connection);
+
+    expect(result.ready).toBe(false);
+    expect(result).toMatchObject({ reason: 'database_error' });
+  });
+
+  it('reports ready via the real tracker round trip against a disposable in-memory transaction stub', async () => {
+    const connection = {
+      close: async () => undefined,
+      db: {
+        transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn(claimFailureTransactionStub()),
+      },
+    } as unknown as PostgresConnection;
+
+    await expect(
+      checkOnboardingClaimFailureFunctionalReadiness(connection),
+    ).resolves.toEqual({ ready: true });
   });
 });
 
