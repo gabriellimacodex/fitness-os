@@ -1867,6 +1867,43 @@ describe('buildRequestProcessorPlan', () => {
     });
   });
 
+  it('keeps the stable processorId comparator defined when two steps share a processorId', () => {
+    const inventory = buildInventory([
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [],
+      },
+      {
+        ...baseProcessor,
+        processorId: '99999999-9999-4999-8999-999999999999',
+        supportedCapabilities: ['inventory', 'access'],
+        unsupportedCapabilities: [],
+      },
+    ]);
+
+    const result = buildRequestProcessorPlan({
+      expected: inventory,
+      requestType: 'access',
+    });
+
+    expect(result).toEqual({
+      excluded: [],
+      status: 'planned',
+      steps: [
+        {
+          capability: 'access',
+          processorId: '99999999-9999-4999-8999-999999999999',
+        },
+        {
+          capability: 'access',
+          processorId: '99999999-9999-4999-8999-999999999999',
+        },
+      ],
+    });
+  });
+
   it('maps a deletion request to the delete capability', () => {
     const inventory = buildInventory([
       {
