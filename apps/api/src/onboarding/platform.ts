@@ -23,9 +23,7 @@ export interface OnboardingPlatformHandles {
  * Composes onboarding's real PostgreSQL-backed persistence and readiness
  * evidence from environment configuration, mirroring
  * `createCatalogPlatformFromEnv` (`../catalog-platform.ts`): returns `null`
- * when the required database URL is absent instead of throwing, and no
- * caller currently wires this into `bootstrap.ts` — exactly like
- * `createCatalogPlatformFromEnv`, which is also unwired there today.
+ * when the required database URL is absent instead of throwing.
  *
  * The `clock`/`idFactory`/`secretFactory`/`secretVerifier` instances built
  * here are the same instances passed both to `registerOnboardingRoutes` (for
@@ -46,6 +44,11 @@ export interface OnboardingPlatformHandles {
  * `registerOnboardingRoutes` keeps its synthetic defaults for them: those
  * legitimately wait on a separate identity/governance provider decision, not
  * something this composition can or should resolve.
+ *
+ * This does not set `allowSyntheticOnboarding` — `buildApp` requires that
+ * explicit flag whenever `platform.onboarding` is set, so wiring this into
+ * `bootstrap.ts` composes real persistence without by itself authorizing
+ * `buildApp` to accept it; enabling the flag remains the caller's decision.
  */
 export function createOnboardingPlatformFromEnv(
   env: NodeJS.ProcessEnv,
